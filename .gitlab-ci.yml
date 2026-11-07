@@ -1,0 +1,51 @@
+image: eclipse-temurin:17-jdk
+
+# Пайплайн держим минимальным: на self-hosted раннере без Docker
+# (shell executor) достаточно того, что уже есть в системе.
+# Если раннера нет — пайплайн просто не запустится, это не блокирует push.
+
+stages:
+  - test
+  - build
+
+variables:
+  GRADLE_USER_HOME: "$CI_PROJECT_DIR/.gradle"
+  ANDROID_HOME: "/opt/android-sdk"
+  ANDROID_SDK_ROOT: "/opt/android-sdk"
+
+# 1. Ядро на C — самое ценное и самое быстрое в проверке.
+#    Собирается обычным gcc, NDK не нужен, тесты идут с ASan/UBSan.
+core:test:
+  stage: test
+  image: gcc:latest
+  script:
+    - cd app/src/main/cpp
+    - gcc -std=gnu99 -O1 -g -Wall -Wextra -Werror -Icore
+        -fsanitize=address,undefined
+        -o /tmp/test_core core/book.c test/test_core.c
+    - cd test && /tmp/test_core testdata/sample.fb2
+  artifacts:
+    when: on_failure
+    paths:
+      - app/src/main/cpp/test/testdata/
+
+# 2. Kotlin typecheck — ловит опечатки без полной сборки.
+kotlin:typecheck:
+  stage: test
+  script:
+    - ./tools/typecheck.sh
+  rules:
+    - if: $CI_COMMIT_BRANCH
+
+# 3. Полная сборка APK. Требует SDK и NDK на раннере.
+assemble:debug:
+  stage: build
+  script:
+    - ./gradlew --no-daemon assembleDebug
+  artifacts:
+    paths:
+      - app/build/outputs/apk/debug/*.apk
+    expire_in: 30 days
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
