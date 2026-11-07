@@ -16,8 +16,10 @@ android {
         versionName = "0.1.0"
 
         ndk {
-            // PX30 = Cortex-A35, только arm64-v8a. x86 оставляем для эмулятора.
-            abiFilters += listOf("arm64-v8a", "x86_64")
+            // Прошивка книги может быть 32-битной даже на 64-битном PX30:
+            // без armeabi-v7a установка падает с INSTALL_FAILED_NO_MATCHING_ABIS.
+            // x86_64 — для эмулятора.
+            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86_64")
         }
         externalNativeBuild {
             cmake {

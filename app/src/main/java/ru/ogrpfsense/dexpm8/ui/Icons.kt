@@ -78,26 +78,43 @@ class Icons {
         specs[name] = Spec(w, h, list.toTypedArray())
     }
 
-    /** Разбор M/L/C/Q/Z без внешних зависимостей (только абсолютные команды Penpot). */
+    /**
+     * Разбор M/L/C/Q/Z без внешних зависимостей.
+     *
+     * Важно: команда определяется по группе регулярки, а НЕ по длине токена.
+     * Раньше стояла проверка `s.length == 1`, и однозначные координаты
+     * (например `1` в `M1,2`) принимались за команду — это роняло
+     * IndexOutOfBoundsException на всех 44 путях иконок.
+     */
     private fun parseSvg(p: Path, d: String) {
         val re = Regex("([MLCQZmlcqz])|(-?\\d+(?:\\.\\d+)?)")
-        var cmd = 'M'
+        var cmd = ' '
         val nums = ArrayList<Float>(8)
+
         fun flush() {
+            if (nums.isEmpty()) return
             var i = 0
             when (cmd) {
-                'M' -> { p.moveTo(nums[0], nums[1]); i = 2; while (i + 1 < nums.size) { p.lineTo(nums[i], nums[i + 1]); i += 2 } }
+                'M' -> {
+                    p.moveTo(nums[0], nums[1]); i = 2
+                    while (i + 1 < nums.size) { p.lineTo(nums[i], nums[i + 1]); i += 2 }
+                }
                 'L' -> while (i + 1 < nums.size) { p.lineTo(nums[i], nums[i + 1]); i += 2 }
                 'C' -> if (nums.size >= 6) p.cubicTo(nums[0], nums[1], nums[2], nums[3], nums[4], nums[5])
                 'Q' -> if (nums.size >= 4) p.quadTo(nums[0], nums[1], nums[2], nums[3])
                 'Z' -> p.close()
-                else -> {}
             }
             nums.clear()
         }
+
         for (m in re.findAll(d)) {
-            val s = m.value
-            if (s.length == 1) { flush(); cmd = s[0] } else nums.add(s.toFloat())
+            val cmdGroup = m.groupValues[1]
+            if (cmdGroup.isNotEmpty()) {
+                flush()
+                cmd = cmdGroup[0]
+            } else {
+                nums.add(m.groupValues[2].toFloat())
+            }
         }
         flush()
     }

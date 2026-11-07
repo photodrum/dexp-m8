@@ -19,6 +19,15 @@ class EinkActivity : Activity() {
         const val SCR_APPS = 3
         const val SCR_SETTINGS = 4
         const val SCR_READER = 5
+
+        /**
+         * Последняя созданная Activity. Нужна обработчику необработанных исключений:
+         * он может сработать в момент, когда Activity уже не находится в нормальном
+         * состоянии, и тогда единственный способ показать стек — через этот статический
+         * доступ. Ссылка обнуляется в onDestroy, чтобы не держать утечку.
+         */
+        @Volatile
+        private var lastInstance: EinkActivity? = null
     }
 
     lateinit var icons: Icons
@@ -32,21 +41,82 @@ class EinkActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Обработчик ставим ПЕРВЫМ делом и сохраняем ссылку на объект Activity,
+        // чтобы показать стек даже если падение случилось внутри самого onCreate.
+        lastInstance = this
+        val prev = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, error ->
+            val shown = lastInstance?.showCrashSafely(error) ?: false
+            if (!shown) prev?.uncaughtException(thread, error)
+        }
+
         window.setFlags(
             WindowManager.LayoutParams.FLAG_FULLSCREEN,
             WindowManager.LayoutParams.FLAG_FULLSCREEN
         )
         window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(T.G13))
 
-        D.init(this)
-        icons = Icons()
+        Trace.init(this)
+        Trace.step("onCreate start")
+
+        try {
+            D.init(this)
+            Trace.step("D.init ok u=${D.u} w=${D.screenW}x${D.screenH}")
+        } catch (t: Throwable) {
+            Trace.step("D.init FAIL: ${t.javaClass.simpleName}: ${t.message}")
+            throw t
+        }
+
+        // Каждый шаг в своём try: если что-то упадёт, мы всё равно дойдём
+        // до отрисовки аварийного экрана.
+        var startupError: Throwable? = null
+        try {
+            icons = Icons()
+            Trace.step("Icons ok")
+        } catch (t: Throwable) {
+            Trace.step("Icons FAIL: ${t.javaClass.simpleName}: ${t.message}")
+            startupError = t
+        }
 
         host = android.widget.FrameLayout(this)
         host.setBackgroundColor(T.G13)
         setContentView(host)
+        Trace.step("setContentView ok")
 
-        stack.add(SCR_HOME)
-        show(SCR_HOME)
+        if (startupError != null) {
+            host.addView(CrashScreen(this, startupError))
+            return
+        }
+
+        try {
+            stack.add(SCR_HOME)
+            show(SCR_HOME)
+            Trace.step("HomeScreen attached")
+        } catch (t: Throwable) {
+            Trace.step("show(SCR_HOME) FAIL: ${t.javaClass.simpleName}: ${t.message}")
+            showCrashSafely(t)
+        }
+    }
+
+    /** Возвращает true, если стек удалось показать на экране. */
+    private fun showCrashSafely(error: Throwable): Boolean {
+        return try {
+            if (!this::host.isInitialized) {
+                host = android.widget.FrameLayout(this)
+                host.setBackgroundColor(T.G13)
+                setContentView(host)
+            }
+            host.removeAllViews()
+            host.addView(CrashScreen(this, error), android.widget.FrameLayout.LayoutParams(
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT
+            ))
+            host.requestLayout()
+            host.invalidate()
+            true
+        } catch (ignored: Throwable) {
+            false
+        }
     }
 
     override fun onResume() {
@@ -134,9 +204,18 @@ class EinkActivity : Activity() {
     /** Отложенная перерисовка — для обновлений времени/батареи без мигания на каждый тик. */
     fun schedule(delayMs: Long, what: Runnable) = ui.postDelayed(what, delayMs)
 
+    /**
+     * Показ стека на экране (см. [showCrashSafely]). Оставлено как runOnUiThread-обёртка
+     * для случаев, когда обработчик вызывается не в UI-потоке.
+     */
+    private fun showCrash(error: Throwable) {
+        runOnUiThread { showCrashSafely(error) }
+    }
+
     override fun onDestroy() {
         ui.removeCallbacksAndMessages(null)
         screens.clear()
+        if (lastInstance === this) lastInstance = null
         super.onDestroy()
     }
 }

@@ -54,6 +54,15 @@ abstract class Screen(protected val act: EinkActivity) : View(act) {
         val saved = D.enter(canvas)
         try {
             render(canvas)
+        } catch (t: Throwable) {
+            // Падение при отрисовке раньше уходило в системный диалог без следов.
+            // Теперь видно, какой экран и на каком шаге упал.
+            Trace.step("onDraw FAIL в ${this.javaClass.simpleName}: " +
+                "${t.javaClass.simpleName}: ${t.message}")
+            val sw = java.io.StringWriter()
+            t.printStackTrace(java.io.PrintWriter(sw))
+            Trace.step(sw.toString().take(1500))
+            throw t
         } finally {
             D.leave(canvas, saved)
         }
