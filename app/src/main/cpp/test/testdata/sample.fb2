@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0"
+             xmlns:l="http://www.w3.org/1999/xlink">
+  <description>
+    <title-info>
+      <genre>prose_classic</genre>
+      <author>
+        <first-name>Михаил</first-name>
+        <middle-name>Афанасьевич</middle-name>
+        <last-name>Булгаков</last-name>
+      </author>
+      <book-title>Мастер и Маргарита</book-title>
+      <lang>ru</lang>
+      <coverpage>
+        <image l:href="#cover.jpg"/>
+      </coverpage>
+    </title-info>
+  </description>
+  <body>
+    <title><p>Мастер и Маргарита</p></title>
+    <section>
+      <title><p>Часть первая</p></title>
+      <p>В час жаркого весеннего заката на Патриарших прудах появились два гражданина.</p>
+      <p>Первый из них, одетый в серенькую летнюю пару, был маленького роста.</p>
+      <p>Второй — плечистый, рыжеватый, вихрастый молодой человек в заломленной на затылок клетчатой кепке.</p>
+      <empty-line/>
+      <subtitle>Смена главы</subtitle>
+      <p>Текст с <emphasis>выделением внутри</emphasis> и амперсандом &amp; кавычками &laquo;ёлочками&raquo;.</p>
+      <poem>
+        <title><p>Несколько строк</p></title>
+        <stanza>
+          <v>Первая строка стиха</v>
+          <v>Вторая строка стиха</v>
+        </stanza>
+      </poem>
+      <epigraph>
+        <p>Эпиграф к разделу.</p>
+        <text-author>Кто-то</text-author>
+      </epigraph>
+    </section>
+  </body>
+  <binary id="cover.jpg" content-type="image/jpeg">/9j/AAAA</binary>
+</FictionBook>

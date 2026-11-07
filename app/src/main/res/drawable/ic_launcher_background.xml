@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Тёмная клавиша в стиле макета: G8 тень, G6 блик, G3 поверхность. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FF333333"
+        android:pathData="M6,6h96v96h-96z" />
+    <path
+        android:fillColor="#FF666666"
+        android:pathData="M6,6h96v3h-96z" />
+    <path
+        android:fillColor="#FF888888"
+        android:pathData="M6,99h96v3h-96z" />
+</vector>

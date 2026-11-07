@@ -1,0 +1,23 @@
+# Gradle-проект DEXP M8
+build/
+app/build/
+.gradle/
+local.properties
+*.iml
+.idea/
+.DS_Store
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Ключи и токены — никогда в репозиторий
+tools/debug.keystore
+*.jks
+*.keystore
+.gca
+
+# Исходные вариативные шрифты (1.4 МБ, воспроизводятся из google/fonts).
+# В репозитории лежат только subset'ы в app/src/main/res/font/
+# и лицензии OFL.
+tools/fonts/*.ttf
+!tools/fonts/OFL-*.txt

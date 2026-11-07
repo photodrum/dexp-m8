@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Палитра E-Ink: 16 градаций с шагом 17 (G0 = #000000 ... G15 = #FFFFFF).
+         Имена = номер ступени, чтобы код читался как макет. -->
+    <color name="g0">#FF000000</color>
+    <color name="g1">#FF111111</color>
+    <color name="g2">#FF222222</color>
+    <color name="g3">#FF333333</color>
+    <color name="g4">#FF444444</color>
+    <color name="g5">#FF555555</color>
+    <color name="g6">#FF666666</color>
+    <color name="g7">#FF777777</color>
+    <color name="g8">#FF888888</color>
+    <color name="g9">#FF999999</color>
+    <color name="g10">#FFAAAAAA</color>
+    <color name="g11">#FFBBBBBB</color>
+    <color name="g12">#FFCCCCCC</color>
+    <color name="g13_paper">#FFDDDDDD</color>
+    <color name="g14">#FFEEEEEE</color>
+    <color name="g15">#FFFFFFFF</color>
+</resources>
