@@ -4,6 +4,18 @@
 читалка, плеер. Дизайн — страница **v5** файла «UI» в Penpot (46 бордов).
 Код — Kotlin без AndroidX и Compose, ядро разбора книг — C99 через JNI.
 
+## Документация
+
+| Файл | О чём |
+|---|---|
+| [`docs/CONTEXT.md`](docs/CONTEXT.md) | **начинать отсюда**: состояние проекта, правила работы, следующий шаг |
+| [`docs/DEVLOG.md`](docs/DEVLOG.md) | журнал по датам: что сделано, какие баги найдены |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | как устроен рендер, дизайн-px, слои объёма, типографика |
+| [`docs/DESIGN.md`](docs/DESIGN.md) | токены из Penpot: палитра, радиусы, кегли, геометрия B1/B2 |
+| [`docs/BUILD.md`](docs/BUILD.md) | сборка, установка на книгу, git и доступы, частые ошибки |
+| [`docs/COMPARISON.md`](docs/COMPARISON.md) | чем своё ядро отличается от Book's Story и KOReader |
+| [`app/src/main/cpp/README.md`](app/src/main/cpp/README.md) | C-ядро: типы блоков, тесты, грабли |
+
 ## Железо и ограничения
 
 | | |
