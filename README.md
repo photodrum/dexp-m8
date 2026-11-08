@@ -15,6 +15,7 @@
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | как устроен рендер, дизайн-px, слои объёма, типографика |
 | [`docs/DESIGN.md`](docs/DESIGN.md) | токены из Penpot: палитра, радиусы, кегли, геометрия B1/B2 |
 | [`docs/DESIGN_USAGE.md`](docs/DESIGN_USAGE.md) | как пользоваться макетами «v5» и «v5 дизайн-система», карта экранов |
+| [`design/README.md`](design/README.md) | снимок макета в JSON: как снимать, формат, проверка |
 | [`docs/READER_SPEC.md`](docs/READER_SPEC.md) | ТЗ читалки: движки, `ReaderEngine`, этапы R0–R6, приёмка |
 | [`docs/BUILD.md`](docs/BUILD.md) | сборка, установка на книгу, git и доступы, частые ошибки |
 | [`docs/COMPARISON.md`](docs/COMPARISON.md) | чем своё ядро отличается от Book's Story и KOReader |
