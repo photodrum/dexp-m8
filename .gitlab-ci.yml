@@ -29,6 +29,17 @@ core:test:
     paths:
       - app/src/main/cpp/test/testdata/
 
+# 1б. Снимок макета design/v5: палитра G0–G15, нет прозрачности, иконки на месте.
+design:check:
+  stage: test
+  image: python:3-slim
+  script:
+    - python3 tools/check_design.py
+  rules:
+    - changes:
+        - design/**/*
+        - tools/check_design.py
+
 # 2. Kotlin typecheck — ловит опечатки без полной сборки.
 kotlin:typecheck:
   stage: test
