@@ -1,4 +1,34 @@
-# Сборка, запуск и отладка
+# Окружение, сборка, запуск и отладка
+
+> Раздел «Окружение» перенесён из `docs/CONTEXT.md` (2026-11-09).
+
+## Окружение
+
+- Хост `tools`, Debian 12, пользователь **`denisle`** (не root: под root `~` = `/root`,
+  и конфиг Cline с токенами недоступен).
+- Репозиторий: https://git.ogrpfsense.ru/denisle/dexp-m8 (GitLab 19.5.3 CE, id 87, public).
+  Локально: `/home/denisle/projects/dexp-m8`.
+- Всё для сборки лежит в `~/.local` (без sudo):
+
+| Что | Путь | Версия |
+|---|---|---|
+| JDK | `~/.local/jdk` | Temurin 17.0.21 |
+| Android SDK | `~/.local/android-sdk` | cmdline-tools 11076708 |
+| — platforms | | android-27, android-34 |
+| — build-tools | | 34.0.0 |
+| — NDK | | 26.3.11579264 (r26d) |
+| — CMake | | 3.22.1 |
+| — platform-tools | | adb |
+| Kotlin | `~/.local/kotlinc` | 1.9.24 |
+| Gradle | `~/.local/gradle-8.7` | 8.7 |
+
+- `local.properties`: `sdk.dir=/home/denisle/.local/android-sdk`.
+- Penpot: https://penpot.ogrpfsense.ru, MCP «Penpot_Motion», файл **«UI»**, рабочая страница **v5**.
+- **Два разных токена GitLab**, не путать:
+  - fine-grained у аккаунта `mcp-agent` — только для MCP (`MCP tool: Execute`). `git push` ему
+    запрещён: `403 [Code: Push]`.
+  - legacy PAT у аккаунта `denisle` — только для git, лежит в
+    `~/.config/dexp-m8/git-push-token` (600). Подставляется через `tools/git-askpass.sh`.
 
 ## Сборка
 

@@ -10,14 +10,15 @@
 
 | Файл | О чём |
 |---|---|
-| [`docs/CONTEXT.md`](docs/CONTEXT.md) | **начинать отсюда**: состояние проекта, правила работы, следующий шаг |
+| [`docs/CONTEXT.md`](docs/CONTEXT.md) | **начинать отсюда**: следующий шаг, карта документов, правила работы |
+| [`docs/ROADMAP.md`](docs/ROADMAP.md) | полный план (оболочка → читалка), подробности текущего пункта, что сделано |
 | [`docs/DEVLOG.md`](docs/DEVLOG.md) | журнал по датам: что сделано, какие баги найдены |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | как устроен рендер, дизайн-px, слои объёма, типографика |
-| [`docs/DESIGN.md`](docs/DESIGN.md) | токены из Penpot: палитра, радиусы, кегли, геометрия B1/B2 |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | как устроен рендер, дизайн-px, структура кода, слои объёма, правила E-Ink, память |
+| [`docs/DESIGN.md`](docs/DESIGN.md) | токены из Penpot: палитра, радиусы, кегли, геометрия B1/B2, факты Penpot |
 | [`docs/DESIGN_USAGE.md`](docs/DESIGN_USAGE.md) | как пользоваться макетами «v5» и «v5 дизайн-система», карта экранов |
 | [`design/README.md`](design/README.md) | снимок макета в JSON: как снимать, формат, проверка |
 | [`docs/READER_SPEC.md`](docs/READER_SPEC.md) | ТЗ читалки: движки, `ReaderEngine`, этапы R0–R6, приёмка |
-| [`docs/BUILD.md`](docs/BUILD.md) | сборка, установка на книгу, git и доступы, частые ошибки |
+| [`docs/BUILD.md`](docs/BUILD.md) | окружение (`~/.local`), сборка, установка на книгу, git и доступы, частые ошибки |
 | [`docs/COMPARISON.md`](docs/COMPARISON.md) | чем своё ядро отличается от Book's Story и KOReader |
 | [`app/src/main/cpp/README.md`](app/src/main/cpp/README.md) | C-ядро: типы блоков, тесты, грабли |
 
@@ -176,7 +177,7 @@ cd test && /tmp/test_core testdata/sample.fb2
 7. Читалка после оболочки: CREngine + MuPDF + DjVuLibre за интерфейсом `ReaderEngine`,
    этапы R1–R6 — `docs/READER_SPEC.md`.
 
-Полный и актуальный план — раздел «Дальше (roadmap)» в `docs/CONTEXT.md`.
+Полный и актуальный план — раздел «Дальше (roadmap)» в `docs/ROADMAP.md`.
 
 ## Лицензия
 
