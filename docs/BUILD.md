@@ -43,11 +43,16 @@ $ANDROID_HOME/platform-tools/adb install -r -d \
 
 `-r` — переустановка с сохранением данных, `-d` — разрешает откат на более старую версию.
 
+## adb на Windows (PowerShell)
+
+Папка `C:\platform-tools` не в `PATH`, а PowerShell не запускает программы из текущей папки
+без пути: пиши `.\adb`, а не `adb`. Ниже команды даны как `adb` — на Windows подставляй `.\adb`.
+
 ## Полезные команды на устройстве
 
 ```bash
 adb shell getprop ro.sf.lcd_density     # ожидаем 320 → density 2.0
-adb shell getprop ro.product.cpu.abi    # ожидаем arm64-v8a
+adb shell getprop ro.product.cpu.abi    # ожидаем armeabi-v7a (прошивка 32-битная)
 adb shell wm size                       # ожидаем 1404x1872
 adb logcat -s DexpM8:V AndroidRuntime:E # логи и падения
 adb shell dumpsys meminfo ru.ogrpfsense.dexpm8   # PSS — главная метрика на 1 ГБ
@@ -82,6 +87,8 @@ GIT_ASKPASS=$PWD/tools/git-askpass.sh GIT_TERMINAL_PROMPT=0 \
 
 | Симптом | Причина |
 |---|---|
+| `adb devices` → `offline`, потом книга пропадает; `logcat` сам завершается через 1–2 мин | обрыв USB. `adb kill-server` не помог, помогло выдернуть кабель, подождать 5 с и вставить в порт на задней панели ПК; на книге — «Передача файлов (MTP)» и «Разрешить отладку» |
+| `adb` не распознан в PowerShell | запускать как `.\adb` из `C:\platform-tools` |
 | `401` на `/api/v4/mcp` | legacy-токен вместо fine-grained, либо `PRIVATE-TOKEN` вместо `Authorization: Bearer` |
 | `403 insufficient_granular_scope` | у токена нет нужного ресурса — дописать в Edit PAT |
 | `403 [Code: Push]` | у токена нет `write_repository` |
