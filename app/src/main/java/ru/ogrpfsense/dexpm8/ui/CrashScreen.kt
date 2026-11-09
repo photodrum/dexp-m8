@@ -61,7 +61,7 @@ class CrashScreen(act: EinkActivity, private val error: Throwable) : Screen(act)
     }
 
     override fun render(c: Canvas) {
-        ink.rect(c, 0f, 0f, W, H, T.G13)
+        ink.rect(c, 0f, 0f, W, H, T.BG)
 
         var y = 56f
         val mono = T.manrope(ink.res, 400)

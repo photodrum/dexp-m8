@@ -75,7 +75,7 @@ class HomeScreen(act: EinkActivity) : Screen(act) {
     }
 
     override fun render(c: Canvas) {
-        ink.rect(c, 0f, 0f, W, H, T.G13)
+        ink.rect(c, 0f, 0f, W, H, T.BG)
         statusBar(c)
         header(c)
         card(c)
@@ -120,7 +120,7 @@ class HomeScreen(act: EinkActivity) : Screen(act) {
         // Гнездо обложки — вдавленная форма 293×424
         val sx = 88f
         val sy = 322f
-        ink.inset(c, sx, sy, 293f, 424f, T.R_COVER_SEAT)
+        ink.inset(c, sx, sy, 293f, 424f, T.R_COVER_SEAT, T.G12)
         ink.roundRect(c, sx + 18f, sy + 18f, 252f, 384f, T.R_COVER, T.G14)
 
         ink.paragraph(c, "Мастер\nи Маргарита", sx + 44f, sy + 55f, 222f,
@@ -139,7 +139,7 @@ class HomeScreen(act: EinkActivity) : Screen(act) {
 
         // Полоса прогресса: желоб вдавленный, заполнение тёмное, без градиента
         val py = 717f
-        ink.inset(c, tx, py, 885f, 29f, 14f)
+        ink.inset(c, tx, py, 885f, 29f, 14f, T.G12)
         ink.roundRect(c, tx + 4f, py + 5f, (885f - 8f) * 0.45f, 19f, 9f, T.G3)
 
         icons.draw(c, "arrowR", 1221f, 863f, 44f, 44f)

@@ -63,7 +63,7 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
     }
 
     override fun render(c: Canvas) {
-        ink.rect(c, 0f, 0f, W, H, T.G13)
+        ink.rect(c, 0f, 0f, W, H, T.BG)
         header(c)
         searchField(c)
         sortBar(c)

@@ -15,7 +15,9 @@
     <color name="g10">#FFAAAAAA</color>
     <color name="g11">#FFBBBBBB</color>
     <color name="g12">#FFCCCCCC</color>
-    <color name="g13_paper">#FFDDDDDD</color>
+    <color name="g13">#FFDDDDDD</color>
     <color name="g14">#FFEEEEEE</color>
     <color name="g15">#FFFFFFFF</color>
+    <!-- Фон экрана оболочки = G12 (design/v5, поле «f» борда). -->
+    <color name="bg">#FFCCCCCC</color>
 </resources>

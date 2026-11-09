@@ -15,7 +15,7 @@ import android.content.res.Resources
  * Правила E-Ink, которые здесь зашиты:
  *  - ни одного blur/shadowLayer/elevation — только сдвинутые копии формы;
  *  - ни одной полупрозрачности — альфа всегда 0xFF;
- *  - «объём» даётся ступенями G15/G14/G10 для выпуклости и G15/G10/G12 для вдавленности.
+ *  - «объём» даётся ступенями G10/G15/G14 для выпуклости и G15/G10/G11|G12 для вдавленности.
  */
 class Ink(ctx: Context) {
 
@@ -39,35 +39,36 @@ class Ink(ctx: Context) {
     // ---------------------------------------------------------------- формы
 
     /**
-     * Выпуклая «пластиковая» клавиша. Слои снизу вверх:
-     *   тень  G10 @ +5,+10 ; блик G15 @ 0,0 ; поверхность G14 @ +3,+3 (W-5, H-10).
+     * Выпуклая «пластиковая» клавиша; W×H — габарит вместе с тенью. Слои снизу вверх
+     * (все одного размера W-4.6 × H-10.1, как в макете):
+     *   тень G10 @ +4.6,+10.1 ; блик G15 @ 0,0 ; поверхность G14 @ +2.8,+2.8.
+     * Блик раньше был размером W×H и закрывал тень целиком.
      */
     fun convex(c: Canvas, x: Float, y: Float, w: Float, h: Float, rad: Float,
                surface: Int = T.G14, highlight: Int = T.G15, shadow: Int = T.G10) {
-        roundRect(c, x + T.SHADOW_DX, y + T.SHADOW_DY, w - T.SHADOW_DX, h - T.SHADOW_DY, rad, shadow)
-        roundRect(c, x, y, w, h, rad, highlight)
-        roundRect(c, x + T.SURFACE_DX, y + T.SURFACE_DY,
-            w - T.SHADOW_DX, h - T.SHADOW_DY, rad, surface)
+        val lw = w - T.SHADOW_DX
+        val lh = h - T.SHADOW_DY
+        roundRect(c, x + T.SHADOW_DX, y + T.SHADOW_DY, lw, lh, rad, shadow)
+        roundRect(c, x, y, lw, lh, rad, highlight)
+        roundRect(c, x + T.SURFACE_DX, y + T.SURFACE_DY, lw, lh, rad, surface)
     }
 
-    /** Тёмная клавиша (главная кнопка): тень G8, блик G6, поверхность G3. */
-    fun convexDark(c: Canvas, x: Float, y: Float, w: Float, h: Float, rad: Float) {
-        roundRect(c, x + T.SHADOW_DX, y + T.SHADOW_DY, w - T.SHADOW_DX, h - T.SHADOW_DY, rad, T.G8)
-        roundRect(c, x, y, w, h, rad, T.G6)
-        roundRect(c, x + T.SURFACE_DX, y + T.SURFACE_DY,
-            w - T.SHADOW_DX, h - T.SHADOW_DY, rad, T.G3)
-    }
+    /** Тёмная клавиша (главная кнопка, «вперёд»): тень G8, блик G6, поверхность G3. */
+    fun convexDark(c: Canvas, x: Float, y: Float, w: Float, h: Float, rad: Float) =
+        convex(c, x, y, w, h, rad, T.G3, T.G6, T.G8)
 
     /**
-     * Вдавленная форма (гнездо обложки, желоб сегментов). Слои снизу вверх:
-     *   нижний блик G15 @ 0,0 ; внутренняя тень G10 @ 0,0 (W-3, H-3) ;
-     *   дно G12 @ +3,+5 (W-6, H-8).
+     * Вдавленная форма (гнездо обложки, желоб сегментов, дорожка). Слои снизу вверх:
+     *   нижний блик G15 @ 0,0 ; внутренняя тень G10 (W-2.7, H-2.8) ;
+     *   дно @ +2.7,+5.5 (W-5.5, H-8.3), радиус дна на 2.74 меньше.
+     * [bottom]: G11 на фоне экрана, G12 внутри карточки и в дорожках прогресса.
      */
     fun inset(c: Canvas, x: Float, y: Float, w: Float, h: Float, rad: Float,
-              bottom: Int = T.G12, rim: Int = T.G10) {
+              bottom: Int = T.G11, rim: Int = T.G10) {
         roundRect(c, x, y, w, h, rad, T.G15)
-        roundRect(c, x, y, w - 3f, h - 3f, rad, rim)
-        roundRect(c, x + T.INSET_DX, y + T.INSET_DY, w - 6f, h - 8f, rad, bottom)
+        roundRect(c, x, y, w - T.INSET_RIM_W, h - T.INSET_RIM_H, rad, rim)
+        roundRect(c, x + T.INSET_DX, y + T.INSET_DY, w - T.INSET_W, h - T.INSET_H,
+            rad - T.INSET_DR, bottom)
     }
 
     /** Плоская поверхность (панель, поле). */

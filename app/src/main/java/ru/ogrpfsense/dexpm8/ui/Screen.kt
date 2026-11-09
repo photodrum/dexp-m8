@@ -31,7 +31,7 @@ abstract class Screen(protected val act: EinkActivity) : View(act) {
     private var pressed = false
 
     init {
-        setBackgroundColor(T.G13)   // совпадает с фоном темы: без «прыжка» при старте
+        setBackgroundColor(T.BG)    // совпадает с фоном темы: без «прыжка» при старте
         isClickable = true
         isFocusable = false
     }

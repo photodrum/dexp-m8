@@ -15,7 +15,7 @@ class SimpleScreen(
 ) : Screen(act) {
 
     override fun render(c: Canvas) {
-        ink.rect(c, 0f, 0f, W, H, T.G13)
+        ink.rect(c, 0f, 0f, W, H, T.BG)
 
         ink.convex(c, 41f, 107f, 107f, 112f, 33f)
         icons.draw(c, "back", 41f + 30f, 107f + 32f, 46f, 48f)

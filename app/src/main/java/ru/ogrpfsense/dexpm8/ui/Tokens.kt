@@ -25,31 +25,51 @@ object T {
     const val G9 = 0xFF999999.toInt()
     const val G10 = 0xFFAAAAAA.toInt()  // тень / внутренняя тень
     const val G11 = 0xFFBBBBBB.toInt()  // обод углубления, разделители
-    const val G12 = 0xFFCCCCCC.toInt()  // дно углубления
-    const val G13 = 0xFFDDDDDD.toInt()  // фон экрана
-    const val G14 = 0xFFEEEEEE.toInt()  // поверхность «пластика»
+    const val G12 = 0xFFCCCCCC.toInt()  // фон экрана; дно углубления внутри карточки и дорожек
+    const val G13 = 0xFFDDDDDD.toInt()  // панель управления, листы; НЕ фон экрана
+    const val G14 = 0xFFEEEEEE.toInt()  // поверхность «пластика»; фон экранов чтения
     const val G15 = 0xFFFFFFFF.toInt()  // блик
+
+    /** Фон экрана оболочки (снимок design/v5: «f»: G12). */
+    const val BG = G12
+    /** Фон экранов чтения (B3, B4, B5, B9, B50–B52, B58, B59). */
+    const val BG_READ = G14
 
     /**
      * Радиусы скруглений из макета. Значения в дизайн-px,
      * они одинаковы на всех бордах, поэтому это константы, а не вычисления.
      */
     const val R_TILE = 51.1875f      // плитка, панель списка, поле
+    const val R_CARD = 58.5f         // карточка «Сейчас читаю» (B1)
     const val R_BUTTON = 65.8125f    // главная кнопка
     const val R_COVER_SEAT = 32.90625f
     const val R_COVER_INNER = 30.1640625f
-    const val R_COVER = 10.96875f
+    const val R_COVER_L = 18.28125f  // большая обложка (B1)
+    const val R_COVER = 10.96875f    // маленькая обложка в строке (B2)
+    const val R_BATTERY = 21.9375f   // корпус батареи
+    const val R_GROOVE = 43.875f     // желоб переключателей и сортировки
+    const val R_SEGMENT = 36.5625f   // активный сегмент и выбранная строка
+    const val R_TRACK = 14.625f      // дорожка прогресса на B1 (в строке B2 — R_COVER)
 
     /**
-     * Смещения «ступенчатых» теней. Не размытие, а сдвинутая копия формы —
-     * ровно то, что лежит в макете слоями.
+     * Смещения «ступенчатых» слоёв. Не размытие, а сдвинутая копия формы —
+     * ровно то, что лежит в макете слоями. Числа сняты со слоёв B1/B2:
+     * у выпуклой детали все три слоя одного размера (W-4.6 × H-10.1),
+     * W×H — габарит группы вместе с тенью.
      */
-    const val SHADOW_DX = 5f
-    const val SHADOW_DY = 10f
-    const val SURFACE_DX = 3f        // блик 0,0 → поверхность +3,+3
-    const val SURFACE_DY = 3f
-    const val INSET_DX = 3f          // дно углубления +3,+5
-    const val INSET_DY = 5f
+    const val SHADOW_DX = 4.6f       // тень G10 @ +4.6,+10.1
+    const val SHADOW_DY = 10.1f
+    const val SURFACE_DX = 2.8f      // блик @ 0,0 → поверхность @ +2.8,+2.8
+    const val SURFACE_DY = 2.8f
+
+    // Вдавленная: нижний блик W×H → внутренняя тень (W-2.7 × H-2.8) → дно.
+    const val INSET_RIM_W = 2.7f
+    const val INSET_RIM_H = 2.8f
+    const val INSET_DX = 2.7f        // дно @ +2.7,+5.5, размер W-5.5 × H-8.3
+    const val INSET_DY = 5.5f
+    const val INSET_W = 5.5f
+    const val INSET_H = 8.3f
+    const val INSET_DR = 2.742f      // радиус дна меньше внешнего (21.94 → 19.20)
 
     // --- Типографика: кегли из макета, в дизайн-px ---
     const val TS_CAPTION = 28f       // подписи на обложке

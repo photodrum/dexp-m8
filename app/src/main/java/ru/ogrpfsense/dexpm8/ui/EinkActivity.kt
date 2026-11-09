@@ -54,7 +54,7 @@ class EinkActivity : Activity() {
             WindowManager.LayoutParams.FLAG_FULLSCREEN,
             WindowManager.LayoutParams.FLAG_FULLSCREEN
         )
-        window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(T.G13))
+        window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(T.BG))
 
         Trace.init(this)
         Trace.step("onCreate start")
@@ -79,7 +79,7 @@ class EinkActivity : Activity() {
         }
 
         host = android.widget.FrameLayout(this)
-        host.setBackgroundColor(T.G13)
+        host.setBackgroundColor(T.BG)
         setContentView(host)
         Trace.step("setContentView ok")
 
@@ -103,7 +103,7 @@ class EinkActivity : Activity() {
         return try {
             if (!this::host.isInitialized) {
                 host = android.widget.FrameLayout(this)
-                host.setBackgroundColor(T.G13)
+                host.setBackgroundColor(T.BG)
                 setContentView(host)
             }
             host.removeAllViews()

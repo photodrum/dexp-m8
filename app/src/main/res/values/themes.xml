@@ -4,8 +4,8 @@
     <!-- Тема без ActionBar, без анимаций окна, без затемнения.
          8.1/API 27 ставит windowIsTranslucent=false по умолчанию — это и нужно. -->
     <style name="Theme.DexpM8" parent="@android:style/Theme.DeviceDefault.NoActionBar">
-        <item name="android:windowBackground">@color/g13_paper</item>
-        <item name="android:colorBackground">@color/g13_paper</item>
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:colorBackground">@color/bg</item>
         <item name="android:windowAnimationStyle">@null</item>
         <item name="android:windowEnterAnimation">@null</item>
         <item name="android:windowExitAnimation">@null</item>
