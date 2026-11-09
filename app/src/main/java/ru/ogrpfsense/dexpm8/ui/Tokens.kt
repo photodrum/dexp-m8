@@ -86,16 +86,60 @@ object T {
     const val TS_HUGE = 150f         // «45 %»
 
     /** Кеш шрифтов: Resources.getFont дешевле, чем createFromAsset, и не течёт. */
-    private val cache = HashMap<Int, Typeface>(6)
+    private val cache = HashMap<Int, Typeface>(10)
 
-    fun manrope(res: Resources, weight: Int): Typeface = cache.getOrPut(weight) {
-        when (weight) {
-            800 -> res.getFont(R.font.manrope_800)
-            700 -> res.getFont(R.font.manrope_700)
-            600 -> res.getFont(R.font.manrope_600)
-            else -> res.getFont(R.font.manrope_400)
+    /** Ключ Literata в кэше сдвинут, чтобы не пересекаться с весами Manrope. */
+    private const val LITERATA_KEY = 1000
+
+    /** Manrope: 200/300/400/500/600/700/800; другое значение — ближайшее из набора. */
+    fun manrope(res: Resources, weight: Int): Typeface {
+        val w = when {
+            weight <= 200 -> 200
+            weight <= 300 -> 300
+            weight <= 400 -> 400
+            weight <= 500 -> 500
+            weight <= 600 -> 600
+            weight <= 700 -> 700
+            else -> 800
+        }
+        return cache.getOrPut(w) {
+            res.getFont(when (w) {
+                200 -> R.font.manrope_200
+                300 -> R.font.manrope_300
+                500 -> R.font.manrope_500
+                600 -> R.font.manrope_600
+                700 -> R.font.manrope_700
+                800 -> R.font.manrope_800
+                else -> R.font.manrope_400
+            })
         }
     }
 
-    fun literata(res: Resources): Typeface = cache.getOrPut(900) { res.getFont(R.font.literata_400) }
+    /** Literata: 400 (opsz 12), 500 (opsz 60), 600 (opsz 42); другое значение — ближайшее. */
+    fun literata(res: Resources, weight: Int = 400): Typeface {
+        val w = when {
+            weight <= 400 -> 400
+            weight <= 500 -> 500
+            else -> 600
+        }
+        return cache.getOrPut(LITERATA_KEY + w) {
+            res.getFont(when (w) {
+                500 -> R.font.literata_500
+                600 -> R.font.literata_600
+                else -> R.font.literata_400
+            })
+        }
+    }
+
+    // --- Базовая линия текста по рамке Penpot ---
+    // Рамка текста: top, кегль fs, межстрочный lh (множитель). Строка по центру рамки, поэтому
+    //   baseline = top + (fs·lh − fs·(asc+desc))/2 + fs·asc = top + fs·(lh/2 + k),
+    //   k = (asc − desc)/2 по hhea: Manrope (2132, −600 / 2000) → 0.383,
+    //   Literata (1177, −308 / 1000) → 0.4345.
+    const val BASE_K_MANROPE = 0.383f
+    const val BASE_K_LITERATA = 0.4345f
+
+    /** Базовая линия однострочного текста по верху рамки в макете (дизайн-px). */
+    fun base(top: Float, fs: Float, lh: Float, literata: Boolean = false): Float =
+        top + fs * (lh / 2f + if (literata) BASE_K_LITERATA else BASE_K_MANROPE)
 }
