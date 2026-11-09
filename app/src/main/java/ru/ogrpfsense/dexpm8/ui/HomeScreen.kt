@@ -1,11 +1,6 @@
 package ru.ogrpfsense.dexpm8.ui
 
-import android.content.BroadcastReceiver
-import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
 import android.graphics.Canvas
-import android.os.BatteryManager
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -23,43 +18,22 @@ import java.util.Locale
  */
 class HomeScreen(act: EinkActivity) : Screen(act) {
 
-    private val timeFmt = SimpleDateFormat("HH:mm", Locale.getDefault())
     private val dateFmt = SimpleDateFormat("EEEE, d MMMM", Locale("ru"))
 
-    private var clock = "10:42"
     private var date = ""
-    private var battery = 78
-    private var charging = false
+
+    private val status = StatusBar(act, this, ink, icons)
 
     private val hits = ArrayList<Hit>(8)
 
     private class Hit(val id: Int, val x: Float, val y: Float, val w: Float, val h: Float)
 
-    private val batteryReceiver = object : BroadcastReceiver() {
-        override fun onReceive(ctx: Context?, intent: Intent?) {
-            intent ?: return
-            val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
-            val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, 100)
-            if (level < 0 || scale <= 0) return
-            val pct = level * 100 / scale
-            val status = intent.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
-            val ch = status == BatteryManager.BATTERY_STATUS_CHARGING ||
-                status == BatteryManager.BATTERY_STATUS_FULL
-            if (pct != battery || ch != charging) {
-                battery = pct
-                charging = ch
-                if (parent != null) redraw()
-            }
-        }
-    }
-
     init {
-        refreshClock()
+        refreshDate()
     }
 
-    private fun refreshClock() {
+    private fun refreshDate() {
         val now = Date()
-        clock = timeFmt.format(now)
         val d = dateFmt.format(now)
         date = d.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale("ru")) else it.toString() }
     }
@@ -76,31 +50,12 @@ class HomeScreen(act: EinkActivity) : Screen(act) {
 
     override fun render(c: Canvas) {
         ink.rect(c, 0f, 0f, W, H, T.BG)
-        statusBar(c)
+        status.draw(c)
         header(c)
         card(c)
         continueButton(c)
         tiles(c)
         statistics(c)
-    }
-
-    // --------------------------------------------------------------- статус-бар
-
-    private fun statusBar(c: Canvas) {
-        ink.text(c, clock, 51f, 26f + 34f, T.TS_LABEL, 700, T.G1)
-
-        // Батарея: гнездо + заливка + процент белым по заливке (как в макете)
-        val bx = 1229f
-        val by = 26f
-        val bw = 124f
-        val bh = 44f
-        ink.inset(c, bx, by, bw, bh, 8f)
-        val fillW = (bw - 10f) * (battery.coerceIn(0, 100) / 100f)
-        ink.rect(c, bx + 4f, by + 6f, fillW, bh - 12f, T.G3)
-        ink.textCenter(c, battery.toString(), bx, bw,
-            ink.baselineIn(by, bh, T.TS_CAPTION, 800), T.TS_CAPTION, 800, T.G15)
-
-        icons.draw(c, "wifi", 1165f, 28f, 38f, 40f)
     }
 
     private fun header(c: Canvas) {
@@ -201,18 +156,12 @@ class HomeScreen(act: EinkActivity) : Screen(act) {
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
-        try {
-            act.registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-        } catch (ignored: Exception) {
-        }
-        refreshClock()
+        status.attach()
+        refreshDate()
     }
 
     override fun onDetachedFromWindow() {
-        try {
-            act.unregisterReceiver(batteryReceiver)
-        } catch (ignored: IllegalArgumentException) {
-        }
+        status.detach()
         super.onDetachedFromWindow()
     }
 }

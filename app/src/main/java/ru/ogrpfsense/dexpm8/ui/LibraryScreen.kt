@@ -33,6 +33,8 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
     private var sortMode = 0
     private var viewMode = 0     // 0 = список, 1 = сетка
 
+    private val status = StatusBar(act, this, ink, icons)
+
     private val hits = ArrayList<Hit>(16)
     private class Hit(val id: Int, val x: Float, val y: Float, val w: Float, val h: Float)
 
@@ -64,6 +66,7 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
 
     override fun render(c: Canvas) {
         ink.rect(c, 0f, 0f, W, H, T.BG)
+        status.draw(c)
         header(c)
         searchField(c)
         sortBar(c)
@@ -159,5 +162,15 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
                 return
             }
         }
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        status.attach()
+    }
+
+    override fun onDetachedFromWindow() {
+        status.detach()
+        super.onDetachedFromWindow()
     }
 }
