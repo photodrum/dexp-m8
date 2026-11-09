@@ -10,6 +10,7 @@ Kotlin:
 
 Любой пустой токен (двойной пробел) даёт NumberFormatException,
 отсутствие поля — IndexOutOfBoundsException.
+Цвет — `#hex` или `stroke:#hex:ширина[:round]` (round — круглые концы линий).
 """
 import re
 import sys
@@ -118,9 +119,11 @@ def main() -> int:
                 continue
             if col.startswith("stroke:"):
                 v = col.split(":")
-                if len(v) != 3:
+                if len(v) not in (3, 4) or (len(v) == 4 and v[3] != "round"):
                     problems.append(f"{name}: плохой stroke {col!r}")
                 else:
+                    if not v[1].startswith("#"):
+                        problems.append(f"{name}: цвет stroke без #: {col!r}")
                     try:
                         float(v[2])
                     except ValueError:

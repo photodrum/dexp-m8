@@ -16,9 +16,10 @@ import android.graphics.Path
  * Формат строки спеки:
  *   имя|ширина|высота|примитив|примитив|...
  * Примитив:
- *   r x y w h radius  <hex|stroke:hex:width>
- *   e x y w h         <hex|stroke:hex:width>
- *   p x y w h sw      <hex|stroke:hex:width>  d="..."
+ *   r x y w h radius  <hex|stroke:hex:width[:round]>
+ *   e x y w h         <hex|stroke:hex:width[:round]>
+ *   p x y w h sw      <hex|stroke:hex:width[:round]>  d="..."
+ * Суффикс :round — круглые концы линий (strokeCap = ROUND), без него — прямые.
  */
 class Icons {
 
@@ -26,7 +27,8 @@ class Icons {
         val t: Char,
         val x: Float, val y: Float, val w: Float, val h: Float,
         val rad: Float, val sw: Float,
-        val color: Int, val d: Path?
+        val color: Int, val d: Path?,
+        val round: Boolean
     )
 
     private class Spec(val w: Float, val h: Float, val prims: Array<Prim>)
@@ -62,10 +64,12 @@ class Icons {
             val spec = tk[colIdx]
             val color: Int
             val realSw: Float
+            var round = false
             if (spec.startsWith("stroke:")) {
                 val v = spec.split(':')
                 color = Color.parseColor(v[1])
                 realSw = v[2].toFloat()
+                round = v.size > 3 && v[3] == "round"
             } else {
                 color = Color.parseColor(spec)
                 realSw = sw
@@ -73,7 +77,7 @@ class Icons {
             val d = if (t == 'p' && tk.size > colIdx + 1) {
                 Path().apply { parseSvg(this, tk.subList(colIdx + 1, tk.size).joinToString(" ")) }
             } else null
-            list.add(Prim(t, x, y, pw, ph, rad, realSw, color, d))
+            list.add(Prim(t, x, y, pw, ph, rad, realSw, color, d, round))
         }
         specs[name] = Spec(w, h, list.toTypedArray())
     }
@@ -140,6 +144,7 @@ class Icons {
     }
 
     private fun drawPrim(c: Canvas, p: Prim) {
+        stroke.strokeCap = if (p.round) Paint.Cap.ROUND else Paint.Cap.BUTT
         when (p.t) {
             'r' -> if (p.sw > 0f) {
                 stroke.color = p.color
