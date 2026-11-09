@@ -140,13 +140,14 @@ class Ink(ctx: Context) {
     }
 
     /** Однострочная обрезка по «…» — дешевле, чем ellipsize в TextView. */
-    fun ellipsize(s: String, maxW: Float, size: Float, weight: Int): String {
-        if (measure(s, size, weight) <= maxW) return s
+    fun ellipsize(s: String, maxW: Float, size: Float, weight: Int,
+                  font: Typeface = T.manrope(res, weight)): String {
+        if (measure(s, size, weight, font) <= maxW) return s
         var lo = 0
         var hi = s.length
         while (lo < hi) {
             val mid = (lo + hi + 1) / 2
-            if (measure(s.substring(0, mid) + "…", size, weight) <= maxW) lo = mid else hi = mid - 1
+            if (measure(s.substring(0, mid) + "…", size, weight, font) <= maxW) lo = mid else hi = mid - 1
         }
         return s.substring(0, lo).trimEnd() + "…"
     }

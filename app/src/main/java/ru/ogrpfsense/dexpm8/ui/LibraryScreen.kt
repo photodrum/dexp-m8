@@ -3,35 +3,45 @@ package ru.ogrpfsense.dexpm8.ui
 import android.graphics.Canvas
 
 /**
- * B2 · Библиотека (список). Геометрия с борда «B2 · Библиотека · Пластик»:
+ * B2 · Библиотека (список). Числа — из design/v5/B02.json; базовые линии — по рамкам текста
+ * через [T.base] (top + fs·(lh/2 + k)).
  *
- *   назад        41,107   107×112
- *   заголовок   176,104   60/700
- *   подзаголовок 176,180  32/600 G4
- *   вид         1155,117  205×88 (желоб + активный сегмент)
- *   поиск        44,249  1316×102
- *   сортировка   44,388  1316×88 (4 сегмента по 330)
- *   панель       41,516  1321×1136
- *   строки       95,567  шаг 168, высота 147, разделитель 1104×2 G11
- *   страница     41/1240, 1701  122×127 ; номер 44/600
+ *   статус-бар    [StatusBar]
+ *   назад         41.1,112.3     106.9×112.4 (круг 102.4), иконка 72.2,144.3
+ *   заголовок     175.5,104      60/700 lh 1.2 ; подзаголовок 175.5,180  32/600 lh 1.3 G4
+ *   вид           1155.4,122.3   204.8×87.7 (желоб), сегмент 1159.9 (+95.1 для «сетки») 99.6×83.2
+ *   поиск         43.9,248.6     1316.2×102.4 (вдавленное), плейсхолдер 153.6 38/500 G6,
+ *                 фильтр 1262.3,256.9 85×90.5
+ *   сортировка    43.9,387.6     1316.2×87.7, сегмент 48.4 + i·325.4, ширина 330, подпись 34
+ *   панель        41.1,516.4     1320.8×1136.2
+ *   строки        95.1, y = 569.2 + i·184; обложка 73.1×106, корешок 11 (G7); текст с x 204.8;
+ *                 состояние книги — по правому краю 1309; разделитель 204.8, +145, 1104.2×1.8 G11
+ *   выбранная     вдавленная плашка 65.8, y−22, 1272.4×149.9, дно G12; обложка G14, корешок G3
+ *   страницы      41.1 / 1240.4, 1708.3, 121.6×127.1 (круг 117); номер 44/600, верх рамки 1745.3
  */
 class LibraryScreen(act: EinkActivity) : Screen(act) {
 
-    private class Book(val title: String, val author: String, val status: String, val rim: Int)
+    /** [kind]: [ST_PROGRESS] с процентом [pct], [ST_NEW] или [ST_READ]. */
+    private class Book(val title: String, val author: String, val kind: Int, val pct: Int)
 
+    // Заглушка данных по снимку; настоящий список даст сканер (п. 3).
     private val books = arrayOf(
-        Book("Анна Каренина", "Л. Толстой · FB2", "45%", T.G7),
-        Book("Бесы", "Ф. Достоевский · FB2", "12%", T.G7),
-        Book("Война и мир", "Л. Толстой · EPUB", "новое", T.G9),
-        Book("Мастер и Маргарита", "М. Булгаков · FB2", "45%", T.G7),
-        Book("Пикник на обочине", "А. и Б. Стругацкие · FB2", "78%", T.G7),
-        Book("Солярис", "С. Лем · EPUB", "прочитано", T.G9)
+        Book("Анна Каренина", "Лев Толстой · FB2", ST_PROGRESS, 14),
+        Book("Бесы", "Фёдор Достоевский · EPUB", ST_NEW, 0),
+        Book("Война и мир", "Лев Толстой · FB2", ST_PROGRESS, 3),
+        Book("Мастер и Маргарита", "Михаил Булгаков · FB2", ST_PROGRESS, 45),
+        Book("Пикник на обочине", "А. и Б. Стругацкие · EPUB", ST_READ, 100),
+        Book("Солярис", "Станислав Лем · MOBI", ST_PROGRESS, 62)
     )
+
+    private val sortLabels = arrayOf("По автору", "По дате", "Новые", "Непрочитанные")
 
     private var page = 0
     private val perPage = 6
     private var sortMode = 0
     private var viewMode = 0     // 0 = список, 1 = сетка
+
+    private val litTitle = T.literata(ink.res, 600)
 
     private val status = StatusBar(act, this, ink, icons)
 
@@ -46,21 +56,50 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
         const val HIT_SORT = 5
         const val HIT_VIEW = 6
         const val HIT_BOOK = 7
+
+        const val ST_PROGRESS = 0
+        const val ST_NEW = 1
+        const val ST_READ = 2
+
+        /** Выбранная (нажатая) строка в макете — «Мастер и Маргарита»; рисуется неподвижно. */
+        const val SELECTED = 3
+
+        const val ROW_Y0 = 569.2f
+        const val ROW_STEP = 184f
+        const val ROW_H = 146.8f
+        const val TEXT_X = 204.8f
+        const val TEXT_MAX_W = 730f      // до дорожки прогресса (950.6)
+        const val RIGHT = 1309f          // правый край состояния книги (панель 1360 − 51)
+        const val TS_BOOK = 42f          // название книги в строке (Literata 600)
+
+        const val TRACK_X = 950.6f
+        const val TRACK_W = 237.7f
+        const val BAR_X = 953.4f
+        const val BAR_W = 232.2f
+        const val BAR_MIN = 21.9f        // «3 %» в макете нарисовано шириной 21.9, а не 7
+        const val R_BAR = 6.85546875f
+
+        const val SORT_X = 43.9f
+        const val SORT_STEP = 325.4f
+
+        const val R_ROUND_BACK = 51.2f   // круглые клавиши: диск 102.4 / 117 / 80.4
+        const val R_ROUND_PAGE = 58.5f
+        const val R_ROUND_FILTER = 40.2f
     }
 
     override fun layout(w: Float, h: Float) {
         super.layout(w, h)
         hits.clear()
-        hits.add(Hit(HIT_BACK, 41f, 107f, 107f, 112f))
-        hits.add(Hit(HIT_PREV, 41f, 1701f, 122f, 127f))
-        hits.add(Hit(HIT_NEXT, 1240f, 1701f, 122f, 127f))
-        hits.add(Hit(HIT_SEARCH, 44f, 249f, 1316f, 102f))
-        hits.add(Hit(HIT_VIEW, 1155f, 117f, 205f, 88f))
-        hits.add(Hit(HIT_SORT, 44f, 388f, 1316f, 88f))
+        hits.add(Hit(HIT_BACK, 41.1f, 112.3f, 106.9f, 112.4f))
+        hits.add(Hit(HIT_PREV, 41.1f, 1708.3f, 121.6f, 127.1f))
+        hits.add(Hit(HIT_NEXT, 1240.4f, 1708.3f, 121.6f, 127.1f))
+        hits.add(Hit(HIT_SEARCH, 43.9f, 248.6f, 1316.2f, 102.4f))
+        hits.add(Hit(HIT_VIEW, 1155.4f, 122.3f, 204.8f, 87.7f))
+        hits.add(Hit(HIT_SORT, SORT_X, 387.6f, 1316.2f, 87.7f))
         val start = page * perPage
         for (i in 0 until perPage) {
             if (start + i >= books.size) break
-            hits.add(Hit(HIT_BOOK + i + 1, 95f, 516f + 51f + i * 168f, 1214f, 147f))
+            hits.add(Hit(HIT_BOOK + i + 1, 95.1f, ROW_Y0 + i * ROW_STEP, 1213.9f, ROW_H))
         }
     }
 
@@ -75,71 +114,108 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
     }
 
     private fun header(c: Canvas) {
-        ink.convex(c, 41f, 107f, 107f, 112f, 33f)
-        icons.draw(c, "back", 41f + 30f, 107f + 32f, 46f, 48f)
+        ink.convex(c, 41.1f, 112.3f, 106.9f, 112.4f, R_ROUND_BACK)
+        icons.draw(c, "back", 72.2f, 144.3f, 45.7f, 47.6f)
 
-        ink.text(c, "Библиотека", 176f, 104f + 56f, T.TS_TITLE, 700, T.G1)
-        ink.text(c, "128 книг · 4,2 ГБ", 176f, 180f + 32f, T.TS_BODY_S, 600, T.G4)
+        ink.text(c, "Библиотека", 175.5f, T.base(104f, T.TS_TITLE, 1.2f), T.TS_TITLE, 700, T.G1)
+        ink.text(c, "128 книг · 4,2 ГБ", 175.5f, T.base(180f, T.TS_BODY_S, 1.3f),
+            T.TS_BODY_S, 600, T.G4)
 
-        // Переключатель вид: список / сетка — вдавленный желоб 205×88
-        ink.inset(c, 1155f, 117f, 205f, 88f, 12f)
-        ink.convex(c, 1160f, 122f, 100f, 83f, 10f)
-        icons.draw(c, "list", 1155f + 32f, 117f + 22f, 46f, 48f)
-        icons.draw(c, "grid", 1155f + 127f, 117f + 22f, 46f, 48f)
+        // Переключатель вида: желоб 204.8×87.7, активный сегмент сдвигается на 95.1.
+        ink.inset(c, 1155.4f, 122.3f, 204.8f, 87.7f, T.R_GROOVE)
+        ink.convex(c, 1159.9f + viewMode * 95.1f, 126.9f, 99.6f, 83.2f, T.R_SEGMENT)
+        icons.draw(c, "list", 1187.4f, 144.3f, 45.7f, 47.6f)
+        icons.draw(c, "grid", 1282.4f, 144.3f, 45.7f, 47.6f)
     }
 
     private fun searchField(c: Canvas) {
-        ink.inset(c, 44f, 249f, 1316f, 102f, 16f)
-        icons.draw(c, "search", 44f + 43f, 249f + 29f, 46f, 48f)
-        ink.text(c, "Поиск по названию или автору", 44f + 110f, 249f + 29f + 34f,
-            T.TS_BODY_S, 600, T.G6)
-        icons.draw(c, "filter", 44f + 1218f, 249f + 8f, 46f, 48f)
+        ink.inset(c, 43.9f, 248.6f, 1316.2f, 102.4f, T.R_TILE)
+        icons.draw(c, "search", 86.8f, 275.1f, 45.7f, 47.6f)
+        ink.text(c, "Название, автор или серия", 153.6f, T.base(274.4f, T.TS_LABEL_L, 1.3f),
+            T.TS_LABEL_L, 500, T.G6)
+        ink.convex(c, 1262.3f, 256.9f, 85f, 90.5f, R_ROUND_FILTER)
+        icons.draw(c, "filter", 1282.4f, 277.9f, 45.7f, 47.6f)
     }
 
     private fun sortBar(c: Canvas) {
-        val labels = arrayOf("По автору", "По названию", "Недавние", "По размеру")
-        ink.inset(c, 44f, 388f, 1316f, 88f, 12f)
-        ink.convex(c, 49f + sortMode * 325.5f, 393f, 330f, 83f, 10f)
-        for (i in labels.indices) {
-            val color = if (i == sortMode) T.G1 else T.G5
-            ink.textCenter(c, labels[i], 44f + i * 325.5f, 330f, 388f + 44f, T.TS_META, 600, color)
+        ink.inset(c, SORT_X, 387.6f, 1316.2f, 87.7f, T.R_GROOVE)
+        ink.convex(c, 48.4f + sortMode * SORT_STEP, 392.1f, 330f, 83.2f, T.R_SEGMENT)
+        val base = T.base(409.5f, T.TS_BODY, 1.3f)
+        for (i in sortLabels.indices) {
+            val active = i == sortMode
+            ink.textCenter(c, sortLabels[i], 51.2f + i * SORT_STEP, SORT_STEP, base, T.TS_BODY,
+                if (active) 700 else 600, if (active) T.G1 else T.G5)
         }
     }
 
     private fun list(c: Canvas) {
-        ink.convex(c, 41f, 516f, 1321f, 1136f, T.R_TILE)
+        ink.convex(c, 41.1f, 516.4f, 1320.8f, 1136.2f, T.R_TILE)
 
         val start = page * perPage
         for (i in 0 until perPage) {
             val idx = start + i
             if (idx >= books.size) break
             val b = books[idx]
-            val y = 516f + 51f + i * 168f
+            val y = ROW_Y0 + i * ROW_STEP
+            val sel = idx == SELECTED
 
-            // Обложка 73×106: дно + «корешок» полосой
-            ink.roundRect(c, 95f, y, 73f, 106f, T.R_COVER, T.G12)
-            ink.roundRect(c, 95f, y, 11f, 106f, T.R_COVER, b.rim)
+            if (sel) ink.inset(c, 65.8f, y - 22f, 1272.4f, 149.9f, T.R_SEGMENT, T.G12)
+            cover(c, y, if (sel) T.G14 else T.G12, if (sel) T.G3 else T.G7)
 
-            ink.text(c, ink.ellipsize(b.title, 600f, T.TS_LABEL, 700),
-                95f + 110f, y + 3f + 40f, T.TS_LABEL, 700, T.G1)
-            ink.text(c, ink.ellipsize(b.author, 700f, T.TS_META, 600),
-                95f + 110f, y + 61f + 32f, T.TS_META, 600, T.G4)
-            ink.text(c, b.status, 95f + 929f, y + 32f + 32f, T.TS_META, 600, T.G4)
+            ink.text(c, ink.ellipsize(b.title, TEXT_MAX_W, TS_BOOK, 600, litTitle),
+                TEXT_X, T.base(y + 3f, TS_BOOK, 1.25f, true), TS_BOOK, 600, T.G1, litTitle)
+            ink.text(c, ink.ellipsize(b.author, TEXT_MAX_W, T.TS_BODY_S, 600),
+                TEXT_X, T.base(y + 61f, T.TS_BODY_S, 1.3f), T.TS_BODY_S, 600, T.G4)
 
-            // Разделитель: 1104×2 G11, кроме последней строки
-            if (i < perPage - 1 && idx < books.size - 1) {
-                ink.rect(c, 95f + 110f, y + 145f, 1104f, 2f, T.G11)
+            bookState(c, b, y)
+
+            // Разделитель — на обложка + 145, кроме выбранной и последней строки.
+            if (!sel && i < perPage - 1 && idx < books.size - 1) {
+                ink.rect(c, TEXT_X, y + 145f, 1104.2f, 1.8f, T.G11)
             }
         }
     }
 
+    /** Обложка 73.1×106 и корешок 11 со скруглением только слева (радиус 10.97). */
+    private fun cover(c: Canvas, y: Float, body: Int, spine: Int) {
+        ink.roundRect(c, 95.1f, y, 73.1f, 106f, T.R_COVER, body)
+        ink.roundRect(c, 95.1f, y, 22f, 106f, T.R_COVER, spine)
+        ink.rect(c, 106.1f, y, 11f, 106f, body)
+    }
+
+    /** Состояние книги по правому краю 1309: прогресс, «Новая» или «Прочитана». */
+    private fun bookState(c: Canvas, b: Book, y: Float) {
+        when (b.kind) {
+            ST_PROGRESS -> {
+                ink.inset(c, TRACK_X, y + 45.1f, TRACK_W, 21.9f, T.R_COVER, T.G12)
+                val fw = Math.max(BAR_MIN, BAR_W * b.pct / 100f)
+                ink.roundRect(c, BAR_X, y + 50.6f, fw, 13.7f, R_BAR, T.G3)
+                rightText(c, "${b.pct}%", y + 35f, T.TS_BODY, 700, 1.2f, T.G1)
+            }
+            ST_NEW -> rightText(c, "Новая", y + 34.6f, T.TS_BODY_S, 700, 1.3f, T.G4)
+            else -> {
+                icons.draw(c, "check", 1084f, y + 34.5f, 42f, 43.9f)
+                rightText(c, "Прочитана", y + 34.6f, T.TS_BODY_S, 700, 1.3f, T.G4)
+            }
+        }
+    }
+
+    /** Текст по правому краю [RIGHT]; [top] — верх рамки текста в макете. */
+    private fun rightText(c: Canvas, s: String, top: Float, size: Float, weight: Int,
+                          lh: Float, color: Int) {
+        ink.text(c, s, RIGHT - ink.measure(s, size, weight), T.base(top, size, lh),
+            size, weight, color)
+    }
+
+    private fun totalPages() = Math.max(1, (books.size + perPage - 1) / perPage)
+
     private fun pager(c: Canvas) {
-        val total = Math.max(1, (books.size + perPage - 1) / perPage)
-        ink.convex(c, 41f, 1701f, 122f, 127f, 33f)
-        icons.draw(c, "back", 41f + 38f, 1701f + 40f, 46f, 48f)
-        ink.convex(c, 1240f, 1701f, 122f, 127f, 33f)
-        icons.draw(c, "arrowR", 1240f + 39f, 1701f + 41f, 44f, 44f)
-        ink.textCenter(c, "${page + 1} / $total", 0f, W, 1738f + 44f, T.TS_PAGE, 600, T.G1)
+        ink.convex(c, 41.1f, 1708.3f, 121.6f, 127.1f, R_ROUND_PAGE)
+        icons.draw(c, "back", 79.5f, 1747.6f, 45.7f, 47.6f)
+        ink.convexDark(c, 1240.4f, 1708.3f, 121.6f, 127.1f, R_ROUND_PAGE)
+        icons.draw(c, "next", 1279.7f, 1747.6f, 43.9f, 43.9f)
+        ink.textCenter(c, "${page + 1} / ${totalPages()}", 0f, W,
+            T.base(1745.3f, T.TS_PAGE, 1.2f), T.TS_PAGE, 600, T.G1)
     }
 
     // --------------------------------------------------------------- ввод
@@ -150,12 +226,12 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
                 when (h.id) {
                     HIT_BACK -> act.pop()
                     HIT_PREV -> if (page > 0) { page--; layout(W, H); redraw() }
-                    HIT_NEXT -> {
-                        val total = Math.max(1, (books.size + perPage - 1) / perPage)
-                        if (page < total - 1) { page++; layout(W, H); redraw() }
-                    }
+                    HIT_NEXT -> if (page < totalPages() - 1) { page++; layout(W, H); redraw() }
                     HIT_VIEW -> { viewMode = if (viewMode == 0) 1 else 0; redraw() }
-                    HIT_SORT -> { sortMode = (sortMode + 1) % 4; redraw() }
+                    HIT_SORT -> {
+                        val i = ((x - SORT_X) / SORT_STEP).toInt().coerceIn(0, sortLabels.size - 1)
+                        if (i != sortMode) { sortMode = i; redraw() }
+                    }
                     HIT_SEARCH -> { /* экран ввода — следующий этап */ }
                     else -> if (h.id > HIT_BOOK) act.go(EinkActivity.SCR_READER)
                 }
@@ -174,3 +250,4 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
         super.onDetachedFromWindow()
     }
 }
+
