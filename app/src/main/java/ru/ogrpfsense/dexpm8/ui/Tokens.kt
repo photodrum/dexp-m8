@@ -80,6 +80,7 @@ object T {
     const val TS_LABEL_L = 38f
     const val TS_ACTION = 42f        // подпись главной кнопки
     const val TS_PAGE = 44f          // номер страницы
+    const val TS_TILE = 44f          // подпись плитки B1 (Manrope 700)
     const val TS_PERCENT = 52f
     const val TS_TITLE = 60f         // заголовок экрана/книги
     const val TS_GREETING = 80f

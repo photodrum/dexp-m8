@@ -6,15 +6,18 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * B1 · Главный экран. Геометрия 1:1 с борда «B1 · Главный экран · Пластик».
+ * B1 · Главный экран. Числа — из design/v5/B01.json; базовые линии — по рамкам текста
+ * через [T.base] (top + fs·(lh/2 + k)).
  *
- *   статус-бар   51,26   1302×46
- *   дата         51,111  34/600 G4
- *   приветствие  51,150  80/300 G1
- *   карточка     41,275  1321×741 (выпуклая, r=51.19)
- *   кнопка       85,816  1233×142 (тёмная, r=65.81)
- *   плитки       41/721 × 1072/1438, 641×332
- *   статистика   0,1804  30/600 G4
+ *   статус-бар   [StatusBar]
+ *   дата         51.2,111     34/600 G4
+ *   приветствие  51.2,149.6   80/300 G1
+ *   карточка     41.1,275.1   1320.8×741.3 (выпуклая, r=58.5), фон G14
+ *   гнездо       87.8,321.8   292.5×424.1 (вдавленное, дно G12), обложка 106,340 r=18.28
+ *   прогресс     431.4,716.6  884.8×29.2 (дорожка G12), заливка G3
+ *   кнопка       85,816.3     1233.1×141.6 (тёмная, r=65.81), стрелка поверх неё
+ *   плитки       41.1/721.2 × 1072.2/1437.8, 640.8×331.8; круглая кнопка иконки на +43.9,+43.9
+ *   статистика   0,1803.6     30/600 G4 по центру
  */
 class HomeScreen(act: EinkActivity) : Screen(act) {
 
@@ -41,11 +44,8 @@ class HomeScreen(act: EinkActivity) : Screen(act) {
     override fun layout(w: Float, h: Float) {
         super.layout(w, h)
         hits.clear()
-        hits.add(Hit(EinkActivity.SCR_LIBRARY, 41f, 1072f, 641f, 332f))
-        hits.add(Hit(EinkActivity.SCR_LIBRARY, 721f, 1072f, 641f, 332f))
-        hits.add(Hit(EinkActivity.SCR_APPS, 41f, 1438f, 641f, 332f))
-        hits.add(Hit(EinkActivity.SCR_SETTINGS, 721f, 1438f, 641f, 332f))
-        hits.add(Hit(EinkActivity.SCR_READER, 85f, 816f, 1233f, 142f))
+        for (t in tiles) hits.add(Hit(t.screen, t.x, t.y, TILE_W, TILE_H))
+        hits.add(Hit(EinkActivity.SCR_READER, BTN_X, BTN_Y, BTN_W, BTN_H))
     }
 
     override fun render(c: Canvas) {
@@ -59,88 +59,94 @@ class HomeScreen(act: EinkActivity) : Screen(act) {
     }
 
     private fun header(c: Canvas) {
-        ink.text(c, date, 51f, 111f + 34f, T.TS_BODY, 600, T.G4)
-        ink.text(c, "Добрый день", 51f, 150f + 78f, T.TS_GREETING, 300, T.G1)
+        ink.text(c, date, 51.2f, T.base(111f, T.TS_BODY, 1.25f), T.TS_BODY, 600, T.G4)
+        ink.text(c, "Добрый день", 51.2f, T.base(149.6f, T.TS_GREETING, 1.2f),
+            T.TS_GREETING, 300, T.G1)
     }
 
     // --------------------------------------------------------------- карточка
 
     private fun card(c: Canvas) {
-        val x = 41f
-        val y = 275f
-        val w = 1321f
-        val h = 741f
-        ink.convex(c, x, y, w, h, T.R_TILE, T.G14, T.G15, T.G10)
+        ink.convex(c, 41.1f, 275.1f, 1320.8f, 741.3f, T.R_CARD, T.G14, T.G15, T.G10)
 
-        // Гнездо обложки — вдавленная форма 293×424
-        val sx = 88f
-        val sy = 322f
-        ink.inset(c, sx, sy, 293f, 424f, T.R_COVER_SEAT, T.G12)
-        ink.roundRect(c, sx + 18f, sy + 18f, 252f, 384f, T.R_COVER, T.G14)
+        // Гнездо обложки — вдавленная форма 292.5×424.1, дно G12.
+        ink.inset(c, 87.8f, 321.8f, 292.5f, 424.1f, T.R_COVER_SEAT, T.G12)
+        ink.roundRect(c, 106f, 340f, 252.3f, 383.9f, T.R_COVER_L, T.G14)
 
-        ink.paragraph(c, "Мастер\nи Маргарита", sx + 44f, sy + 55f, 222f,
-            T.TS_META, 600, T.G1, 6f)
-        ink.text(c, "М. Булгаков", sx + 44f, sy + 137f + 24f, T.TS_CAPTION, 600, T.G4)
+        // Название на обложке — Literata 30/600, lh 1.15, две строки.
+        val lit600 = T.literata(ink.res, 600)
+        val b1 = T.base(376.6f, 30f, 1.15f, true)
+        ink.text(c, "Мастер", 131.6f, b1, 30f, 600, T.G1, lit600)
+        ink.text(c, "и Маргарита", 131.6f, b1 + 30f * 1.15f, 30f, 600, T.G1, lit600)
+        ink.text(c, "М. Булгаков", 131.6f, T.base(458.6f, T.TS_CAPTION, 1.25f),
+            T.TS_CAPTION, 600, T.G4)
 
-        val tx = 431f
-        ink.text(c, "Сейчас читаю", tx, 327f + 30f, T.TS_BODY_S, 600, T.G4)
-        ink.text(c, "Мастер и Маргарита", tx, 364f + 56f, T.TS_TITLE, 500, T.G1)
-        ink.text(c, "Михаил Булгаков · глава 13 из 32", tx, 440f + 36f, T.TS_LABEL, 600, T.G4)
+        val tx = 431.4f
+        ink.text(c, "Сейчас читаю", tx, T.base(327.2f, T.TS_BODY_S, 1.25f), T.TS_BODY_S, 600, T.G4)
+        ink.text(c, "Мастер и Маргарита", tx, T.base(364.4f, T.TS_TITLE, 1.2f, true),
+            T.TS_TITLE, 500, T.G1, T.literata(ink.res, 500))
+        ink.text(c, "Михаил Булгаков · глава 13 из 32", tx, T.base(440.1f, T.TS_LABEL, 1.25f),
+            T.TS_LABEL, 600, T.G4)
 
-        ink.text(c, "45", tx, 517f + 150f, T.TS_HUGE, 200, T.G1)
-        ink.text(c, "%", 614f, 542f + 56f, T.TS_PERCENT, 400, T.G1)
-        ink.paragraph(c, "прочитано\n≈ 3 ч 20 мин до конца", 695f, 578f + 20f, 333f,
-            T.TS_BODY_S, 600, T.G4, 8f)
+        ink.text(c, "45", tx, T.base(517.2f, T.TS_HUGE, 1.2f), T.TS_HUGE, 200, T.G1)
+        ink.text(c, "%", 614.2f, T.base(542.4f, T.TS_PERCENT, 1.25f), T.TS_PERCENT, 400, T.G1)
+        val cap = T.base(577.7f, T.TS_BODY_S, 1.4f)
+        ink.text(c, "прочитано", 694.7f, cap, T.TS_BODY_S, 600, T.G4)
+        ink.text(c, "≈ 3 ч 20 мин до конца", 694.7f, cap + T.TS_BODY_S * 1.4f,
+            T.TS_BODY_S, 600, T.G4)
 
-        // Полоса прогресса: желоб вдавленный, заполнение тёмное, без градиента
-        val py = 717f
-        ink.inset(c, tx, py, 885f, 29f, 14f, T.G12)
-        ink.roundRect(c, tx + 4f, py + 5f, (885f - 8f) * 0.45f, 19f, 9f, T.G3)
-
-        icons.draw(c, "arrowR", 1221f, 863f, 44f, 44f)
+        // Дорожка 431.4,716.6 884.8×29.2 (дно G12), заливка 45 % от 879.3 на 434.2,722.1.
+        ink.inset(c, tx, 716.6f, 884.8f, 29.2f, T.R_TRACK, T.G12)
+        ink.roundRect(c, 434.2f, 722.1f, 879.3f * 0.45f, 21f, 10.51171875f, T.G3)
     }
 
     private fun continueButton(c: Canvas) {
-        val x = 85f
-        val y = 816f
-        val w = 1233f
-        val h = 142f
-        ink.convexDark(c, x, y, w, h, T.R_BUTTON)
-        ink.text(c, "Продолжить чтение", 146f,
-            ink.baselineIn(y, h, T.TS_ACTION, 700), T.TS_ACTION, 700, T.G15)
+        ink.convexDark(c, BTN_X, BTN_Y, BTN_W, BTN_H, T.R_BUTTON)
+        ink.text(c, "Продолжить чтение", 146.3f, T.base(858.8f, T.TS_ACTION, 1.25f),
+            T.TS_ACTION, 700, T.G15)
+        icons.draw(c, "arrowR", 1221.2f, 862.9f, 43.9f, 43.9f)
     }
 
     // --------------------------------------------------------------- плитки
 
     private class Tile(
         val label: String, val count: String, val icon: String,
-        val x: Float, val y: Float
+        val x: Float, val y: Float, val screen: Int
     )
 
     private val tiles = arrayOf(
-        Tile("Библиотека", "128 книг", "library", 41f, 1072f),
-        Tile("Аудиокниги", "12 книг", "audio", 721f, 1072f),
-        Tile("Приложения", "9 приложений", "apps", 41f, 1438f),
-        Tile("Настройки", "устройство", "settings", 721f, 1438f)
+        Tile("Библиотека", "128 книг", "library", 41.1f, 1072.2f, EinkActivity.SCR_LIBRARY),
+        Tile("Аудиокниги", "12 книг", "audio", 721.2f, 1072.2f, EinkActivity.SCR_LIBRARY),
+        Tile("Приложения", "6 приложений", "apps", 41.1f, 1437.8f, EinkActivity.SCR_APPS),
+        Tile("Настройки", "Экран, сеть, сон", "settings", 721.2f, 1437.8f, EinkActivity.SCR_SETTINGS)
     )
 
     private fun tiles(c: Canvas) {
-        val tw = 641f
-        val th = 332f
         for (t in tiles) {
-            ink.convex(c, t.x, t.y, tw, th, T.R_TILE)
-            val ix = t.x + 44f
-            val iy = t.y + 46f
-            ink.convex(c, ix, iy, 132f, 132f, 66f)
-            icons.draw(c, t.icon, ix + 29f, iy + 28f, 73f, 76f)
-            ink.text(c, t.label, t.x + 212f, t.y + 120f, T.TS_BODY_S, 700, T.G1)
-            ink.text(c, t.count, t.x + 212f, t.y + 178f, T.TS_META, 600, T.G4)
+            ink.convex(c, t.x, t.y, TILE_W, TILE_H, T.R_TILE)
+            // Круглая кнопка иконки 136.2×141.6 (диск 131.6) на +43.9,+43.9.
+            ink.convex(c, t.x + 43.9f, t.y + 43.9f, 136.2f, 141.6f, 65.8f)
+            icons.draw(c, t.icon, t.x + 73.1f, t.y + 74.6f, 73.1f, 76.2f)
+            // Подпись и счётчик — под иконкой, x +46.7.
+            ink.text(c, t.label, t.x + 46.7f, T.base(t.y + 202f, T.TS_TILE, 1.25f),
+                T.TS_TILE, 700, T.G1)
+            ink.text(c, t.count, t.x + 46.7f, T.base(t.y + 261f, T.TS_BODY_S, 1.25f),
+                T.TS_BODY_S, 600, T.G4)
         }
     }
 
     private fun statistics(c: Canvas) {
-        ink.textCenter(c, "Сегодня 42 мин · 31 стр. · синхронизировано",
-            0f, W, H - 22f, T.TS_META, 600, T.G4)
+        ink.textCenter(c, "Сегодня 42 мин · 31 стр. · синхронизировано в 10:15",
+            0f, W, T.base(1803.6f, T.TS_META, 1.25f), T.TS_META, 600, T.G4)
+    }
+
+    private companion object {
+        const val TILE_W = 640.8f
+        const val TILE_H = 331.8f
+        const val BTN_X = 85f
+        const val BTN_Y = 816.3f
+        const val BTN_W = 1233.1f
+        const val BTN_H = 141.6f
     }
 
     // --------------------------------------------------------------- ввод
