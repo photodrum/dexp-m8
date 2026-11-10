@@ -1,6 +1,11 @@
 package ru.ogrpfsense.dexpm8.ui
 
+import android.content.Intent
 import android.graphics.Canvas
+import android.net.Uri
+import android.provider.Settings
+import ru.ogrpfsense.dexpm8.core.LibraryDb
+import ru.ogrpfsense.dexpm8.core.Scanner
 
 /**
  * B2 · Библиотека (список) и B11 · Библиотека (сетка). Числа — из design/v5/B02.json и
@@ -36,27 +41,20 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
     /** [kind]: [ST_PROGRESS] с процентом [pct], [ST_NEW] или [ST_READ]. */
     private class Book(val title: String, val author: String, val kind: Int, val pct: Int)
 
-    // Заглушка данных по снимку; настоящий список даст сканер (п. 3).
-    private val books = arrayOf(
-        Book("Анна Каренина", "Лев Толстой · FB2", ST_PROGRESS, 14),
-        Book("Бесы", "Фёдор Достоевский · EPUB", ST_NEW, 0),
-        Book("Война и мир", "Лев Толстой · FB2", ST_PROGRESS, 3),
-        Book("Мастер и Маргарита", "Михаил Булгаков · FB2", ST_PROGRESS, 45),
-        Book("Пикник на обочине", "А. и Б. Стругацкие · EPUB", ST_READ, 100),
-        Book("Солярис", "Станислав Лем · MOBI", ST_PROGRESS, 62)
-    )
+    // Данные — страница из базы ([refresh]); настоящий список даёт сканер.
+    private val db = LibraryDb(act)
+    private val scanner = Scanner(act, db)
 
-    // Заглушка сетки B11 — шесть карточек из design/v5/B11.json в порядке макета (3×2). Это
-    // другие книги, чем в списке B2 («Улисс» вместо «Войны и мира»); авторы — как в карточках
-    // (без формата). Настоящие данные придут на шаге 3.7.
-    private val gridBooks = arrayOf(
-        GridCard("Мастер и Маргарита", "Михаил Булгаков", LibraryGrid.KIND_PROGRESS, 45),
-        GridCard("Улисс", "Джеймс Джойс", LibraryGrid.KIND_PROGRESS, 8),
-        GridCard("Бесы", "Ф. Достоевский", LibraryGrid.KIND_NEW, 0),
-        GridCard("Солярис", "Станислав Лем", LibraryGrid.KIND_PROGRESS, 62),
-        GridCard("Пикник на обочине", "А. и Б. Стругацкие", LibraryGrid.KIND_READ, 100),
-        GridCard("Анна Каренина", "Лев Толстой", LibraryGrid.KIND_PROGRESS, 14)
-    )
+    /** Строки текущей страницы: [rowIds] — `_id`, [books] — для списка B2, [gridBooks] — для B11. */
+    private val rowIds = ArrayList<Long>(6)
+    private val books = ArrayList<Book>(6)
+    private val gridBooks = ArrayList<GridCard>(6)
+
+    private var total = 0                  // книг в текущей выборке (с учётом «Непрочитанные»)
+    private var selectedId = -1L           // последняя открытая книга; -1 — не открывали
+    private var subtitle = ""
+    private var storageOk = act.hasStorage()
+    private var storageAsked = false
 
     private val cards = LibraryGrid(ink, icons)
 
@@ -66,6 +64,11 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
     private val perPage = 6
     private var sortMode = 0
     private var viewMode = 0     // 0 = список, 1 = сетка
+
+    private val storageListener: (Boolean) -> Unit = { ok ->
+        storageOk = ok
+        if (ok) startScan() else redraw()
+    }
 
     private val litTitle = T.literata(ink.res, 600)
 
@@ -82,16 +85,14 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
         const val HIT_SORT = 5
         const val HIT_VIEW = 6
         const val HIT_BOOK = 7
+        const val HIT_EMPTY = -1       // пустое состояние: «разрешить» / «Настройки»
+
+        /** Индекс «Непрочитанные» в [sortLabels]: фильтр по статусу «новая». */
+        const val SORT_NEW_IDX = 3
 
         const val ST_PROGRESS = 0
         const val ST_NEW = 1
         const val ST_READ = 2
-
-        /** Выбранная (нажатая) строка в макете — «Мастер и Маргарита»; рисуется неподвижно. */
-        const val SELECTED = 3
-
-        /** Выбранная (вдавленная) карточка сетки в макете B11 — первая, «Мастер и Маргарита». */
-        const val SELECTED_GRID = 0
 
         const val ROW_Y0 = 569.2f
         const val ROW_STEP = 184f
@@ -125,9 +126,11 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
         hits.add(Hit(HIT_SEARCH, 43.9f, 248.6f, 1316.2f, 102.4f))
         hits.add(Hit(HIT_VIEW, 1155.4f, 122.3f, 204.8f, 87.7f))
         hits.add(Hit(HIT_SORT, SORT_X, 387.6f, 1316.2f, 87.7f))
-        val start = page * perPage
-        for (i in 0 until perPage) {
-            if (start + i >= count()) break
+        if (rowIds.isEmpty()) {
+            // Пустое состояние: зона — вся область под сортировкой.
+            hits.add(Hit(HIT_EMPTY, 41.1f, 516.4f, 1320.8f, 1136.2f))
+        }
+        for (i in 0 until rowIds.size) {
             if (viewMode == 1) {
                 // Сетка: зона карточки — её рамка в макете (414.1×558.5, зазор между рамками 39.3).
                 hits.add(Hit(HIT_BOOK + i + 1, cards.frameX(i), cards.frameY(i),
@@ -144,18 +147,115 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
         header(c)
         searchField(c)
         sortBar(c)
-        if (viewMode == 1) grid(c) else list(c)
+        if (rowIds.isEmpty()) emptyState(c) else if (viewMode == 1) grid(c) else list(c)
         pager(c)
     }
 
-    private fun count() = if (viewMode == 1) gridBooks.size else books.size
+    private fun count() = total
+
+    // --------------------------------------------------------------- данные
+
+    /** Перечитать страницу, число книг и «последнюю открытую» из базы. UI-поток, 6 строк. */
+    private fun refresh() {
+        try {
+            total = db.count(sortMode == SORT_NEW_IDX)
+            val pages = Math.max(1, (total + perPage - 1) / perPage)
+            if (page >= pages) page = pages - 1
+            val rows = db.list(dbSort(), page * perPage, perPage, sortMode == SORT_NEW_IDX)
+            rowIds.clear()
+            books.clear()
+            gridBooks.clear()
+            for (e in rows) {
+                val kind = when (e.status) {
+                    LibraryDb.STATUS_READING -> ST_PROGRESS
+                    LibraryDb.STATUS_READ -> ST_READ
+                    else -> ST_NEW
+                }
+                val pct = if (kind == ST_PROGRESS) e.progress else if (kind == ST_READ) 100 else 0
+                val fmt = e.format.uppercase()
+                val author = e.author ?: "Автор неизвестен"
+                rowIds.add(e.id)
+                books.add(Book(e.title, "$author · $fmt", kind, pct))
+                gridBooks.add(GridCard(e.title, author, kind, pct))
+            }
+            selectedId = db.lastOpened()?.id ?: -1L
+            val all = if (sortMode == SORT_NEW_IDX) db.count() else total
+            subtitle = if (all == 0) "пусто" else "${booksWord(all)} · ${sizeText(db.totalSize())}"
+        } catch (t: Throwable) {
+            Trace.step("library refresh FAIL: ${t.javaClass.simpleName}: ${t.message}")
+        }
+    }
+
+    /** Режим сортировки экрана → порядок базы; «Непрочитанные» — фильтр, порядок по названию. */
+    private fun dbSort() = when (sortMode) {
+        0 -> LibraryDb.SORT_AUTHOR
+        1 -> LibraryDb.SORT_RECENT
+        2 -> LibraryDb.SORT_ADDED
+        else -> LibraryDb.SORT_TITLE
+    }
+
+    private fun booksWord(n: Int): String {
+        val m100 = n % 100
+        val m10 = n % 10
+        val w = if (m100 in 11..14) "книг" else when (m10) {
+            1 -> "книга"
+            2, 3, 4 -> "книги"
+            else -> "книг"
+        }
+        return "$n $w"
+    }
+
+    private fun sizeText(bytes: Long): String {
+        val gb = bytes / 1073741824.0
+        if (gb >= 1.0) return String.format(java.util.Locale("ru"), "%.1f ГБ", gb)
+        val mb = Math.max(1L, Math.round(bytes / 1048576.0))
+        return "$mb МБ"
+    }
+
+    private var attached = false
+
+    private fun startScan() {
+        scanner.start {
+            post {
+                if (attached) {
+                    refresh()
+                    layout(W, H)
+                    redraw()
+                }
+            }
+        }
+    }
+
+    /** Обновить данные и экран после смены страницы, сортировки или вида. */
+    private fun reload() {
+        refresh()
+        layout(W, H)
+        redraw()
+    }
+
+    /** Пустая панель: нет права на чтение памяти либо в `Books` нет книг. */
+    private fun emptyState(c: Canvas) {
+        ink.inset(c, 41.1f, 516.4f, 1320.8f, 1136.2f, T.R_TILE)
+        val title: String
+        val hint: String
+        if (!storageOk) {
+            title = "Нет доступа к памяти"
+            hint = if (storageAsked) "Нажмите, чтобы открыть «Настройки»" else "Нажмите, чтобы разрешить"
+        } else {
+            title = "Книг пока нет"
+            hint = "Положите файлы в папку Books"
+        }
+        ink.textCenter(c, title, 0f, W, T.base(940f, TS_BOOK, 1.25f, true), TS_BOOK, 600, T.G1,
+            litTitle)
+        ink.textCenter(c, hint, 0f, W, T.base(1010f, T.TS_BODY_S, 1.3f), T.TS_BODY_S, 600, T.G4)
+    }
 
     private fun header(c: Canvas) {
         ink.convex(c, 41.1f, 112.3f, 106.9f, 112.4f, R_ROUND_BACK)
         icons.draw(c, "back", 72.2f, 144.3f, 45.7f, 47.6f)
 
         ink.text(c, "Библиотека", 175.5f, T.base(104f, T.TS_TITLE, 1.2f), T.TS_TITLE, 700, T.G1)
-        ink.text(c, "128 книг · 4,2 ГБ", 175.5f, T.base(180f, T.TS_BODY_S, 1.3f),
+        ink.text(c, subtitle, 175.5f, T.base(180f, T.TS_BODY_S, 1.3f),
             T.TS_BODY_S, 600, T.G4)
 
         // Переключатель вида: желоб 204.8×87.7, активный сегмент сдвигается на 95.1.
@@ -197,14 +297,10 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
     private fun list(c: Canvas) {
         ink.convex(c, 41.1f, 516.4f, 1320.8f, 1136.2f, T.R_TILE)
 
-        val start = page * perPage
-        for (i in 0 until perPage) {
-            val idx = start + i
-            if (idx >= books.size) break
-            val b = books[idx]
+        for (i in 0 until books.size) {
+            val b = books[i]
             val y = ROW_Y0 + i * ROW_STEP
-            val sel = idx == SELECTED
-
+            val sel = rowIds[i] == selectedId
             if (sel) ink.inset(c, 65.8f, y - 22f, 1272.4f, 149.9f, T.R_SEGMENT, T.G12)
             cover(c, y, if (sel) T.G14 else T.G12, if (sel) T.G3 else T.G7)
 
@@ -216,7 +312,7 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
             bookState(c, b, y)
 
             // Разделитель — на обложка + 145, кроме выбранной и последней строки.
-            if (!sel && i < perPage - 1 && idx < books.size - 1) {
+            if (!sel && i < books.size - 1) {
                 ink.rect(c, TEXT_X, y + 145f, 1104.2f, 1.8f, T.G11)
             }
         }
@@ -254,11 +350,8 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
     }
 
     private fun grid(c: Canvas) {
-        val start = page * perPage
-        for (i in 0 until perPage) {
-            val idx = start + i
-            if (idx >= gridBooks.size) break
-            cards.draw(c, i, gridBooks[idx], idx == SELECTED_GRID)
+        for (i in 0 until gridBooks.size) {
+            cards.draw(c, i, gridBooks[i], rowIds[i] == selectedId)
         }
     }
 
@@ -286,32 +379,72 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
             if (x >= h.x && x <= h.x + h.w && y >= h.y && y <= h.y + h.h) {
                 when (h.id) {
                     HIT_BACK -> act.pop()
-                    HIT_PREV -> if (page > 0) { page--; layout(W, H); redraw() }
-                    HIT_NEXT -> if (page < totalPages() - 1) { page++; layout(W, H); redraw() }
+                    HIT_PREV -> if (page > 0) { page--; reload() }
+                    HIT_NEXT -> if (page < totalPages() - 1) { page++; reload() }
                     HIT_VIEW -> {
                         viewMode = if (viewMode == 0) 1 else 0
-                        page = 0
                         layout(W, H)    // зоны касания строк и карточек различаются
                         redraw()
                     }
                     HIT_SORT -> {
                         val i = ((x - SORT_X) / SORT_STEP).toInt().coerceIn(0, sortLabels.size - 1)
-                        if (i != sortMode) { sortMode = i; redraw() }
+                        if (i != sortMode) { sortMode = i; page = 0; reload() }
                     }
                     HIT_SEARCH -> { /* экран ввода — следующий этап */ }
-                    else -> if (h.id > HIT_BOOK) act.go(EinkActivity.SCR_READER)
+                    HIT_EMPTY -> if (!storageOk) askStorage()
+                    else -> if (h.id > HIT_BOOK) {
+                        val i = h.id - HIT_BOOK - 1
+                        if (i in 0 until rowIds.size) {
+                            try { db.markOpened(rowIds[i]) } catch (t: Throwable) {
+                                Trace.step("markOpened FAIL: ${t.javaClass.simpleName}: ${t.message}")
+                            }
+                        }
+                        act.go(EinkActivity.SCR_READER)
+                    }
                 }
                 return
             }
         }
     }
 
+    /** Нет права: первый раз — системный диалог, после отказа — «Настройки» приложения. */
+    private fun askStorage() {
+        if (!storageAsked) {
+            storageAsked = true
+            act.requestStorage { ok ->
+                storageOk = ok
+                if (ok) startScan() else redraw()
+            }
+            return
+        }
+        try {
+            act.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.parse("package:" + act.packageName)))
+        } catch (t: Throwable) {
+            Trace.step("settings FAIL: ${t.javaClass.simpleName}: ${t.message}")
+        }
+    }
+
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
+        attached = true
         status.attach()
+        act.addStorageListener(storageListener)
+        storageOk = act.hasStorage()
+        // Выбранная строка и страница — по базе; сканер подтянет изменения в фоне.
+        refresh()
+        layout(W, H)
+        if (storageOk) startScan()
+        else act.requestStorage { ok ->
+            storageOk = ok
+            storageAsked = true
+            if (ok) startScan() else redraw()
+        }
     }
 
     override fun onDetachedFromWindow() {
+        attached = false
+        act.removeStorageListener(storageListener)
         status.detach()
         super.onDetachedFromWindow()
     }

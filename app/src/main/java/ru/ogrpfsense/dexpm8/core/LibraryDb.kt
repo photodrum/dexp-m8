@@ -150,13 +150,23 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         n
     }
 
-    fun count(): Int =
-        readableDatabase.rawQuery("SELECT COUNT(*) FROM books", null).use { c ->
-            if (c.moveToFirst()) c.getInt(0) else 0
+    /** Число книг; [onlyNew] — только «новые» (`STATUS_NEW`). */
+    fun count(onlyNew: Boolean = false): Int =
+        readableDatabase.rawQuery(
+            "SELECT COUNT(*) FROM books" + if (onlyNew) " WHERE status = $STATUS_NEW" else "", null,
+        ).use { c -> if (c.moveToFirst()) c.getInt(0) else 0 }
+
+    /** Суммарный размер файлов всех книг, байт. */
+    fun totalSize(): Long =
+        readableDatabase.rawQuery("SELECT COALESCE(SUM(size), 0) FROM books", null).use { c ->
+            if (c.moveToFirst()) c.getLong(0) else 0L
         }
 
-    /** Страница списка: [offset] с нуля, [limit] строк; [sort] — `SORT_*`. */
-    fun list(sort: Int, offset: Int, limit: Int): ArrayList<Entry> {
+    /**
+     * Страница списка: [offset] с нуля, [limit] строк; [sort] — `SORT_*`;
+     * [onlyNew] — только «новые» (`STATUS_NEW`).
+     */
+    fun list(sort: Int, offset: Int, limit: Int, onlyNew: Boolean = false): ArrayList<Entry> {
         val order = when (sort) {
             SORT_AUTHOR -> "author_sort IS NULL, author_sort, title_sort, _id"
             SORT_RECENT -> "opened DESC, added DESC, _id DESC"
@@ -165,7 +175,9 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         }
         val out = ArrayList<Entry>(limit)
         readableDatabase.rawQuery(
-            "SELECT $COLUMNS FROM books ORDER BY $order LIMIT ? OFFSET ?",
+            "SELECT $COLUMNS FROM books" +
+                (if (onlyNew) " WHERE status = $STATUS_NEW" else "") +
+                " ORDER BY $order LIMIT ? OFFSET ?",
             arrayOf(limit.toString(), offset.toString()),
         ).use { c -> while (c.moveToNext()) out.add(entry(c)) }
         return out
