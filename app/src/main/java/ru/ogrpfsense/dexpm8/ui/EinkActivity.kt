@@ -1,6 +1,8 @@
 package ru.ogrpfsense.dexpm8.ui
 
+import android.Manifest
 import android.app.Activity
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -20,6 +22,14 @@ class EinkActivity : Activity() {
         const val SCR_SETTINGS = 4
         const val SCR_READER = 5
 
+        private const val REQ_STORAGE = 1
+
+        /** Одна группа STORAGE: система показывает один диалог на оба. */
+        private val STORAGE_PERMS = arrayOf(
+            Manifest.permission.READ_EXTERNAL_STORAGE,
+            Manifest.permission.WRITE_EXTERNAL_STORAGE,
+        )
+
         /**
          * Последняя созданная Activity. Нужна обработчику необработанных исключений:
          * он может сработать в момент, когда Activity уже не находится в нормальном
@@ -37,6 +47,12 @@ class EinkActivity : Activity() {
     private val stack = ArrayList<Int>(8)
     private val screens = HashMap<Int, Screen>(8)
     private val ui = Handler(Looper.getMainLooper())
+
+    // Разрешение на чтение памяти. Всё — только в UI-потоке.
+    private var storageOk = false
+    private var storageAsking = false
+    private val storageWaiters = ArrayList<(Boolean) -> Unit>(2)
+    private val storageListeners = ArrayList<(Boolean) -> Unit>(2)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -95,7 +111,74 @@ class EinkActivity : Activity() {
         } catch (t: Throwable) {
             Trace.step("show(SCR_HOME) FAIL: ${t.javaClass.simpleName}: ${t.message}")
             showCrashSafely(t)
+            return
         }
+
+        // Спрашиваем один раз при холодном старте, а не при каждом пересоздании.
+        // После «Больше не спрашивать» система отвечает отказом сразу, без диалога.
+        storageOk = hasStorage()
+        Trace.step("storage: ${if (storageOk) "granted" else "missing"}")
+        if (!storageOk && savedInstanceState == null) requestStorage()
+    }
+
+    // ------------------------------------------------------------ память
+
+    /** Есть ли право читать внешнее хранилище (книги). */
+    fun hasStorage(): Boolean =
+        checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) ==
+            PackageManager.PERMISSION_GRANTED
+
+    /**
+     * Запросить право на чтение памяти. [done] вызывается в UI-потоке с итогом;
+     * если право уже есть — сразу. Повторный вызов, пока диалог открыт, только
+     * добавляет [done] в очередь: второй `requestPermissions` система бы отменила.
+     */
+    fun requestStorage(done: ((Boolean) -> Unit)? = null) {
+        if (hasStorage()) {
+            if (!storageOk) storageChanged(true)
+            done?.invoke(true)
+            return
+        }
+        if (done != null) storageWaiters.add(done)
+        if (storageAsking) return
+        storageAsking = true
+        Trace.step("storage: request")
+        requestPermissions(STORAGE_PERMS, REQ_STORAGE)
+    }
+
+    /**
+     * Подписка на смену права (выдали в диалоге или в «Настройках», пока оболочка
+     * была в фоне). Экран подписывается при показе и отписывается при уходе.
+     */
+    fun addStorageListener(l: (Boolean) -> Unit) {
+        if (l !in storageListeners) storageListeners.add(l)
+    }
+
+    fun removeStorageListener(l: (Boolean) -> Unit) {
+        storageListeners.remove(l)
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != REQ_STORAGE) return
+        storageAsking = false
+        // grantResults пуст, если диалог прервали; верим фактическому состоянию.
+        val ok = hasStorage()
+        Trace.step("storage: ${if (ok) "granted" else "denied"}")
+        if (ok != storageOk) storageChanged(ok)
+        if (storageWaiters.isEmpty()) return
+        val waiters = ArrayList(storageWaiters)
+        storageWaiters.clear()
+        for (w in waiters) w(ok)
+    }
+
+    private fun storageChanged(ok: Boolean) {
+        storageOk = ok
+        for (l in ArrayList(storageListeners)) l(ok)
     }
 
     /** Возвращает true, если стек удалось показать на экране. */
@@ -122,6 +205,16 @@ class EinkActivity : Activity() {
     override fun onResume() {
         super.onResume()
         applyImmersive()
+        // Право могли выдать в «Настройках», пока оболочка была в фоне.
+        // Отзыв там же система делает убийством процесса, так что сюда придёт только выдача.
+        // Пока открыт системный диалог — ответ придёт в onRequestPermissionsResult.
+        if (this::host.isInitialized && !storageAsking) {
+            val ok = hasStorage()
+            if (ok != storageOk) {
+                Trace.step("storage: changed outside -> $ok")
+                storageChanged(ok)
+            }
+        }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -214,6 +307,8 @@ class EinkActivity : Activity() {
 
     override fun onDestroy() {
         ui.removeCallbacksAndMessages(null)
+        storageWaiters.clear()
+        storageListeners.clear()
         screens.clear()
         if (lastInstance === this) lastInstance = null
         super.onDestroy()

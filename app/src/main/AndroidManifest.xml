@@ -5,8 +5,11 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <!-- Нужно только для записи DexpM8-crash.txt в корень внутреннего хранилища:
-         так стек падения можно открыть файловым менеджером книги без компьютера. -->
+    <!-- Чтение книг: сканер /sdcard/Books и MediaStore (core/Scanner.kt).
+         Опасное разрешение — запрашивается во время работы (EinkActivity.requestStorage). -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <!-- Та же группа STORAGE, выдаётся тем же диалогом. Нужно для записи DexpM8-crash.txt
+         в корень внутреннего хранилища: стек падения открывается файловым менеджером книги. -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
 
     <uses-feature

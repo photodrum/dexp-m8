@@ -1,5 +1,39 @@
 # Журнал разработки
 
+## 2026-11-10 — п. 3, шаг 6: разрешение на чтение памяти (`EinkActivity`, манифест)
+
+Манифест: добавлен `READ_EXTERNAL_STORAGE` (был только `WRITE_…` для `DexpM8-crash.txt`).
+`EinkActivity` (Opus, архитектура):
+- `hasStorage()` — есть ли `READ_EXTERNAL_STORAGE`;
+- `requestStorage(done)` — `Activity.requestPermissions` для READ + WRITE (одна группа STORAGE,
+  один диалог); `done(ok)` в UI-потоке, при уже выданном праве — сразу. Пока диалог открыт,
+  повторный вызов только ставит `done` в очередь: второй `requestPermissions` поверх открытого
+  система отменяет;
+- `addStorageListener` / `removeStorageListener` — смена права (диалог или «Настройки», пока
+  оболочка в фоне — проверка в `onResume`, если диалог не открыт);
+- запрос на холодном старте (`savedInstanceState == null`) после показа B1, а не до: под
+  системным диалогом уже нарисован экран, нет белого кадра. Если показ B1 упал — запроса нет.
+- `onRequestPermissionsResult` верит `checkSelfPermission`, а не `grantResults` (пуст, если
+  диалог прервали). В трассе — строки `storage: granted|missing|request|denied`.
+
+Контракт для 3.7 (Sonnet): `LibraryScreen` при показе зовёт `act.requestStorage { ok -> … }`,
+при `ok` — `Scanner.start { r -> post { … } }` (onDone идёт в фоновом потоке); подписка
+`addStorageListener` в `onAttachedToWindow`, отписка в `onDetachedFromWindow` — так экран
+пересканирует, если право выдали в «Настройках». Без права — пустое состояние B46 «нет разрешения»
+(в снимке пока нет; до снимка — строка-заглушка). Список слушателей и очередь чистятся в `onDestroy`.
+
+Грабли: отзыв права в «Настройках» Android убивает процесс — отдельной обработки не нужно, при
+следующем запуске `storageOk` считается заново. После «Больше не спрашивать» `requestPermissions`
+сразу возвращает отказ без диалога — повторно на холодном старте не мучает пользователя, но и
+диалога нет; для этого случая B46 должен вести в «Настройки» приложения (`ACTION_APPLICATION_DETAILS_SETTINGS`)
+— это 3.7 или первый запуск B8. `typecheck.sh` из Cline без `JAVA_HOME`/`PATH` из `BUILD.md`
+падает «java: command not found» и пишет «классов собрано: 0» — выглядит как успех, смотреть число.
+
+Проверки: `typecheck.sh` — 0 `error:`, 42 класса (лямбды — не отдельные классы). Gradle
+`assembleDebug` — `BUILD SUCCESSFUL`; `aapt2 dump permissions` — `READ_EXTERNAL_STORAGE` и
+`WRITE_…` в APK, `targetSdkVersion 27`. **На книге не проверено** — сверка в 3.8: диалог на
+первом запуске, строки `storage:` в `DexpM8-trace.txt`, отказ → повторный запуск.
+
 ## 2026-11-10 — п. 3, шаг 5: сканер книг (`core/Scanner.kt`)
 
 `Scanner(ctx, db: LibraryDb)`: `start(onDone)` — фоновый поток `library-scan` (приоритет MIN, daemon,
