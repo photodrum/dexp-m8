@@ -1,5 +1,44 @@
 # Журнал разработки
 
+## 2026-11-10 — п. 3, шаг 4: база библиотеки (`core/LibraryDb.kt`)
+
+`LibraryDb(ctx) : SQLiteOpenHelper` — файл `library.db`, версия 1, WAL (`enableWriteAheadLogging`
+в `onConfigure`: чтение экрана не ждёт запись сканера). Одна таблица `books`: `_id`, `path`
+(UNIQUE), `size`, `mtime`, `format`, `title`, `title_sort`, `author`, `author_sort`, `series`,
+`series_num`, `lang`, `cover_id`, `progress` (0..100), `status`, `added`, `opened`. Индексы:
+`title_sort`; `author_sort, title_sort`; `opened`.
+
+**Контракт для сканера (3.5):**
+- `stamps(): HashMap<String, Stamp>` — путь → размер и mtime; файл с тем же stamp не разбирать.
+- `upsert(Info)` — нового вставляет (`status` «новая», `added` = сейчас), известному обновляет только
+  метаданные и stamp; `progress`, `status`, `opened`, `added` не трогает. `Info.authorSort` строит
+  сканер: «Фамилия Имя» первого автора (из `Meta.lastName`/`firstName`, иначе `nickname`), `null` — нет.
+  `Info.title` не пустой: при `metaFb2 == null` сканер берёт имя файла без расширения.
+- `remove(paths)` — для пропавших файлов; `inTransaction { … }` — весь проход одной транзакцией
+  (вложенные `upsert`/`remove` присоединяются к ней; без неё fsync на каждую книгу).
+- Статус: `STATUS_NEW` 0 / `STATUS_READING` 1 / `STATUS_READ` 2. **Не совпадает** с `ST_*` в
+  `LibraryScreen` (`ST_PROGRESS` 0, `ST_NEW` 1, `ST_READ` 2): «читается» и «новая» там
+  поменяны местами. Экраны в шаге 3.7 переводят значения явно, а не приводят числа друг к другу.
+
+**Для экранов (3.7):** `list(sort, offset, limit)` — страница, `SORT_TITLE/AUTHOR/RECENT/ADDED`;
+`count()`, `find(path)`, `lastOpened()` (выбранная строка B2/B11; `null` — ничего не открывали),
+`markOpened(id)`, `setProgress(id, pct)` (статус вычисляется: 100 — прочитана, >0 — читается, 0 — новая).
+
+Решения: сортировка по `title_sort`/`author_sort` — ключ `LibraryDb.sortKey` (нижний регистр, «ё» как
+«е»), потому что `ORDER BY` по кириллице в SQLite сравнивает байты, а `COLLATE NOCASE` — только ASCII.
+`author_sort IS NULL` в `ORDER BY` — книги без автора в конце. `onDowngrade` пустой: `adb install -d`
+ставит старый APK поверх нового, и без него `SQLiteOpenHelper` бросает исключение. `onUpgrade` пока
+пустой — миграции появятся вместе с версией 2.
+
+Проверки: `typecheck.sh` — 0 `error:`, 37 классов (было 30; +7 от `LibraryDb`). SQL проверен на хосте
+`sqlite3` в Python (`build/check_db.py`, не в git): схема из исходника создаётся, 3 индекса, список
+столбцов `COLUMNS` — 15, как в `entry()`, все четыре `ORDER BY` выполняются, UNIQUE по `path` держит.
+**Сам класс на устройстве не запускался** — вызывающего кода нет (сканер — 3.5).
+
+Грабли: `SQLiteDatabase.setWriteAheadLoggingEnabled` — с API 16 в `SQLiteOpenHelper`, а не в
+`SQLiteDatabase`; в `onConfigure` нужен `db.enableWriteAheadLogging()` — поймал `typecheck`.
+
+
 ## 2026-11-10 — п. 3, шаг 3: метаданные FB2 в C-ядре (Opus)
 
 Новая функция `book_meta_fb2()` в `book.c` — отдельный проход по `<title-info>`, тело не читается:
