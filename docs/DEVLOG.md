@@ -2,6 +2,18 @@
 
 > Записи до 2026-11-10 (п. 2б и раньше) — в `docs/archive/DEVLOG-2026-11-07_09.md`.
 
+## 2026-11-10 — п. 3, шаг 3.9а: один запрос права и один скан (`LibraryScreen.kt`)
+
+Замечания 5 и 6. Причина дубля: после выдачи права скан запускали и `storageListener`, и колбэк
+`requestStorage` (в `onAttachedToWindow` и в `askStorage`). Изменения:
+- `onAttachedToWindow`: убран `requestStorage`; остался `if (storageOk) startScan()`. Диалог права —
+  только на холодном старте (`EinkActivity.onCreate`) и по тапу на надпись (`askStorage`).
+- `askStorage`: колбэк `requestStorage { ok -> if (!ok) redraw() }`; скан после выдачи запускает
+  только `storageListener` (его зовёт `EinkActivity.storageChanged`).
+- `storageAsked` теперь ставится только в `askStorage`: после отказа на холодном старте первый тап
+  снова покажет системный диалог, второй — «Настройки».
+`tools/typecheck.sh` (с `JAVA_HOME`): 0 ошибок, 45 классов. На книге не проверено (шаг 3.10).
+
 ## 2026-11-10 — чистка документов и решения по замечаниям 3.8
 
 Из `docs/ROADMAP.md` (строки 109–319) и `docs/DEVLOG.md` (записи 2026-11-07…09) текст перенесён

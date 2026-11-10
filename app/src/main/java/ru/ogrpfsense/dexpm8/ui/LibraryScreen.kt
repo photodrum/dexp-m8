@@ -411,10 +411,8 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
     private fun askStorage() {
         if (!storageAsked) {
             storageAsked = true
-            act.requestStorage { ok ->
-                storageOk = ok
-                if (ok) startScan() else redraw()
-            }
+            // Выдача права придёт в storageListener (он и запустит скан); здесь — только отказ.
+            act.requestStorage { ok -> if (!ok) redraw() }
             return
         }
         try {
@@ -434,12 +432,9 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
         // Выбранная строка и страница — по базе; сканер подтянет изменения в фоне.
         refresh()
         layout(W, H)
+        // Диалог права здесь не открываем: он только на холодном старте (EinkActivity)
+        // и по тапу на надпись (askStorage). Скан после выдачи права — через storageListener.
         if (storageOk) startScan()
-        else act.requestStorage { ok ->
-            storageOk = ok
-            storageAsked = true
-            if (ok) startScan() else redraw()
-        }
     }
 
     override fun onDetachedFromWindow() {
