@@ -5,13 +5,13 @@
 
 ## СЛЕДУЮЩИЙ ШАГ
 
-**п. 3, шаг 3.5 — сканер `/sdcard/Books` + MediaStore (новый `core/Scanner.kt`).**
-Контракт: FB2 — `NativeBook.metaFb2(file, buf)` (DEVLOG 2026-11-10, шаг 3), запись — `LibraryDb`
-(`stamps` → `upsert` / `remove` в одном `inTransaction`; DEVLOG 2026-11-10, шаг 4).
-**Модель Act: Sonnet — верни claude-sonnet-5.5 на вкладке Act.**
-Шаги 3.1–3.4 сделаны 2026-11-10 (3.2 — B11 на заглушке, на книге не проверено, сверка в 3.8;
-3.3 — `NativeBook.metaFb2`; 3.4 — `core/LibraryDb.kt`, на книге не запускался).
-Все шаги 3.1–3.8 и модели для Act — в `docs/ROADMAP.md`; **3.6 (`EinkActivity`) — для Opus**.
+**п. 3, шаг 3.6 — разрешение `READ_EXTERNAL_STORAGE` во время работы (`AndroidManifest.xml`,
+`EinkActivity.kt`).** `targetSdk` 27, `Activity.requestPermissions` без AndroidX; без разрешения
+`Scanner.scan()` возвращает `skipped` и ничего не удаляет (DEVLOG 2026-11-10, шаг 5).
+**Модель Act: Opus — поставь claude-opus-5.5 на вкладке Act** (`EinkActivity` — архитектура).
+Шаги 3.1–3.5 сделаны 2026-11-10 (3.2 — B11 на заглушке, на книге не проверено, сверка в 3.8;
+3.3 — `NativeBook.metaFb2`; 3.4 — `core/LibraryDb.kt`; 3.5 — `core/Scanner.kt`; 3.4 и 3.5 на книге
+не запускались). Все шаги 3.1–3.8 и модели для Act — в `docs/ROADMAP.md`.
 
 Вопросы в чат дизайна (полный текст — в ROADMAP):
 - `icon_specs.py --check` падает: размеры `back`, `list`, `grid` на B11 меньше, чем на B2
@@ -48,4 +48,4 @@ DjVuLibre после оболочки. Макеты — Penpot, файл «UI»,
 - E-Ink: только G0–G15, без анимаций, прозрачности, размытия и скролла; дизайн-px, не dp.
 - Макет в Penpot из Cline не менять.
 
-**Последнее обновление:** 2026-11-10 — п. 3, шаг 3.4: база библиотеки `LibraryDb`.
+**Последнее обновление:** 2026-11-10 — п. 3, шаг 3.5: сканер книг `Scanner`.
