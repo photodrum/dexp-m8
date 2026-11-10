@@ -61,7 +61,69 @@ object NativeBook {
         }
     }
 
+    /**
+     * Метаданные FB2 из `<title-info>`, без тела книги. Строки — уже без тегов
+     * и сущностей, windows-1251 перекодирован; null — поля нет.
+     * [authors] — все авторы через ", "; [firstName]…[nickname] — первый автор.
+     * [complete] = false — `</title-info>` не попал в прочитанное начало файла
+     * (огромная аннотация): поля могут быть неполными, можно перечитать больше.
+     */
+    class Meta(
+        val title: String?,
+        val authors: String?,
+        val firstName: String?,
+        val middleName: String?,
+        val lastName: String?,
+        val nickname: String?,
+        val series: String?,
+        val seriesNum: Int,
+        val lang: String?,
+        val coverId: String?,
+        val complete: Boolean,
+    )
+
+    /** Сколько байт с начала файла читать для [metaFb2] (как BOOK_META_HEAD в book.h). */
+    const val META_HEAD = 64 * 1024
+
+    /**
+     * Метаданные по первым [len] байтам [data]: буфер можно переиспользовать
+     * между файлами. null — не FB2, кодировка не поддерживается или нет .so.
+     */
+    fun metaFb2(data: ByteArray, len: Int = data.size): Meta? {
+        if (loadError != null) return null
+        val f = try {
+            metaFb2Native(data, len)
+        } catch (t: Throwable) {
+            null
+        } ?: return null
+        return Meta(
+            title = f[0], authors = f[1],
+            firstName = f[2], middleName = f[3], lastName = f[4], nickname = f[5],
+            series = f[6], seriesNum = f[7]?.toIntOrNull() ?: 0,
+            lang = f[8], coverId = f[9], complete = f[10] == "1",
+        )
+    }
+
+    /** Читает начало файла в [buf] (не меньше [META_HEAD]) и разбирает метаданные. */
+    fun metaFb2(file: java.io.File, buf: ByteArray): Meta? {
+        val n = try {
+            java.io.FileInputStream(file).use { s ->
+                var got = 0
+                while (got < buf.size) {
+                    val r = s.read(buf, got, buf.size - got)
+                    if (r < 0) break
+                    got += r
+                }
+                got
+            }
+        } catch (e: java.io.IOException) {
+            return null
+        }
+        return metaFb2(buf, n)
+    }
+
     private external fun parseFb2Native(data: ByteArray): Array<Block>?
     private external fun titleNative(data: ByteArray): String?
     private external fun errorTextNative(code: Int): String
+    private external fun metaFb2Native(data: ByteArray, len: Int): Array<String?>?
 }

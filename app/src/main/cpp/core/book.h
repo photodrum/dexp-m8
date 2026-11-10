@@ -52,6 +52,35 @@ int book_parse_fb2(book *b, const char *xml, size_t len);
 
 void book_free(book *b);
 
+/*
+ * Метаданные FB2 для библиотеки: только <description><title-info>, тело не
+ * читается — разбор останавливается на </title-info>. Достаточно начала файла
+ * (BOOK_META_HEAD байт): обрезанный документ не ошибка, берётся то, что успели.
+ * Все строки — UTF-8 (windows-1251 перекодируется), сущности раскрыты,
+ * пробелы схлопнуты; NULL — поля нет.
+ */
+#define BOOK_META_HEAD (64 * 1024)
+
+typedef struct {
+    char *title;        /* book-title */
+    char *authors;      /* все <author> через ", ": «Имя Отчество Фамилия» или ник */
+    char *first_name;   /* части первого автора — для сортировки и «Ф. Фамилия» */
+    char *middle_name;
+    char *last_name;
+    char *nickname;
+    char *series;       /* <sequence name> */
+    int series_num;     /* <sequence number>, 0 — нет */
+    char *lang;
+    char *cover_id;     /* id <binary> обложки, без '#' */
+    int complete;       /* 1 — дошли до </title-info>; 0 — начало файла обрезано раньше */
+    int error;          /* 0 = ok, иначе код (book_error_text) */
+} book_meta;
+
+/* 0 — успех (title-info найден, title может быть NULL). */
+int book_meta_fb2(book_meta *m, const char *xml, size_t len);
+
+void book_meta_free(book_meta *m);
+
 /* Диагностика: текст ошибки по коду. */
 const char *book_error_text(int code);
 

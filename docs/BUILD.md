@@ -46,7 +46,7 @@ export PATH=$JAVA_HOME/bin:$PATH
 | Release APK | `... assembleRelease` | `app/build/outputs/apk/release/app-release-unsigned.apk` (145 КБ) |
 | Быстро, без Gradle | `~/projects/dexp-m8/tools/build.sh` | `build/app-debug.apk` — **без `.so`** |
 | Только типы Kotlin | `~/projects/dexp-m8/tools/typecheck.sh` | ~10 сек |
-| Тесты C-ядра | см. ниже | 9 проверок |
+| Тесты C-ядра | см. ниже | 34 проверки |
 
 Первая сборка Gradle ~2 минуты (качает AGP и CMake), повторная ~40–70 сек.
 
@@ -58,10 +58,12 @@ export PATH=$JAVA_HOME/bin:$PATH
 cd ~/projects/dexp-m8/app/src/main/cpp
 gcc -std=gnu99 -O1 -g -Wall -Wextra -Icore -fsanitize=address,undefined \
     -o /tmp/test_core core/book.c test/test_core.c
-cd test && /tmp/test_core testdata/sample.fb2
+cd test && setarch -R /tmp/test_core testdata/sample.fb2
 ```
 
-Ожидаемый вывод: `parse rc=0`, `paras=4 titles=3 poems=2`, `all good`.
+Ожидаемый вывод: `parse rc=0`, `paras=4 titles=3 poems=2`, `meta rc=0 … complete=1`, `all good`.
+`setarch -R` (без ASLR) обязателен: ASan из gcc 12 на ядре хоста (7.0, высокая энтропия mmap)
+примерно в 1 запуске из 7 падает до `main` с `AddressSanitizer:DEADLYSIGNAL` — и на старом коде тоже.
 
 ## Установка на книгу
 

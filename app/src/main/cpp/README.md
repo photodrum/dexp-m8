@@ -21,6 +21,12 @@
 Через JNI это превращается в `Array<NativeBook.Block>` — плоский список,
 который UI листает постранично.
 
+`book_meta_fb2()` — для сканера библиотеки: только `<title-info>` по первым
+`BOOK_META_HEAD` (64 КБ) файла, тело не читается. Заполняет `book_meta`: название,
+все авторы, части имени первого автора, серия и номер, язык, id обложки, `complete`.
+Кодировки UTF-8 / windows-1251 / latin-1; KOI8-R и UTF-16 — ошибка 4.
+В Kotlin — `NativeBook.metaFb2(file, buf): Meta?` (JNI отдаёт `String[11]`).
+
 ## Типы блоков
 
 | Константа | Значение | Источник в FB2 |
@@ -39,12 +45,13 @@
 cd app/src/main/cpp
 gcc -std=gnu99 -O1 -g -Wall -Wextra -Icore -fsanitize=address,undefined \
     -o /tmp/test_core core/book.c test/test_core.c
-cd test && /tmp/test_core testdata/sample.fb2
+cd test && setarch -R /tmp/test_core testdata/sample.fb2   # без ASLR: см. docs/BUILD.md
 ```
 
 Тест проверяет: успешный разбор, извлечение названия и автора, количество абзацев и
-заголовков, валидность UTF-8, раскрытие сущностей, детерминированность повторного разбора.
-Прогоняется под ASan + UBSan.
+заголовков, валидность UTF-8, раскрытие сущностей, детерминированность повторного разбора;
+для `book_meta_fb2` — все поля, кодировки, обрезку файла в любом месте, ошибки, мусор.
+Прогоняется под ASan + UBSan, ожидается 34 `ok` и `all good`.
 
 ## Сборка под Android
 
