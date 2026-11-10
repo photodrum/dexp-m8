@@ -345,7 +345,7 @@ class EinkActivity : Activity() {
             SCR_LIBRARY -> LibraryScreen(this)
             SCR_APPS -> SimpleScreen(this, "Приложения", "9 приложений", "apps")
             SCR_SETTINGS -> SettingsScreen(this)
-            SCR_SET_SCREEN -> stub("Экран")
+            SCR_SET_SCREEN -> SetScreenScreen(this)
             SCR_SET_NET -> stub("Сеть")
             SCR_SET_READ -> stub("Чтение")
             SCR_SET_KEYS -> stub("Кнопки и жесты")
