@@ -25,6 +25,13 @@ class EinkActivity : Activity() {
 
         private const val REQ_STORAGE = 1
 
+        /**
+         * Сколько держать белый кадр после системного диалога. Полное обновление Carta —
+         * ~0,45 с; если снять кадр раньше, контроллер может склеить его со следующим.
+         * Подбирается на книге (шаг 3.10).
+         */
+        private const val CLEAN_MS = 300L
+
         /** Одна группа STORAGE: система показывает один диалог на оба. */
         private val STORAGE_PERMS = arrayOf(
             Manifest.permission.READ_EXTERNAL_STORAGE,
@@ -57,6 +64,11 @@ class EinkActivity : Activity() {
     private var storageAsking = false
     private val storageWaiters = ArrayList<(Boolean) -> Unit>(2)
     private val storageListeners = ArrayList<(Boolean) -> Unit>(2)
+
+    // Очистка E-Ink после системного диалога (см. [cleanRefresh]).
+    private var cleanOnFocus = false
+    private var blank: View? = null
+    private val unblank = Runnable { endClean() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -223,7 +235,46 @@ class EinkActivity : Activity() {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) applyImmersive()
+        if (!hasFocus) {
+            // Фокус ушёл во время запроса права — значит, поверх нас системный диалог.
+            if (storageAsking) cleanOnFocus = true
+            return
+        }
+        applyImmersive()
+        if (cleanOnFocus) {
+            cleanOnFocus = false
+            cleanRefresh()
+        }
+    }
+
+    /**
+     * Полная очистка панели после системного диалога права. Окно под диалогом не
+     * перерисовывается: система возвращает старый кадр, а контроллер E-Ink быстро
+     * обновляет только место диалога — его текст («ОТКЛОНИТЬ») остаётся следом.
+     * Обычный invalidate() даёт тот же кадр и следа не снимает. Поэтому один белый
+     * кадр G15 на весь экран, через [CLEAN_MS] — снова экран: два мигания, только здесь.
+     */
+    private fun cleanRefresh() {
+        if (!this::host.isInitialized) return
+        val v = blank ?: View(this).apply {
+            setBackgroundColor(T.G15)
+            isClickable = true          // касания в белом кадре никуда не уходят
+        }.also { blank = it }
+        ui.removeCallbacks(unblank)
+        if (v.parent == null) {
+            host.addView(v, android.widget.FrameLayout.LayoutParams(
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT
+            ))
+        }
+        Trace.step("eink: clean after dialog")
+        ui.postDelayed(unblank, CLEAN_MS)
+    }
+
+    private fun endClean() {
+        blank?.let { if (it.parent != null) host.removeView(it) }
+        // Экран рисуется заново с текущими данными (право могли выдать, пока висел кадр).
+        for (i in 0 until host.childCount) host.getChildAt(i).invalidate()
     }
 
     /** Системные бары не рисуем и не показываем — при их перерисовке E-Ink мигает. */
