@@ -41,12 +41,17 @@ class SettingsKit(private val ink: Ink, private val icons: Icons) {
 
     // ---------------------------------------------------------------- строки
 
-    fun title(c: Canvas, s: String, top: Float) {
-        ink.text(c, s, 88f, T.base(top, T.TS_ACTION, 1.25f), T.TS_ACTION, 700, T.G1)
+    fun title(c: Canvas, s: String, top: Float, x: Float = 88f) {
+        ink.text(c, s, x, T.base(top, T.TS_ACTION, 1.25f), T.TS_ACTION, 700, T.G1)
     }
 
-    fun desc(c: Canvas, s: String, top: Float) {
-        ink.text(c, s, 88f, T.base(top, T.TS_BODY_S, 1.25f), T.TS_BODY_S, 600, T.G4)
+    fun desc(c: Canvas, s: String, top: Float, x: Float = 88f) {
+        ink.text(c, s, x, T.base(top, T.TS_BODY_S, 1.25f), T.TS_BODY_S, 600, T.G4)
+    }
+
+    /** Круглая клавиша слева у строки (B38, B39): габарит 115×120 вместе с тенью, иконку рисует экран. */
+    fun key(c: Canvas, x: Float, y: Float) {
+        ink.convex(c, x, y, 115f, 120f, 55f)
     }
 
     /** Крупное значение (проценты у ползунка): 38/700 G1, правый край 1316. */
@@ -61,8 +66,8 @@ class SettingsKit(private val ink: Ink, private val icons: Icons) {
         icons.draw(c, "next@11x23.8", 1305f, y, 11f, 23.8f)
     }
 
-    fun divider(c: Canvas, y: Float) {
-        ink.rect(c, 88f, y, 1228f, 2f, T.G11)
+    fun divider(c: Canvas, y: Float, x: Float = 88f, w: Float = 1228f) {
+        ink.rect(c, x, y, w, 2f, T.G11)
     }
 
     private fun right(c: Canvas, s: String, rx: Float, top: Float, fs: Float, fw: Int, color: Int) {
@@ -100,9 +105,9 @@ class SettingsKit(private val ink: Ink, private val icons: Icons) {
         }
     }
 
-    /** Тумблер 139×73 с верхним левым углом в (1177, y). */
-    fun toggle(c: Canvas, y: Float, on: Boolean) {
-        ink.inset(c, 1177f, y, 139f, 73f, 37f, if (on) T.G3 else T.G12)
-        ink.convex(c, if (on) 1247f else 1181f, y + 4f, 63f, 68f, 29f)
+    /** Тумблер 139×73 с верхним левым углом в (x, y); в макете x = 1177, у Wi-Fi 1174, у «Сна» 1206. */
+    fun toggle(c: Canvas, y: Float, on: Boolean, x: Float = 1177f) {
+        ink.inset(c, x, y, 139f, 73f, 37f, if (on) T.G3 else T.G12)
+        ink.convex(c, if (on) x + 70f else x + 4f, y + 4f, 63f, 68f, 29f)
     }
 }

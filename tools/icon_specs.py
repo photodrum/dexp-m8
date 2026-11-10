@@ -49,6 +49,7 @@ PRIMARY = {
     "more": (49.4, 51.4),
     "check": (42, 43.9),
     "moon": (53, 55.2),
+    "font": (53, 55.2),
 }
 NUM_RE = re.compile(r"-?\d+(?:\.\d+)?")
 
