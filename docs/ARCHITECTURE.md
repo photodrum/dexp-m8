@@ -106,7 +106,8 @@ app/src/main/java/ru/ogrpfsense/dexpm8/
         Icons         отрисовка иконок из числовой геометрии
         IconSpecs     геометрия 25 иконок (генерируется tools/icon_specs.py из design/v5/icons)
         HomeScreen    B1 «Главный»
-        LibraryScreen B2 «Библиотека» (список)
+        LibraryScreen B2/B11 «Библиотека» (список и сетка)
+        LibraryGrid   карточка сетки B11 (помощник LibraryScreen)
         SimpleScreen  заглушка раздела для проверки навигации
   core/ NativeBook    JNI-мост к C-ядру, грузится лениво
 app/src/main/cpp/

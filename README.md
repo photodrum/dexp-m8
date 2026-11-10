@@ -69,7 +69,8 @@ app/src/main/java/ru/ogrpfsense/dexpm8/
     Icons.kt          отрисовка иконок из геометрии
     IconSpecs.kt      геометрия 24 иконок, снятая с Penpot
     HomeScreen.kt     B1 · Главный экран
-    LibraryScreen.kt  B2 · Библиотека (список)
+    LibraryScreen.kt  B2/B11 · Библиотека (список и сетка)
+    LibraryGrid.kt    карточка сетки B11 (помощник LibraryScreen)
     SimpleScreen.kt   заглушка раздела для проверки навигации
   core/
     NativeBook.kt     JNI-мост к C-ядру

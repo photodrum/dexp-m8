@@ -3,8 +3,14 @@ package ru.ogrpfsense.dexpm8.ui
 import android.graphics.Canvas
 
 /**
- * B2 · Библиотека (список). Числа — из design/v5/B02.json; базовые линии — по рамкам текста
- * через [T.base] (top + fs·(lh/2 + k)).
+ * B2 · Библиотека (список) и B11 · Библиотека (сетка). Числа — из design/v5/B02.json и
+ * B11.json; базовые линии — по рамкам текста через [T.base] (top + fs·(lh/2 + k)).
+ * Переключатель вида ([viewMode]) выбирает [list] или [grid]; шапка, поиск, сортировка и
+ * пагинация общие (рамки, текст, круги — те же числа). Иконки в B11 другого размера (центры
+ * те же): `back`/`list`/`grid` в шапке 43.9×45.7 против 45.7×47.6 на B2 — рисуем теми же
+ * вызовами, что на B2 (разница 1.8 px в допуске ±2 px; `IconSpecs` не трогали, вопрос чату
+ * дизайна). Поиск, фильтр (38.4×40.2) и пагинация (`back` 54.8×57.1, `next` 53×53) в режиме
+ * сетки рисуются по размерам и позициям B11 ([searchField], [pager]).
  *
  *   статус-бар    [StatusBar]
  *   назад         41.1,112.3     106.9×112.4 (круг 102.4), иконка 72.2,144.3
@@ -18,6 +24,12 @@ import android.graphics.Canvas
  *                 состояние книги — по правому краю 1309; разделитель 204.8, +145, 1104.2×1.8 G11
  *   выбранная     вдавленная плашка 65.8, y−22, 1272.4×149.9, дно G12; обложка G14, корешок G3
  *   страницы      41.1 / 1240.4, 1708.3, 121.6×127.1 (круг 117); номер 44/600, верх рамки 1745.3
+ *
+ * Сетка B11 — числа карточек в [LibraryGrid] (без панели, карточки прямо на фоне G12):
+ *   карточка      рамка 414.1×558.5 (выпуклая, r 43.875), x 41.1 + i·453.4, y 509.1 / 1094.1;
+ *                 лицо = рамка +2.8,+2.8 (409.5×548.4); зоны касания — рамки карточек
+ *   выбранная     «Мастер и Маргарита» — вдавленная на месте лица, неподвижно
+ *   гнездо        лицо +32.9,+29.2, 343.7×288; обложка 314.4×258.8; названия Literata 34 / 36
  */
 class LibraryScreen(act: EinkActivity) : Screen(act) {
 
@@ -33,6 +45,20 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
         Book("Пикник на обочине", "А. и Б. Стругацкие · EPUB", ST_READ, 100),
         Book("Солярис", "Станислав Лем · MOBI", ST_PROGRESS, 62)
     )
+
+    // Заглушка сетки B11 — шесть карточек из design/v5/B11.json в порядке макета (3×2). Это
+    // другие книги, чем в списке B2 («Улисс» вместо «Войны и мира»); авторы — как в карточках
+    // (без формата). Настоящие данные придут на шаге 3.7.
+    private val gridBooks = arrayOf(
+        GridCard("Мастер и Маргарита", "Михаил Булгаков", LibraryGrid.KIND_PROGRESS, 45),
+        GridCard("Улисс", "Джеймс Джойс", LibraryGrid.KIND_PROGRESS, 8),
+        GridCard("Бесы", "Ф. Достоевский", LibraryGrid.KIND_NEW, 0),
+        GridCard("Солярис", "Станислав Лем", LibraryGrid.KIND_PROGRESS, 62),
+        GridCard("Пикник на обочине", "А. и Б. Стругацкие", LibraryGrid.KIND_READ, 100),
+        GridCard("Анна Каренина", "Лев Толстой", LibraryGrid.KIND_PROGRESS, 14)
+    )
+
+    private val cards = LibraryGrid(ink, icons)
 
     private val sortLabels = arrayOf("По автору", "По дате", "Новые", "Непрочитанные")
 
@@ -63,6 +89,9 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
 
         /** Выбранная (нажатая) строка в макете — «Мастер и Маргарита»; рисуется неподвижно. */
         const val SELECTED = 3
+
+        /** Выбранная (вдавленная) карточка сетки в макете B11 — первая, «Мастер и Маргарита». */
+        const val SELECTED_GRID = 0
 
         const val ROW_Y0 = 569.2f
         const val ROW_STEP = 184f
@@ -98,8 +127,14 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
         hits.add(Hit(HIT_SORT, SORT_X, 387.6f, 1316.2f, 87.7f))
         val start = page * perPage
         for (i in 0 until perPage) {
-            if (start + i >= books.size) break
-            hits.add(Hit(HIT_BOOK + i + 1, 95.1f, ROW_Y0 + i * ROW_STEP, 1213.9f, ROW_H))
+            if (start + i >= count()) break
+            if (viewMode == 1) {
+                // Сетка: зона карточки — её рамка в макете (414.1×558.5, зазор между рамками 39.3).
+                hits.add(Hit(HIT_BOOK + i + 1, cards.frameX(i), cards.frameY(i),
+                    LibraryGrid.FRAME_W, LibraryGrid.FRAME_H))
+            } else {
+                hits.add(Hit(HIT_BOOK + i + 1, 95.1f, ROW_Y0 + i * ROW_STEP, 1213.9f, ROW_H))
+            }
         }
     }
 
@@ -109,9 +144,11 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
         header(c)
         searchField(c)
         sortBar(c)
-        list(c)
+        if (viewMode == 1) grid(c) else list(c)
         pager(c)
     }
+
+    private fun count() = if (viewMode == 1) gridBooks.size else books.size
 
     private fun header(c: Canvas) {
         ink.convex(c, 41.1f, 112.3f, 106.9f, 112.4f, R_ROUND_BACK)
@@ -130,11 +167,20 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
 
     private fun searchField(c: Canvas) {
         ink.inset(c, 43.9f, 248.6f, 1316.2f, 102.4f, T.R_TILE)
-        icons.draw(c, "search", 86.8f, 275.1f, 45.7f, 47.6f)
-        ink.text(c, "Название, автор или серия", 153.6f, T.base(274.4f, T.TS_LABEL_L, 1.3f),
-            T.TS_LABEL_L, 500, T.G6)
-        ink.convex(c, 1262.3f, 256.9f, 85f, 90.5f, R_ROUND_FILTER)
-        icons.draw(c, "filter", 1282.4f, 277.9f, 45.7f, 47.6f)
+        if (viewMode == 1) {
+            // B11: поиск 87.8,277.9 43.9×45.7; плейсхолдер 154,275.3; фильтр 1286.1,281.5 38.4×40.2.
+            icons.draw(c, "search", 87.8f, 277.9f, 43.9f, 45.7f)
+            ink.text(c, "Название, автор или серия", 154f, T.base(275.3f, T.TS_LABEL_L, 1.3f),
+                T.TS_LABEL_L, 500, T.G6)
+            ink.convex(c, 1262.3f, 256.9f, 85f, 90.5f, R_ROUND_FILTER)
+            icons.draw(c, "filter", 1286.1f, 281.5f, 38.4f, 40.2f)
+        } else {
+            icons.draw(c, "search", 86.8f, 275.1f, 45.7f, 47.6f)
+            ink.text(c, "Название, автор или серия", 153.6f, T.base(274.4f, T.TS_LABEL_L, 1.3f),
+                T.TS_LABEL_L, 500, T.G6)
+            ink.convex(c, 1262.3f, 256.9f, 85f, 90.5f, R_ROUND_FILTER)
+            icons.draw(c, "filter", 1282.4f, 277.9f, 45.7f, 47.6f)
+        }
     }
 
     private fun sortBar(c: Canvas) {
@@ -207,13 +253,28 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
             size, weight, color)
     }
 
-    private fun totalPages() = Math.max(1, (books.size + perPage - 1) / perPage)
+    private fun grid(c: Canvas) {
+        val start = page * perPage
+        for (i in 0 until perPage) {
+            val idx = start + i
+            if (idx >= gridBooks.size) break
+            cards.draw(c, i, gridBooks[idx], idx == SELECTED_GRID)
+        }
+    }
+
+    private fun totalPages() = Math.max(1, (count() + perPage - 1) / perPage)
 
     private fun pager(c: Canvas) {
         ink.convex(c, 41.1f, 1708.3f, 121.6f, 127.1f, R_ROUND_PAGE)
-        icons.draw(c, "back", 79.5f, 1747.6f, 45.7f, 47.6f)
         ink.convexDark(c, 1240.4f, 1708.3f, 121.6f, 127.1f, R_ROUND_PAGE)
-        icons.draw(c, "next", 1279.7f, 1747.6f, 43.9f, 43.9f)
+        if (viewMode == 1) {
+            // B11: back 75,1743.2 54.8×57.1; next 1275.1,1743 53×53.
+            icons.draw(c, "back", 75f, 1743.2f, 54.8f, 57.1f)
+            icons.draw(c, "next", 1275.1f, 1743f, 53f, 53f)
+        } else {
+            icons.draw(c, "back", 79.5f, 1747.6f, 45.7f, 47.6f)
+            icons.draw(c, "next", 1279.7f, 1747.6f, 43.9f, 43.9f)
+        }
         ink.textCenter(c, "${page + 1} / ${totalPages()}", 0f, W,
             T.base(1745.3f, T.TS_PAGE, 1.2f), T.TS_PAGE, 600, T.G1)
     }
@@ -227,7 +288,12 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
                     HIT_BACK -> act.pop()
                     HIT_PREV -> if (page > 0) { page--; layout(W, H); redraw() }
                     HIT_NEXT -> if (page < totalPages() - 1) { page++; layout(W, H); redraw() }
-                    HIT_VIEW -> { viewMode = if (viewMode == 0) 1 else 0; redraw() }
+                    HIT_VIEW -> {
+                        viewMode = if (viewMode == 0) 1 else 0
+                        page = 0
+                        layout(W, H)    // зоны касания строк и карточек различаются
+                        redraw()
+                    }
                     HIT_SORT -> {
                         val i = ((x - SORT_X) / SORT_STEP).toInt().coerceIn(0, sortLabels.size - 1)
                         if (i != sortMode) { sortMode = i; redraw() }
