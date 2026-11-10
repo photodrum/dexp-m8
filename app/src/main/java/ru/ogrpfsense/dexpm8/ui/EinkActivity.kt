@@ -8,6 +8,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.View
 import android.view.WindowManager
+import ru.ogrpfsense.dexpm8.core.LibraryDb
 
 /**
  * Единственная Activity оболочки. Экраны — это View в стеке, переходы —
@@ -42,6 +43,9 @@ class EinkActivity : Activity() {
 
     lateinit var icons: Icons
         private set
+
+    /** База библиотеки — одна на приложение; экраны берут её отсюда. */
+    val db: LibraryDb by lazy { LibraryDb(this) }
 
     private lateinit var host: android.widget.FrameLayout
     private val stack = ArrayList<Int>(8)

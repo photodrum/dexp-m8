@@ -42,7 +42,7 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
     private class Book(val title: String, val author: String, val kind: Int, val pct: Int)
 
     // Данные — страница из базы ([refresh]); настоящий список даёт сканер.
-    private val db = LibraryDb(act)
+    private val db = act.db
     private val scanner = Scanner(act, db)
 
     /** Строки текущей страницы: [rowIds] — `_id`, [books] — для списка B2, [gridBooks] — для B11. */
