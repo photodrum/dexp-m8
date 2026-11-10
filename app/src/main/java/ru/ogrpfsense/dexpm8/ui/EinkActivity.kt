@@ -23,6 +23,16 @@ class EinkActivity : Activity() {
         const val SCR_SETTINGS = 4
         const val SCR_READER = 5
 
+        // Разделы B13 — заглушки до шагов 4.5/4.6 (экраны B37–B43).
+        const val SCR_SET_SCREEN = 10
+        const val SCR_SET_NET = 11
+        const val SCR_SET_READ = 12
+        const val SCR_SET_KEYS = 13
+        const val SCR_SET_SLEEP = 14
+        const val SCR_SET_LANG = 15
+        const val SCR_SET_STORAGE = 16
+        const val SCR_SET_ABOUT = 17
+
         private const val REQ_STORAGE = 1
 
         /**
@@ -334,13 +344,23 @@ class EinkActivity : Activity() {
             SCR_HOME -> HomeScreen(this)
             SCR_LIBRARY -> LibraryScreen(this)
             SCR_APPS -> SimpleScreen(this, "Приложения", "9 приложений", "apps")
-            SCR_SETTINGS -> SimpleScreen(this, "Настройки", "устройство", "settings")
+            SCR_SETTINGS -> SettingsScreen(this)
+            SCR_SET_SCREEN -> stub("Экран")
+            SCR_SET_NET -> stub("Сеть")
+            SCR_SET_READ -> stub("Чтение")
+            SCR_SET_KEYS -> stub("Кнопки и жесты")
+            SCR_SET_SLEEP -> stub("Сон и питание")
+            SCR_SET_LANG -> stub("Дата, время, язык")
+            SCR_SET_STORAGE -> stub("Память")
+            SCR_SET_ABOUT -> stub("Об устройстве")
             SCR_READER -> SimpleScreen(this, "Чтение", "ядро на C — следующий этап", "library")
             else -> HomeScreen(this)
         }
         screens[screenId] = s
         return s
     }
+
+    private fun stub(title: String) = SimpleScreen(this, title, "Настройки", "settings")
 
     /** Экран отправляет себя на перерисовку. */
     fun repaint(screenId: Int) {

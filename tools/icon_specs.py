@@ -34,6 +34,21 @@ EXTRA = ROOT / "tools" / "icon_specs_extra.txt"
 OUT = ROOT / "app/src/main/java/ru/ogrpfsense/dexpm8/ui/IconSpecs.kt"
 
 TOL = 0.1
+
+# Иконки, которые есть в снимке в нескольких размерах: размер, который остаётся под обычным
+# именем (на него ссылается код). Остальные размеры — `имя@ШxВ`, например `wifi@53x55.2`.
+PRIMARY = {
+    "wifi": (38.4, 40.2),
+    "back": (45.7, 47.6),
+    "list": (45.7, 47.6),
+    "grid": (45.7, 47.6),
+    "search": (45.7, 47.6),
+    "filter": (45.7, 47.6),
+    "next": (43.9, 43.9),
+    "arrowR": (43.9, 43.9),
+    "more": (49.4, 51.4),
+    "check": (42, 43.9),
+}
 NUM_RE = re.compile(r"-?\d+(?:\.\d+)?")
 
 HEADER = '''package ru.ogrpfsense.dexpm8.ui
@@ -176,8 +191,14 @@ def render(p: dict) -> str:
 
 
 def load_snapshot(pal: dict) -> dict:
-    """имя иконки -> (w, h, [примитивы])"""
-    icons = {}
+    """имя иконки -> (w, h, [примитивы]).
+
+    Файлы одного имени и одного размера (с допуском TOL) — цветовые варианты одной формы,
+    их геометрия должна совпасть. Файлы другого размера — другой рисунок (штрих, концы линий
+    зависят от размера), поэтому получают имя `имя@ШxВ`. Обычное имя остаётся у размера из
+    PRIMARY: на него ссылается код экранов.
+    """
+    groups: dict = {}   # имя -> список [w, h, prims, файл]
     for path in sorted(ICONS_DIR.glob("*.json")):
         data = json.loads(path.read_text(encoding="utf-8"))
         name = data["name"].split("/")[-1].strip()
@@ -187,18 +208,36 @@ def load_snapshot(pal: dict) -> dict:
         walk(data["c"], pal, path.name, prims)
         if not prims:
             fail(f"{path.name}: нет видимых слоёв")
-        if name in icons:
-            w, h, old = icons[name]
-            if abs(w - data["w"]) > TOL or abs(h - data["h"]) > TOL:
-                fail(f"{path.name}: размер {data['w']}x{data['h']} != {w}x{h}")
-            if len(old) != len(prims):
-                fail(f"{path.name}: число слоёв {len(prims)} != {len(old)}")
-            for i, (a, b) in enumerate(zip(old, prims)):
-                why = same(a, b)
-                if why:
-                    fail(f"{path.name}: вариант отличается от первого больше {TOL}, слой {i}: {why}")
-        else:
-            icons[name] = (data["w"], data["h"], prims)
+        found = None
+        for g in groups.setdefault(name, []):
+            if abs(g[0] - data["w"]) <= TOL and abs(g[1] - data["h"]) <= TOL:
+                found = g
+                break
+        if found is None:
+            groups[name].append([data["w"], data["h"], prims, path.name])
+            continue
+        old = found[2]
+        if len(old) != len(prims):
+            fail(f"{path.name}: число слоёв {len(prims)} != {len(old)}")
+        for i, (a, b) in enumerate(zip(old, prims)):
+            why = same(a, b)
+            if why:
+                fail(f"{path.name}: вариант отличается от первого больше {TOL}, слой {i}: {why}")
+
+    icons = {}
+    for name, sizes in groups.items():
+        if len(sizes) == 1:
+            icons[name] = (sizes[0][0], sizes[0][1], sizes[0][2])
+            continue
+        pin = PRIMARY.get(name)
+        if pin is None:
+            fail(f"{name}: в снимке несколько размеров, а в PRIMARY нет основного: "
+                 + ", ".join(f"{fmt(g[0])}x{fmt(g[1])}" for g in sizes))
+        if not any(abs(g[0] - pin[0]) <= TOL and abs(g[1] - pin[1]) <= TOL for g in sizes):
+            fail(f"{name}: основного размера {pin[0]}x{pin[1]} из PRIMARY нет в снимке")
+        for w, h, prims, _ in sizes:
+            main = abs(w - pin[0]) <= TOL and abs(h - pin[1]) <= TOL
+            icons[name if main else f"{name}@{fmt(w)}x{fmt(h)}"] = (w, h, prims)
     return icons
 
 
