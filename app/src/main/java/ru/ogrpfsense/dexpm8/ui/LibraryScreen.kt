@@ -67,7 +67,7 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
 
     private val storageListener: (Boolean) -> Unit = { ok ->
         storageOk = ok
-        if (ok) startScan() else redraw()
+        if (ok) startScan(true) else redraw()
     }
 
     private val litTitle = T.literata(ink.res, 600)
@@ -214,8 +214,9 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
 
     private var attached = false
 
-    private fun startScan() {
-        scanner.start {
+    /** [force] — после выдачи права: пауза не действует. */
+    private fun startScan(force: Boolean = false) {
+        val onDone: (Scanner.Result) -> Unit = {
             post {
                 if (attached) {
                     refresh()
@@ -224,6 +225,9 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
                 }
             }
         }
+        val started = if (force) scanner.start(onDone) else scanner.startIfDue(onDone)
+        // Пустая база: показать «Идёт поиск книг…» (один redraw в начале прохода).
+        if (started && rowIds.isEmpty()) redraw()
     }
 
     /** Обновить данные и экран после смены страницы, сортировки или вида. */
@@ -241,6 +245,9 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
         if (!storageOk) {
             title = "Нет доступа к памяти"
             hint = if (storageAsked) "Нажмите, чтобы открыть «Настройки»" else "Нажмите, чтобы разрешить"
+        } else if (scanner.isRunning) {
+            title = "Идёт поиск книг…"
+            hint = "Это займёт несколько секунд"
         } else {
             title = "Книг пока нет"
             hint = "Положите файлы в папку Books"

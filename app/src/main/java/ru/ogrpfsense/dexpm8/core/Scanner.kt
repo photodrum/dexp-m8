@@ -43,6 +43,28 @@ class Scanner(private val ctx: Context, private val db: LibraryDb) {
 
     val isRunning: Boolean get() = running.get()
 
+    /** Конец последнего выполненного прохода (`elapsedRealtime`), 0 — проходов не было. */
+    @Volatile private var lastDone = 0L
+
+    /** mtime папки `Books` на момент последнего прохода. */
+    @Volatile private var lastBooksMtime = 0L
+
+    /**
+     * Проход не чаще раза в [PAUSE_MS]; раньше — только если изменился mtime папки `Books`.
+     * Вложенные папки mtime родителя не меняют, поэтому основная защита — пауза.
+     * false — пауза не вышла или проход уже идёт.
+     */
+    fun startIfDue(onDone: ((Result) -> Unit)? = null): Boolean {
+        val done = lastDone
+        if (done != 0L && SystemClock.elapsedRealtime() - done < PAUSE_MS &&
+            booksMtime() == lastBooksMtime
+        ) return false
+        return start(onDone)
+    }
+
+    private fun booksMtime(): Long =
+        File(Environment.getExternalStorageDirectory(), "Books").lastModified()
+
     /**
      * Проход в фоновом потоке. [onDone] вызывается на этом же потоке (экран переносит
      * результат в UI сам). false — предыдущий проход ещё идёт.
@@ -116,7 +138,9 @@ class Scanner(private val ctx: Context, private val db: LibraryDb) {
             if (gone.isNotEmpty()) removed = db.remove(gone)
         }
 
-        val r = Result(null, found.size, added, updated, removed, failed, SystemClock.elapsedRealtime() - t0)
+        lastBooksMtime = booksMtime()
+        lastDone = SystemClock.elapsedRealtime()
+        val r = Result(null, found.size, added, updated, removed, failed, lastDone - t0)
         Log.i(TAG, "scan: найдено ${r.seen}, новых ${r.added}, обновлено ${r.updated}, " +
             "удалено ${r.removed}, ошибок ${r.failed}, ${r.ms} мс")
         return r
@@ -205,6 +229,9 @@ class Scanner(private val ctx: Context, private val db: LibraryDb) {
     companion object {
         private const val TAG = "DexpM8"
         private const val MAX_DEPTH = 12
+
+        /** Минимальный промежуток между проходами из [startIfDue]. */
+        private const val PAUSE_MS = 10L * 60L * 1000L
 
         /** Форматы из `READER_SPEC`: CREngine, MuPDF, DjVuLibre. */
         private val EXTS = setOf(
