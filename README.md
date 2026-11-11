@@ -3,8 +3,8 @@
 Полная замена родного софта книги DEXP M8 Prudentia: лаунчер, библиотека,
 читалка, плеер. Дизайн — страница **v5** файла «UI» в Penpot (76 бордов) и спецификация
 на странице «v5 дизайн-система». Код — Kotlin без AndroidX и Compose, разбор метаданных
-книг — C99 через JNI; страницы книг (план) — CREngine, MuPDF, DjVuLibre.
-Лицензия — AGPL-3.0.
+книг — C99 через JNI; страницы книг (план) — CREngine, DjVuLibre (PDF в читалке не поддерживается).
+Лицензия — GPL-2.0-only.
 
 ## Документация
 
@@ -112,5 +112,6 @@ cd test && /tmp/test_core testdata/sample.fb2
 
 ## Лицензия
 
-GNU Affero General Public License v3.0 (AGPL-3.0). Шрифты Manrope и Literata — SIL OFL 1.1
+GNU General Public License v2.0 (GPL-2.0-only; файл `LICENSE` — шаг 7.3в, ещё не создан).
+Причина: CREngine распространяется под GPL-2.0 без «or later». Шрифты Manrope и Literata — SIL OFL 1.1
 (`tools/fonts/OFL-*.txt`).

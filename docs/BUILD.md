@@ -85,7 +85,7 @@ cp /tmp/ljt-gen/{jconfig,jconfigint,jversion}.h app/src/main/cpp/engines/cre/jpe
 ```
 
 **Движки читалки (с п. 7)** — git-подмодули в `third_party/` (`shallow = true`, ~250 МБ):
-crengine, djvulibre, mupdf (тег 1.28.6), xxhash, fribidi, libunibreak, utf8proc, libjpeg-turbo
+crengine, djvulibre, mupdf (тег 1.28.6; **будет удалён в 7.3б**, решение 2026-11-11: без PDF), xxhash, fribidi, libunibreak, utf8proc, libjpeg-turbo
 (тег 3.2.1). После клона (или после `git pull`, если добавился подмодуль):
 
 ```bash

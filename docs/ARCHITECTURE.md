@@ -69,11 +69,13 @@ Manrope для интерфейса (400/600/700/800), Literata для текс�
 | Форматы | Движок |
 |---|---|
 | FB2, EPUB, MOBI, TXT, RTF, DOC | CREngine (`koreader/crengine`, JNI по образцу CoolReader `cr3engine`) |
-| PDF, CBZ | MuPDF |
 | DjVu | DjVuLibre |
 
+PDF и CBZ в читалке не поддерживаются (решение 2026-11-11: MuPDF — AGPL-3.0, несовместим с GPL-2.0 CREngine).
+В коде MuPDF пока есть как проба R0, удаляется в шаге 7.3б.
+
 ```
-Экраны читалки ─► ReaderEngine ─► CrEngine | MuPdfEngine | DjvuEngine ─► JNI ─► движки (C/C++)
+Экраны читалки ─► ReaderEngine ─► CrEngine | DjvuEngine ─► JNI ─► движки (C/C++)
 Сканер библиотеки ─► NativeBook / book.c (FB2) + метаданные движков ─► SQLiteDatabase
 ```
 
@@ -90,7 +92,7 @@ Manrope для интерфейса (400/600/700/800), Literata для текс�
 `abiFilters` только `armeabi-v7a`; Literata для текста книги — полный шрифт, не subset.
 Бюджет памяти: оболочка ≤ 35 МБ PSS (сейчас 18), чтение ≤ 60 МБ.
 
-Лицензия проекта — AGPL-3.0 (совместима с CREngine, DjVuLibre и MuPDF).
+Лицензия проекта — GPL-2.0-only (совместима с CREngine и DjVuLibre; MuPDF с ней несовместим).
 
 ## Структура кода
 
