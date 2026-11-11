@@ -2,6 +2,34 @@
 
 > Старые записи — `docs/archive/`: до 2026-11-10 — `DEVLOG-2026-11-07_09.md`, `DEVLOG-2026-11-10-p3.md`, `DEVLOG-2026-11-10-p3_9-p4_2.md`; п. 4 (4.3–4.7) и проверки 2026-11-10 — 11 — `DEVLOG-2026-11-10_11.md`; п. 5 (5.1–5.2), замечания 2026-11-11, полный п. 6.0 — `DEVLOG-2026-11-11-p5_6_0.md`; хвосты п. 5, автор из имени файла, п. 6.0–6.1 — `DEVLOG-2026-11-11-p5tail_6_1.md`.
 
+## 2026-11-11 — п. 7, шаг 7.1: три `.so` движков под `armeabi-v7a` (Opus)
+
+Собрано по «Плану 7.1» (ROADMAP), код оболочки не тронут. Флаги подбирались прямой сборкой CMake + NDK (`/tmp/r0-cmake.sh`, вне репозитория: toolchain NDK 26.3, `armeabi-v7a`, `android-27`, `c++_static`, Ninja из SDK), потом — Gradle.
+
+**Шаг 1.** `app/build.gradle.kts`: `abiFilters` — только `armeabi-v7a` (release тоже, блок `arm64-v8a` удалён), `ANDROID_STL=c++_static`, `-std=c99` убран из общих `cFlags`. `CMakeLists.txt`: `project(... C CXX)`, C99 — свойством цели `dexp_core`, а не глобально.
+
+**Шаги 2–5.** Файлы в `app/src/main/cpp/engines/`; `probe.h` — общие пробные входы `dexp_{mupdf,djvu,cre}_probe(path, w, h, gray)`: первая страница по центру буфера w×h, 8 бит серый, stride = w, фон 255; коды `DEXP_PROBE_*`. Общие флаги линковки — `DEXP_ENGINE_LDFLAGS` (`--gc-sections`, `--exclude-libs,ALL`, `max-page-size=16384`). Во всех библиотеках движков `-DNDEBUG` даже в Debug (antiword без DEBUG/NDEBUG не собирается; замеры 7.3 — как в release).
+
+| `.so` | Что внутри | Файлы | Размер (strip, прямая сборка) |
+|---|---|---|---|
+| `libdexp_mupdf.so` | `source/{fitz,pdf,cbz}`, шрифты URW из `generated/` (уже в подмодуле), freetype slim, libjpeg, jbig2dec, openjpeg, lcms2mt; HTML-движок, JS, XPS, SVG, brotli, barcode, docx/odt/OCR выключены | `mupdf.cmake`, `mupdf_probe.c` | 3,4 МБ |
+| `libdexp_djvu.so` | `libdjvu/*.cpp` по `Makefile.am` + `ddjvuapi`; без libjpeg (`NEED_JPEG_DECODER` не задан), без iconv (в bionic с API 28) | `djvu.cmake`, `djvu/config.h`, `djvu_probe.cpp` | 0,55 МБ |
+| `libdexp_cre.so` | crengine по `CRE_SRCS` KOReader + `qimagescale`; freetype полный и harfbuzz 13 (исходники MuPDF, своя сборка без `fz_hb_*`), libpng 1.6.6, fribidi, libunibreak, utf8proc, xxhash, antiword; CHM, MathML, SVG, WebP, zstd, md4c выключены | `cre.cmake`, `cre/crsetup.h`, `cre/fribidi/*`, `cre_probe.cpp` | 3,1 МБ |
+
+У всех трёх: в `NEEDED` только системные `libz` (не у djvu), `libm`, `liblog`, `libdl`, `libc`; наружу экспортирован один символ — `dexp_*_probe` (`llvm-readelf --dyn-syms`). Предупреждений компилятора в наших файлах нет (в сторонних подавлены `-w`).
+
+**Шаг 6, Gradle `assembleDebug`:** собирается, `app-debug.apk` **8,2 МБ** (было 1,2 МБ). В APK `.so` лежат без сжатия (`Stored`, так AGP делает при `minSdk ≥ 23`): `libdexp_mupdf.so` 3 427 372, `libdexp_cre.so` 3 062 048, `libdexp_djvu.so` 547 480, `libdexp_core.so` 13 144 байт — те же размеры, что у прямой сборки после strip. Экспорт `libdexp_core.so` не изменился (4 функции `NativeBook`). Первая нативная сборка ~600 файлов — 3–4 мин, повторная с изменённым `crsetup.h` — ~1 мин. Release не собирался (подписи нет, п. 19). На книге `.so` ещё не грузились — это 7.2.
+
+**Решения и грабли:**
+
+- **MuPDF:** `make generate` не нужен — шрифты URW уже лежат в `generated/resources/fonts/urw/*.c`. Все `source/{fitz,pdf,cbz}/*.c` можно брать целиком: код HTML, brotli, gumbo, harfbuzz закрыт `#if FZ_ENABLE_*`. Кэш `fz_context` в пробе — 32 МБ (по умолчанию 256 МБ — много для 1 ГБ).
+- **djvulibre:** `config.h` написан по `configure.ac` (AC_CHECK_* и AH_BOTTOM); собралось с первого раза. `HAVE_PTHREAD` обязателен (`GThreads.h` без потоков — `#error`).
+- **fribidi:** meson нет — `tools/gen_fribidi.sh` собирает хостовым `gcc` генераторы `gen.tab/` и пишет `*.tab.i`, `fribidi-unicode-version.h`, `fribidi-config.h` в `engines/cre/fribidi/` (коммитятся, ~0,6 МБ текста). Перезапускать после обновления подмодуля.
+- **crengine, `android/jni/Android.mk` устарел** (нет `textlang`, `mdfmt`, `docxfmt`, `lvopc`…) — список взят из корневого `CMakeLists.txt` KOReader.
+- **crengine + JPEG: открытый вопрос.** `lvimg.cpp` использует `JCS_EXT_BGRX` — это расширение **libjpeg-turbo**; в `crengine/thirdparty/libjpeg` лежит IJG 6b, у MuPDF — IJG 9. libjpeg-turbo нет ни в одном подмодуле. Пока `USE_LIBJPEG 0` — JPEG-картинки в FB2/EPUB не покажутся (обложки!). Варианты — ROADMAP, «Открытые вопросы (п. 7)».
+- **libpng 1.6.6 на ARM:** ждёт `png_init_filter_functions_neon` из `arm/*.c` — выключено `PNG_ARM_NEON_OPT=0`.
+- **Шрифты в пробе crengine** — все `.ttf/.otf` из `/system/fonts`, гарнитура по умолчанию «Noto Serif». Есть ли она на прошивке книги — проверить в 7.2 (если нет, crengine возьмёт первую зарегистрированную).
+
 ## 2026-11-11 — п. 7, шаг 7.0: подмодули движков и проверка NDK (Opus)
 
 Подмодули в `third_party/` (`.gitmodules`, у всех `shallow = true`), код оболочки не тронут:

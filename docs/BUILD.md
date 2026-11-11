@@ -42,13 +42,33 @@ export PATH=$JAVA_HOME/bin:$PATH
 
 | Что | Команда | Результат |
 |---|---|---|
-| Debug APK | `~/.local/gradle-8.7/bin/gradle -p ~/projects/dexp-m8 assembleDebug` | `app/build/outputs/apk/debug/app-debug.apk` (965 КБ) |
+| Debug APK | `~/.local/gradle-8.7/bin/gradle -p ~/projects/dexp-m8 assembleDebug` | `app/build/outputs/apk/debug/app-debug.apk` (8,2 МБ с тремя `.so` движков, 7.1) |
 | Release APK | `... assembleRelease` | `app/build/outputs/apk/release/app-release-unsigned.apk` (145 КБ) |
 | Быстро, без Gradle | `~/projects/dexp-m8/tools/build.sh` | `build/app-debug.apk` (~0,9 МБ) — **без `.so`**; Kotlin stdlib в dex, подпись как у Gradle (ставится поверх без удаления) |
 | Только типы Kotlin | `~/projects/dexp-m8/tools/typecheck.sh` | ~10 сек |
 | Тесты C-ядра | см. ниже | 34 проверки |
 
-Первая сборка Gradle ~2 минуты (качает AGP и CMake), повторная ~40–70 сек.
+Первая сборка Gradle ~2 минуты (качает AGP и CMake), повторная ~40–70 сек. С движками (7.1)
+первая нативная сборка — ещё 3–4 мин (~600 файлов), потом инкрементально.
+
+**Нативная часть без Gradle** — для подбора флагов движков быстрее (тот же toolchain, что у AGP):
+
+```bash
+SDK=$HOME/.local/android-sdk; CM=$SDK/cmake/3.22.1/bin
+$CM/cmake -S ~/projects/dexp-m8/app/src/main/cpp -B /tmp/r0-build -G Ninja \
+  -DCMAKE_MAKE_PROGRAM=$CM/ninja \
+  -DCMAKE_TOOLCHAIN_FILE=$SDK/ndk/26.3.11579264/build/cmake/android.toolchain.cmake \
+  -DANDROID_ABI=armeabi-v7a -DANDROID_PLATFORM=android-27 -DANDROID_STL=c++_static \
+  -DCMAKE_BUILD_TYPE=Release
+$CM/ninja -C /tmp/r0-build -k 0 dexp_cre > /tmp/x.log 2>&1   # или dexp_mupdf, dexp_djvu
+```
+
+Проверка `.so`: `llvm-readelf -d` (в `NEEDED` только системные), `llvm-readelf --dyn-syms -W`
+(наружу — только `dexp_*_probe` / `Java_*`), размер после `llvm-strip`. `llvm-*` лежат в
+`$SDK/ndk/26.3.11579264/toolchains/llvm/prebuilt/linux-x86_64/bin`.
+
+**Таблицы fribidi** (`app/src/main/cpp/engines/cre/fribidi/`) генерирует `tools/gen_fribidi.sh`
+хостовым `gcc` (meson не нужен). Результат в git; перезапускать только после обновления подмодуля.
 
 **Движки читалки (с п. 7)** — git-подмодули в `third_party/` (`shallow = true`, ~250 МБ):
 crengine, djvulibre, mupdf (тег 1.28.6), xxhash, fribidi, libunibreak, utf8proc. После клона:
@@ -138,6 +158,9 @@ GIT_ASKPASS=$PWD/tools/git-askpass.sh GIT_TERMINAL_PROMPT=0 \
 | Gradle: `'-' is not a valid file-based resource name` | в `res/` только `a-z0-9_` |
 | `UnsatisfiedLinkError` в release | R8 выкинул `NativeBook` — нужен `-keep class ... { *; }` |
 | `aapt2: <manifest> must have a 'package' attribute` | AGP 8 вырезает `package`; в `build.sh` подставляем `sed` |
+| antiword: `Exactly one of the DEBUG and NDEBUG flags MUST be set` | Gradle Debug не задаёт `NDEBUG`; в `engines/*.cmake` у библиотек движков `-DNDEBUG` всегда |
+| crengine `lvimg.cpp`: `undeclared identifier 'JCS_EXT_BGRX'` | нужен libjpeg-turbo, а не IJG; пока `USE_LIBJPEG 0` в `engines/cre/crsetup.h` (ROADMAP, вопросы п. 7) |
+| ld: `undefined symbol: png_init_filter_functions_neon` | libpng 1.6 на ARM ждёт `arm/*.c`; задано `PNG_ARM_NEON_OPT=0` |
 | `apksigner` / `d8`: не найден `java` | `export PATH=$JAVA_HOME/bin:$PATH` |
 | Терминал Cline зависает на длинном heredoc | писать скрипт файлом (редактором), затем запускать |
 | `adb: command not found` в Linux | `export PATH=$HOME/.local/android-sdk/platform-tools:$PATH` |

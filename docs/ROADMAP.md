@@ -56,12 +56,12 @@ R0, проба движков (`docs/READER_SPEC.md`, R0). Основной ко
 | Шаг | Что | Модель Act |
 |---|---|---|
 | 7.0 ✅ | Подмодули `koreader/crengine`, MuPDF, DjVuLibre; проверка NDK 26.3 + CMake (2026-11-11, DEVLOG) | Opus |
-| 7.1 | Сборка `.so` с зависимостями под `armeabi-v7a` | Opus |
+| 7.1 ✅ | Три `.so` (`mupdf`, `djvu`, `cre`) под `armeabi-v7a`, APK 8,2 МБ (2026-11-11, DEVLOG). Хвост: JPEG в crengine выключен — вопрос ниже | Opus |
 | 7.2 | JNI и отладочный экран: первая страница в `Bitmap` | Opus |
 | 7.3 | Замеры на книге, запись в DEVLOG | Sonnet |
 | 7.4 | Решение «идём / не идём» | вместе |
 
-### План 7.1 (уточнён 2026-11-11, до начала работы)
+### План 7.1 (уточнён 2026-11-11, выполнен 2026-11-11 — итоги и отступления в DEVLOG «шаг 7.1»)
 
 **Решение: три отдельные `.so`, у каждой зависимости вшиты статически и скрыты** (`-fvisibility=hidden`, `--exclude-libs,ALL`). Заменяет «общие freetype/harfbuzz» из DEVLOG 7.0. Причины:
 
@@ -74,7 +74,7 @@ R0, проба движков (`docs/READER_SPEC.md`, R0). Основной ко
 | 1 | `abiFilters` = только `armeabi-v7a` в debug и release; `ANDROID_STL=c++_static`; `-std=c99` убрать из общих `cFlags` (оставить в `dexp_core`, там уже `CMAKE_C_STANDARD 99`) | `app/build.gradle.kts`, `app/src/main/cpp/CMakeLists.txt` |
 | 2 | `libdexp_mupdf.so`: `source/{fitz,pdf,cbz}`, шрифты `generated/resources/fonts/urw/*.c` (уже в репозитории MuPDF, `make generate` не нужен); `FZ_ENABLE_{JS,HTML,HTML_ENGINE,EPUB,FB2,MOBI,OFFICE,TXT,MD,XPS,SVG,BROTLI,BARCODE,DOCX_OUTPUT,ODT_OUTPUT,OCR_OUTPUT,HYPHEN}=0`, `TOFU_CJK`, `TOFU_NOTO`, `TOFU_SIL`, `AA_BITS=8`. Внутри: freetype (slim), libjpeg (`scripts/libjpeg`), jbig2dec, openjpeg, lcms2 (или `FZ_ENABLE_ICC=0`). Флаги и списки — по `Makelists` и `platform/java/Android.mk` | `app/src/main/cpp/engines/mupdf.cmake` |
 | 3 | `libdexp_djvu.so`: `libdjvu/*.cpp` + `ddjvuapi`; свой `config.h` вместо autotools (`HAVE_STDINT_H`, `HAVE_PTHREAD`, `HAVE_NAMESPACES` и т.п. по `configure.ac`) | `engines/djvu.cmake`, `engines/djvu/config.h` |
-| 4 | `libdexp_cre.so`: свой список `crengine/src/*.cpp` (образец — `crengine/android/jni/Android.mk`, без `crgui`, `cri18n`, `crtest`); свой `crsetup.h` вместо `crsetup.h.cmake` (`CR_USE_THREADS 0`, `CHM 0`, `ANTIWORD 1`, `LUNASVG/NANOSVG/WEBP/ZSTD/MATHML 0`). Внутри: freetype полный (исходники из `mupdf/thirdparty/freetype`), harfbuzz (исходники MuPDF, без `fz_hb_*`), libpng и libjpeg из `crengine/thirdparty`, libunibreak, utf8proc, fribidi (свой `config.h`), xxhash, antiword | `engines/cre.cmake`, `engines/cre/*.h` |
+| 4 | `libdexp_cre.so`: свой список `crengine/src/*.cpp` (образец — `crengine/android/jni/Android.mk`, без `crgui`, `cri18n`, `crtest`); свой `crsetup.h` вместо `crsetup.h.cmake` (`CR_USE_THREADS 0`, `CHM 0`, `ANTIWORD 1`, `LUNASVG/NANOSVG/WEBP/ZSTD/MATHML 0`). Внутри: freetype полный (исходники из `mupdf/thirdparty/freetype`), harfbuzz (исходники MuPDF, без `fz_hb_*`), libpng и libjpeg из `crengine/thirdparty`, libunibreak, utf8proc, fribidi (свой `config.h`), xxhash, antiword. **Факт:** список взят из корневого `CMakeLists.txt` (Android.mk устарел); libjpeg не подошёл (нужен turbo) — `USE_LIBJPEG 0` | `engines/cre.cmake`, `engines/cre/*.h` |
 | 5 | В каждой `.so` — экспортируемая C-функция «открыть файл → первая страница в 8-битный серый буфер», чтобы `--gc-sections` не выкинул движок. JNI и экран — 7.2 | `engines/*_probe.c(pp)` |
 | 6 | `assembleDebug`, размер APK и каждой `.so` (`llvm-readelf`, экспорт), DEVLOG/BUILD/ROADMAP/CONTEXT, коммит | `docs/*` |
 
@@ -96,6 +96,7 @@ R0, проба движков (`docs/READER_SPEC.md`, R0). Основной ко
 
 ### Открытые вопросы к пользователю (п. 7)
 
+- **crengine без JPEG (7.1).** `lvimg.cpp` написан под libjpeg-turbo (`JCS_EXT_BGRX`), у нас только IJG (crengine 6b, MuPDF 9). Сейчас `USE_LIBJPEG 0`: JPEG-картинки и обложки в FB2/EPUB не рисуются, PSS в 7.3 будет занижен. Варианты: **(а)** подмодуль libjpeg-turbo 3.x, собрать его CMake без SIMD (+~0,2 МБ к `libdexp_cre.so`) — предлагаю этот, делать перед 7.2 (Opus); (б) патч `lvimg.cpp` под `JCS_RGB` с переводом в BGRA — правка подмодуля, держать патч у себя; (в) оставить на R0 без JPEG и решить в R1.
 - **Лицензия crengine:** в README — «GPL version 2», «or later» есть только в 3 файлах из 115. GPL-2.0-only несовместим с AGPL-3.0 (MuPDF) в одном APK. Для R0 не блокер; решить до релиза читалки (DEVLOG 7.0).
 - ✅ **Решено 2026-11-11:** на время R0 debug собирается только под `armeabi-v7a`; release — тоже `armeabi-v7a` (прошивка 32-битная, как в `ARCHITECTURE.md`). Правка `abiFilters` в `app/build.gradle.kts` — первым делом в 7.1.
 
