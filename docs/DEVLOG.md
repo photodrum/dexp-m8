@@ -2,6 +2,28 @@
 
 > Старые записи — `docs/archive/`: до 2026-11-10 — `DEVLOG-2026-11-07_09.md`, `DEVLOG-2026-11-10-p3.md`, `DEVLOG-2026-11-10-p3_9-p4_2.md`; п. 4 (4.3–4.7) и проверки 2026-11-10 — 11 — `DEVLOG-2026-11-10_11.md`.
 
+## 2026-11-12 — п. 6, шаг 6.0: разведка E-Ink на книге (Opus, только чтение)
+
+Прошивка `M8-V2-userdebug-230519`, `px30_eink`, ядро 4.4.138, SELinux **Permissive**, adb — `uid=shell` (root нет, `sys.rkadb.root=0`). Ничего не записывалось; `framework.jar`, `ELauncher.apk`, `hwcomposer.rk30board.so` скачаны в `/tmp/dexp-eink/` и разобраны `dexdump` (build-tools 34) и `strings`.
+
+**Драйвер.** `/dev/ebc` (misc 10:243, `crwxrwxrwx`), `/dev/graphics/fb0` (только `graphics`). В `/sys` ручек управления **нет**: `/sys/devices/platform/eink` — только `waveform_version` (`320_R239_AF7B21_ED078KC2U2_TC`), `/sys/class/misc/ebc` — только `dev`; `/sys/module` без параметров eink/ebc. Значит, «политика через sysfs» из ROADMAP невозможна. С `/dev/ebc` работает только HWC (`hwcomposer.rk30board.so`: `GET_EBC_BUFFER`, `SET_EBC_SEND_BUFFER`, `SET_EBC_NOT_FULL_NUM`, поток `hwc-eink-compositor-worker`) — ioctl закрытые, напрямую не трогаем.
+
+**Свойства.** `persist.vendor.fullmode_cnt=5000` (HWC → `SET_EBC_NOT_FULL_NUM`: полная перерисовка раз в 5000 частичных — фактически никогда; отсюда остаточное изображение), `sys.gray.gammalevel=36` (контраст, замечание 4). `settings system screen_sync_time=5` — настройка родного лаунчера «полная перерисовка каждые N переходов».
+
+**Рабочий путь — скрытый API фреймворка Rockchip** (на Android 8.1 ограничений скрытого API нет, вызов через рефлексию):
+- `android.view.View$EINK_MODE` (enum, `getValue()`): `EPD_NULL −1, EPD_AUTO 0, EPD_FULL 1, EPD_A2 2, EPD_PART 3, EPD_FULL_DITHER 4, EPD_RESET 5, EPD_BLACK_WHITE 6, EPD_BG 7, EPD_BLOCK 8, EPD_FULL_WIN 9, EPD_OED_PART 10, EPD_DIRECT_PART 11, EPD_DIRECT_A2 12, EPD_STANDBY 13, EPD_POWEROFF 14, EPD_NOPOWER 15, EPD_AUTO_BG 16, EPD_UNBLOCK 17, EPD_PART_GL16 18, EPD_PART_GLR16 19, EPD_PART_GLD16 20, EPD_FULL_GL16 21, EPD_FULL_GLR16 22, EPD_FULL_GLD16 23`.
+- `View.requestEpdMode(EINK_MODE, force: Boolean): Boolean` → `ViewRootImpl.requestEpdMode`: для режимов кроме AUTO/PART пишет `mEinkMode`; при `force=true` сразу `applyEinkMode`. Также `requestEpdMode(EINK_MODE)` (= force false), `requestEpdUnion()`.
+- `ViewRootImpl.draw` после каждого кадра зовёт `applyEinkMode(false, dirty)`: Binder в `SurfaceFlinger` (`android.ui.ISurfaceComposer`): 10021 — режим окна (`uid, surfaceToken, mode.value, flag`), 10022 — список AUTO-областей, 10023 — A2, 10024 — UNION. После отправки `mEinkMode = EPD_NULL` — **режим одноразовый**, на следующий кадр снова по умолчанию (`EPD_PART`). В logcat видно: `E jeffy: applyEinkMode :ru.ogrpfsense.dexpm8/...EinkActivity, dirty:Rect(0, 0 - 1404, 1872)` — наши кадры идут частичным режимом.
+- Второй путь: `android.os.RkDisplayOutputManager.getInstance().setEpdModeNoneArea(int)` / `setEpdMode(int)` / `getEpdMode()` → сервис `drm_device_management` (`IRkDisplayDeviceManagementService`, транзакции 17/18/19).
+- Широковещательные: `android.intent.action.EPDMODE_CHANGED` (extra `epdmode`, слушает `ViewRootImpl`); `com.flash.force_epd_full` / `_part` / `_auto` — только на SDK ≥ 30, здесь не нужно.
+
+**Как делает родной лаунчер** (`com.wetao.elauncher`, `/system/app/ELauncher`): `FwUtil.refreshView(view)` = `view.requestEpdMode(EPD_FULL, true)`; `FwUtil.refreshScreen()` = `RkDisplayOutputManager.setEpdModeNoneArea(EPD_FULL.value)`. `RefreshUtil.refreshCount(activity)` — счётчик смен экрана (вкладки, переключатели); на каждой `screen_sync_time`-й (по умолчанию 5) через 500 мс `refreshView(findViewById(android.R.id.content))`. Ввод пером — `EPD_A2`/`EPD_PART`, выход — `EPD_NULL`.
+
+**Вывод для 6.1.** Белый кадр G15 не нужен: при смене экрана вызвать `host.requestEpdMode(EPD_FULL, true)` (через рефлексию, один раз найти `Method` и enum; при отказе — запасной `cleanRefresh`), внутри экрана — ничего (по умолчанию `EPD_PART`). Порог «каждые N» можно брать из `screen_sync_time` или из настройки B37. Не проверено: виден ли эффект `EPD_FULL` без `invalidate` (лаунчер вызывает и из `post` после отрисовки) и нужен ли `EPD_FULL_GL16` для меньшего мигания — проверить в 6.1 на книге.
+
+**Грабли.** `adb` не в `PATH` — `export PATH=$HOME/.local/android-sdk/platform-tools:$PATH`. Системный StatusBar (хоть и скрыт immersive) перерисовывается каждую минуту трижды (`applyEinkMode :StatusBar, dirty 1404×104`) — на будущее, если увидим мигание верхней полосы.
+
+
 ## 2026-11-12 — автор и название из имени файла (EPUB и другие форматы без метаданных)
 
 Замечание пользователя: в B2 первая строка — «Автор. Название», вторая — «Автор неизвестен · EPUB». Причина — не дизайн: метаданные читает только FB2-ядро (`NativeBook.metaFb2`), у остальных форматов автор был `null`, а название — имя файла целиком. На книге: 500 EPUB + 11 FB2, имена вида «Автор. Название.epub».
