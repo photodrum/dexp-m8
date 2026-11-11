@@ -22,7 +22,7 @@ target_include_directories(djvu_lib PRIVATE engines/djvu ${DJVU_DIR})
 target_compile_definitions(djvu_lib PRIVATE HAVE_CONFIG_H)
 target_compile_options(djvu_lib PRIVATE
         -Os -ffunction-sections -fdata-sections -fvisibility=hidden -fvisibility-inlines-hidden
-        -fexceptions -w)
+        -fexceptions -w -DNDEBUG)
 
 add_library(dexp_djvu SHARED engines/djvu_probe.cpp)
 target_include_directories(dexp_djvu PRIVATE engines ${DEXP_THIRD}/djvulibre)

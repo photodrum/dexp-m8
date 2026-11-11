@@ -24,7 +24,8 @@ set(MUPDF_INC
         ${MUPDF_TP}/openjpeg/src/lib/openjp2
         ${MUPDF_TP}/lcms2/include)
 
-set(MUPDF_LIB_OPTS -Os -ffunction-sections -fdata-sections -fvisibility=hidden -w)
+# NDEBUG всегда (и в Debug): assert'ы движка не отлаживаем, замеры 7.3 — как в release.
+set(MUPDF_LIB_OPTS -Os -ffunction-sections -fdata-sections -fvisibility=hidden -w -DNDEBUG)
 
 # --- freetype, урезанный (slimftmodules.h / slimftoptions.h) ---
 set(MUPDF_FT ${MUPDF_TP}/freetype/src)
