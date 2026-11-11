@@ -44,6 +44,8 @@ class AppsScreen(act: EinkActivity) : Screen(act) {
     private var apps: List<AppEntry> = emptyList()
     private var sizeBytes = 0L
     private var page = 0
+    private var hiddenMode = false  // показаны скрытые приложения: нажатие возвращает в список
+    private var hiddenCount = 0
     private var opening = -1    // индекс в apps плитки «Открывается…», -1 — нет
 
     // B36
@@ -66,12 +68,16 @@ class AppsScreen(act: EinkActivity) : Screen(act) {
     private fun header(c: Canvas) {
         ink.convex(c, 41.1f, 112.9f, 106.9f, 112.4f, 51.2f)
         icons.draw(c, "back", 72.2f, 144.9f, 45.7f, 47.6f)
-        ink.text(c, "Приложения", 175.5f, T.base(105f, T.TS_TITLE, 1.2f), T.TS_TITLE, 700, T.G1)
-        val sub = if (sizeBytes > 0L) {
-     "${apps.size} установлено · ${SettingsData.gb1(sizeBytes)} ГБ"
+        ink.text(c, if (hiddenMode) "Скрытые" else "Приложения", 175.5f,
+            T.base(105f, T.TS_TITLE, 1.2f), T.TS_TITLE, 700, T.G1)
+        var sub = if (hiddenMode) {
+            "${apps.size} скрыто · нажмите, чтобы вернуть"
+        } else if (sizeBytes > 0L) {
+            "${apps.size} установлено · ${SettingsData.gb1(sizeBytes)} ГБ"
         } else {
-     "${apps.size} установлено"
- }
+            "${apps.size} установлено"
+        }
+        if (!hiddenMode && hiddenCount > 0) sub += " · скрыто $hiddenCount"
         ink.text(c, sub, 175.5f, T.base(181f, T.TS_BODY_S, 1.25f), T.TS_BODY_S, 600, T.G4)
         ink.convex(c, 1255f, 112.9f, 106.9f, 112.4f, 51.2f)
         icons.draw(c, "searchDark", 1286.1f, 142.3f, 45.7f, 47.6f)
@@ -109,7 +115,7 @@ class AppsScreen(act: EinkActivity) : Screen(act) {
      ink.textCenter(c, "Открывается…", x, TILE_W, T.base(y + 261f, T.TS_META, 1.25f),
          T.TS_META, 600, T.G4)
         }
-        dots(c, x + TILE_W - 50f, y + 50f)
+        if (!hiddenMode) dots(c, x + TILE_W - 50f, y + 50f)
     }
 
     /** Вертикальное «…»: горизонтальная иконка `more` против часовой на 90° вокруг центра. */
@@ -244,7 +250,10 @@ class AppsScreen(act: EinkActivity) : Screen(act) {
     // --------------------------------------------------------------- данные
 
     private fun load() {
-        apps = query(act)
+        val hidden = query(act, true)
+        hiddenCount = hidden.size
+        if (hiddenMode && hidden.isEmpty()) hiddenMode = false
+        apps = if (hiddenMode) hidden else query(act)
         var sum = 0L
         for (a in apps) sum += apkSize(a.pkg)
         sizeBytes = sum
@@ -275,8 +284,23 @@ class AppsScreen(act: EinkActivity) : Screen(act) {
             return
  }
         if (x >= 41.1f && x <= 148f && y >= 112.9f && y <= 225.3f) {
-     act.pop()
+     if (hiddenMode) {
+         hiddenMode = false
+         page = 0
+         reload()
+         redraw()
+     } else {
+         act.pop()
+     }
      return
+        }
+        // Подзаголовок «· скрыто N» открывает список скрытых.
+        if (!hiddenMode && hiddenCount > 0 && x >= 175f && x <= 1000f && y >= 170f && y <= 240f) {
+            hiddenMode = true
+            page = 0
+            reload()
+            redraw()
+            return
         }
         // Пагинация: нижняя полоса — левая половина назад, правая вперёд.
         if (y >= 1730f && y <= 1840f) {
@@ -289,7 +313,12 @@ class AppsScreen(act: EinkActivity) : Screen(act) {
      val ty = ROW_Y[k / COLS]
      if (x >= tx && x <= tx + TILE_W && y >= ty && y <= ty + TILE_H) {
          // Правый верхний угол плитки 100×100 — «…», остальное — запуск.
-  if (x >= tx + TILE_W - DOTS_HIT && y <= ty + DOTS_HIT) {
+  if (hiddenMode) {
+      val a = apps[first + k]
+      act.prefs.hiddenApps = act.prefs.hiddenApps - a.pkg
+      reload()
+      redraw()
+  } else if (x >= tx + TILE_W - DOTS_HIT && y <= ty + DOTS_HIT) {
       openSheet(apps[first + k])
          } else {
       open(first + k)
@@ -452,7 +481,7 @@ class AppsScreen(act: EinkActivity) : Screen(act) {
      ctx.startActivity(it)
  }
 
-        private fun query(ctx: Context): List<AppEntry> {
+        private fun query(ctx: Context, hiddenOnly: Boolean = false): List<AppEntry> {
             val pm = ctx.packageManager
      val hidden = (ctx as? EinkActivity)?.prefs?.hiddenApps ?: emptySet<String>()
      val intent = Intent(Intent.ACTION_MAIN)
@@ -461,7 +490,7 @@ class AppsScreen(act: EinkActivity) : Screen(act) {
      for (ri in pm.queryIntentActivities(intent, 0)) {
          val ai = ri.activityInfo ?: continue
          if (ai.packageName == ctx.packageName) continue
-         if (ai.packageName in hidden) continue
+         if ((ai.packageName in hidden) != hiddenOnly) continue
          var label = ri.loadLabel(pm)?.toString()?.trim().orEmpty()
          if (label.isEmpty()) label = ai.packageName
   out.add(AppEntry(label, ai.packageName, ai.name, iconFor(ai.packageName, label)))

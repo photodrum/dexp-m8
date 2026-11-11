@@ -26,6 +26,7 @@ class SetAboutScreen(act: EinkActivity) : Screen(act) {
     private var android = "Android ${Build.VERSION.RELEASE}"
     private var cpu = "Rockchip PX30"
     private var mem = ""
+    private var reset = 0   // 0 — обычно, 1 — ждём второго нажатия, 2 — сброшено
 
     override fun render(c: Canvas) {
         ink.rect(c, 0f, 0f, W, H, T.BG)
@@ -56,7 +57,11 @@ class SetAboutScreen(act: EinkActivity) : Screen(act) {
         kit.key(c, 88f, 1343.5f)
         icons.draw(c, "refresh", 130.5f, 1384.2f, 32.9f, 36.9f)
         kit.title(c, "Сбросить настройки оболочки", 1353f, 237f)
-        kit.desc(c, "Книги и заметки останутся", 1406f, 237f)
+        kit.desc(c, when (reset) {
+            1 -> "Нажмите ещё раз — сбросить"
+            2 -> "Сброшено"
+            else -> "Книги и заметки останутся"
+        }, 1406f, 237f)
         icons.draw(c, "next@11x23.8", 1302f, 1390.5f, 11f, 23.8f)
 
         ink.convexDark(c, 41f, 1693f, 1321f, 142f, 66f)
@@ -110,7 +115,23 @@ class SetAboutScreen(act: EinkActivity) : Screen(act) {
     }
 
     override fun onUp(x: Float, y: Float) {
-        if (kit.isBack(x, y)) act.pop()
+        if (kit.isBack(x, y)) {
+            act.pop()
+            return
+        }
+        if (y >= 1320f && y <= 1490f) {
+            // Сброс — со вторым нажатием вместо диалога: сбрасываются только настройки оболочки.
+            if (reset == 1) {
+                act.prefs.reset()
+                reset = 2
+            } else {
+                reset = 1
+            }
+            redraw()
+        } else if (reset == 1) {
+            reset = 0
+            redraw()
+        }
     }
 
     override fun onAttachedToWindow() {

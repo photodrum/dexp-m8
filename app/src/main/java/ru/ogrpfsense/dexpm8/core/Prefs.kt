@@ -58,7 +58,7 @@ class Prefs(ctx: Context) {
         set(v) = sp.edit().putBoolean("delete_archives", v).apply()
 
     // B6/B36 «Приложения»
-    /** Пакеты, скрытые из списка («Скрыть из списка»); вернуть можно сбросом настроек оболочки. */
+    /** Пакеты, скрытые из списка («Скрыть из списка»); возврат — подзаголовок «скрыто N» на B6 или сброс настроек. */
     var hiddenApps: Set<String>
         get() = HashSet<String>(sp.getStringSet("hidden_apps", null) ?: emptySet<String>())
  set(v) = sp.edit().putStringSet("hidden_apps", HashSet<String>(v)).apply()
