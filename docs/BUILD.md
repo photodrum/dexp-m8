@@ -44,7 +44,7 @@ export PATH=$JAVA_HOME/bin:$PATH
 |---|---|---|
 | Debug APK | `~/.local/gradle-8.7/bin/gradle -p ~/projects/dexp-m8 assembleDebug` | `app/build/outputs/apk/debug/app-debug.apk` (965 КБ) |
 | Release APK | `... assembleRelease` | `app/build/outputs/apk/release/app-release-unsigned.apk` (145 КБ) |
-| Быстро, без Gradle | `~/projects/dexp-m8/tools/build.sh` | `build/app-debug.apk` — **без `.so`** |
+| Быстро, без Gradle | `~/projects/dexp-m8/tools/build.sh` | `build/app-debug.apk` — **без `.so` и без Kotlin stdlib: на книге падает (`NoClassDefFoundError kotlin.jvm.internal.Lambda`); ставить только Gradle-сборку** |
 | Только типы Kotlin | `~/projects/dexp-m8/tools/typecheck.sh` | ~10 сек |
 | Тесты C-ядра | см. ниже | 34 проверки |
 
