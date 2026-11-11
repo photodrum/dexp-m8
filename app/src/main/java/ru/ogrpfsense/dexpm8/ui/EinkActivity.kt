@@ -458,11 +458,14 @@ class EinkActivity : Activity() {
      */
     private fun fullOnSwitch() {
         switches++
-        if (!prefs.cleanOnSwitch && switches < syncEvery()) return
+        if (!prefs.cleanOnSwitch && switches < syncEvery()) {
+            Trace.step("epd: switch skip $switches/${syncEvery()}")
+            return
+        }
         switches = 0
         if (!Epd.ok) return
         val r = Epd.request(host, Epd.CLEAN, false)
-        Trace.step("epd: switch full -> $r")
+        Trace.step("epd: switch full -> $r (clean_on_switch=${prefs.cleanOnSwitch})")
     }
 
     private fun syncEvery(): Int = try {
