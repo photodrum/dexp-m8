@@ -4,7 +4,6 @@ import android.graphics.Canvas
 import android.os.Build
 import android.os.Environment
 import android.os.StatFs
-import android.text.format.DateFormat
 import java.util.Locale
 
 /**
@@ -76,18 +75,10 @@ class SettingsScreen(act: EinkActivity) : Screen(act) {
             ""
         }
         subtitle = if (ver.isEmpty()) "DEXP M8 Prudentia" else "DEXP M8 Prudentia · оболочка $ver"
-        rows[5].value = langValue()
+        rows[5].value = SettingsData.langValue(act)
         rows[6].value = storageValue()
         rows[7].value = if (ver.isEmpty()) "Android ${Build.VERSION.RELEASE}"
             else "Android ${Build.VERSION.RELEASE} · версия оболочки $ver"
-    }
-
-    private fun langValue(): String {
-        val l = Locale.getDefault()
-        val name = l.getDisplayLanguage(l)
-        val lang = name.replaceFirstChar { if (it.isLowerCase()) it.titlecase(l) else it.toString() }
-        val fmt = if (DateFormat.is24HourFormat(act)) "24-часовой формат" else "12-часовой формат"
-        return "$lang · $fmt"
     }
 
     private fun storageValue(): String = try {

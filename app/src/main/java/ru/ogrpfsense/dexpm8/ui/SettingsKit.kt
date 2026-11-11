@@ -92,15 +92,19 @@ class SettingsKit(private val ink: Ink, private val icons: Icons) {
         else icons.draw(c, "sunHigh", 1275f, handleY + 26f, 41f, 42.9f)
     }
 
-    /** Три сегмента в желобе; [active] — номер активного, [labels] — подписи. */
+    /**
+     * Сегменты в желобе (3 на B37, 4 на B40); [active] — номер активного (−1 — ни один),
+     * [labels] — подписи. Шаг = 1213.2 / N: 404.4 при трёх, 303.3 при четырёх; плашка шире
+     * шага на −0.1, подпись — на −5.1 (числа B37 и B40 совпадают).
+     */
     fun segments(c: Canvas, y: Float, labels: Array<String>, active: Int) {
         ink.inset(c, 88f, y, 1221f, 95f, 47.5f, T.G12)
-        val step = 404.4f
+        val step = 1213.2f / labels.size
         for (i in labels.indices) {
             val x = 92f + step * i
             val on = i == active
-            if (on) ink.convex(c, x, y + 4f, 404.3f, 90f, 40f)
-            ink.textCenter(c, labels[i], x, 399.3f, T.base(y + (if (on) 27f else 26f), T.TS_BODY_S, 1.25f),
+            if (on) ink.convex(c, x, y + 4f, step - 0.1f, 90f, 40f)
+            ink.textCenter(c, labels[i], x, step - 5.1f, T.base(y + (if (on) 27f else 26f), T.TS_BODY_S, 1.25f),
                 T.TS_BODY_S, if (on) 700 else 600, if (on) T.G1 else T.G5)
         }
     }
