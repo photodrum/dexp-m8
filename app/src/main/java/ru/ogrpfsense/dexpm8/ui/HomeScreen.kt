@@ -172,6 +172,7 @@ class HomeScreen(act: EinkActivity) : Screen(act) {
         try {
             book = act.db.lastOpened()
             tiles[0].count = booksWord(act.db.count())
+            tiles[2].count = appsWord(AppsScreen.count(act))
         } catch (t: Throwable) {
             Trace.step("home refresh FAIL: ${t.javaClass.simpleName}: ${t.message}")
         }
@@ -184,6 +185,17 @@ class HomeScreen(act: EinkActivity) : Screen(act) {
             1 -> "книга"
             2, 3, 4 -> "книги"
             else -> "книг"
+        }
+        return "$n $w"
+    }
+
+    private fun appsWord(n: Int): String {
+        val m100 = n % 100
+        val m10 = n % 10
+        val w = if (m100 in 11..14) "приложений" else when (m10) {
+            1 -> "приложение"
+            2, 3, 4 -> "приложения"
+            else -> "приложений"
         }
         return "$n $w"
     }

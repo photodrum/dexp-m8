@@ -104,7 +104,7 @@ app/src/main/java/ru/ogrpfsense/dexpm8/
         Tokens        палитра G0..G15, радиусы, кегли, кэш Typeface
         D             дизайн-пространство: u = width/1404, масштаб Canvas
         Icons         отрисовка иконок из числовой геометрии
-        IconSpecs     геометрия 25 иконок (генерируется tools/icon_specs.py из design/v5/icons)
+        IconSpecs     геометрия 76 иконок (генерируется tools/icon_specs.py из design/v5/icons)
         HomeScreen    B1 «Главный»
         LibraryScreen B2/B11 «Библиотека» (список и сетка)
         LibraryGrid   карточка сетки B11 (помощник LibraryScreen)

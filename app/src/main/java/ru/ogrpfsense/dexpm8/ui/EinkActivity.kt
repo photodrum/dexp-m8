@@ -443,7 +443,7 @@ class EinkActivity : Activity() {
         val s: Screen = when (screenId) {
             SCR_HOME -> HomeScreen(this)
             SCR_LIBRARY -> LibraryScreen(this)
-            SCR_APPS -> SimpleScreen(this, "Приложения", "9 приложений", "apps")
+            SCR_APPS -> AppsScreen(this)
             SCR_SETTINGS -> SettingsScreen(this)
             SCR_BOOK -> BookScreen(this)
             SCR_SET_SCREEN -> SetScreenScreen(this)

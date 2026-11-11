@@ -53,6 +53,15 @@ PRIMARY = {
     "files": (53, 55.2),
     "info": (53, 55.2),
     "refresh": (32.9, 36.9),
+    "clock": (53, 55.2),
+    "dict": (98.7, 102.8),
+    "gallery": (39.8, 35.4),
+    "trash": (45.7, 47.6),
+}
+# Цветовой вариант той же формы под своим именем: файл → имя в IconSpecs.kt.
+# search~fapjtl (G1, шапка B6/B36) отличается от search~hhvmhx (G5, B2) только цветом.
+COLOR_ALIAS = {
+    "search~fapjtl.json": "searchDark",
 }
 NUM_RE = re.compile(r"-?\d+(?:\.\d+)?")
 
@@ -207,8 +216,10 @@ def load_snapshot(pal: dict) -> dict:
     for path in sorted(ICONS_DIR.glob("*.json")):
         data = json.loads(path.read_text(encoding="utf-8"))
         name = data["name"].split("/")[-1].strip()
-        if name != path.name.split("~")[0]:
+        file_name = path.name.split("~")[0]
+        if name != file_name:
             fail(f"{path.name}: имя иконки {name!r} не совпадает с именем файла")
+        name = COLOR_ALIAS.get(path.name, name)
         prims: list = []
         walk(data["c"], pal, path.name, prims)
         if not prims:
