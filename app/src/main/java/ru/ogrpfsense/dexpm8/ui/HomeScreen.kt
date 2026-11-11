@@ -96,8 +96,11 @@ class HomeScreen(act: EinkActivity) : Screen(act) {
             ink.text(c, coverLines[1]!!, 131.6f, b1 + 30f * 1.15f, 30f, 600, T.G1, lit600)
         }
         val author = e.author ?: "Автор неизвестен"
-        ink.text(c, ink.ellipsize(author, COVER_TEXT_W, T.TS_CAPTION, 600), 131.6f,
-            T.base(458.6f, T.TS_CAPTION, 1.25f), T.TS_CAPTION, 600, T.G4)
+        // На обложке только настоящий автор: «Автор неизвестен» не влезает в 200 px.
+        if (e.author != null) {
+            ink.text(c, ink.ellipsize(author, COVER_TEXT_W, T.TS_CAPTION, 600), 131.6f,
+                T.base(458.6f, T.TS_CAPTION, 1.25f), T.TS_CAPTION, 600, T.G4)
+        }
 
         ink.text(c, ink.ellipsize(e.title, TITLE_MAX_W, T.TS_TITLE, 500, T.literata(ink.res, 500)),
             tx, T.base(364.4f, T.TS_TITLE, 1.2f, true), T.TS_TITLE, 500, T.G1,
