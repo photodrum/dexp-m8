@@ -401,12 +401,11 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
                     HIT_EMPTY -> if (!storageOk) askStorage()
                     else -> if (h.id > HIT_BOOK) {
                         val i = h.id - HIT_BOOK - 1
+                        // Нажатие на книгу — «О книге» (B12); в читалку — кнопкой оттуда.
                         if (i in 0 until rowIds.size) {
-                            try { db.markOpened(rowIds[i]) } catch (t: Throwable) {
-                                Trace.step("markOpened FAIL: ${t.javaClass.simpleName}: ${t.message}")
-                            }
+                            act.bookId = rowIds[i]
+                            act.go(EinkActivity.SCR_BOOK)
                         }
-                        act.go(EinkActivity.SCR_READER)
                     }
                 }
                 return

@@ -24,6 +24,7 @@ class EinkActivity : Activity() {
         const val SCR_APPS = 3
         const val SCR_SETTINGS = 4
         const val SCR_READER = 5
+        const val SCR_BOOK = 6
 
         // Разделы B13 — экраны B37–B43.
         const val SCR_SET_SCREEN = 10
@@ -67,6 +68,9 @@ class EinkActivity : Activity() {
 
     /** База библиотеки — одна на приложение; экраны берут её отсюда. */
     val db: LibraryDb by lazy { LibraryDb(this) }
+
+    /** Книга для экрана B12 «О книге» (`_id`); ставится перед `go(SCR_BOOK)`. */
+    var bookId = -1L
 
     /** Системные настройки (B37–B42, B5) и свои настройки оболочки. */
     val sys: Sys by lazy { Sys(this) }
@@ -441,6 +445,7 @@ class EinkActivity : Activity() {
             SCR_LIBRARY -> LibraryScreen(this)
             SCR_APPS -> SimpleScreen(this, "Приложения", "9 приложений", "apps")
             SCR_SETTINGS -> SettingsScreen(this)
+            SCR_BOOK -> BookScreen(this)
             SCR_SET_SCREEN -> SetScreenScreen(this)
             SCR_SET_NET -> SetNetScreen(this)
             SCR_SET_READ, SCR_SET_KEYS -> SetReadScreen(this)

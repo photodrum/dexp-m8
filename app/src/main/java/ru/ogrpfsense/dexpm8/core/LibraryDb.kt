@@ -188,6 +188,11 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
             if (c.moveToFirst()) entry(c) else null
         }
 
+    fun get(id: Long): Entry? =
+        readableDatabase.rawQuery("SELECT $COLUMNS FROM books WHERE _id = ?", arrayOf(id.toString())).use { c ->
+            if (c.moveToFirst()) entry(c) else null
+        }
+
     /** Последняя открытая книга (для выбранной строки B2/B11); null — ни одну не открывали. */
     fun lastOpened(): Entry? =
         readableDatabase.rawQuery(
