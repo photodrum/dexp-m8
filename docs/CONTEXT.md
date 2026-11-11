@@ -6,7 +6,7 @@
 ## СЛЕДУЮЩИЙ ШАГ
 
 - **Сделано:** п. 3–6 закрыты; **7.0 ✅** подмодули и NDK; **7.1 ✅** — три `.so` движков (`libdexp_mupdf`, `libdexp_djvu`, `libdexp_cre`) под `armeabi-v7a`, `assembleDebug` → APK 8,2 МБ; на книге ещё не запускались (DEVLOG 2026-11-11 «шаг 7.1»).
-- **Дальше: 7.1а — libjpeg-turbo для crengine** (Opus; решение «а», план — `ROADMAP.md`, «Открытые вопросы (п. 7)»). Потом **7.2 — JNI и отладочный экран** (Opus): Kotlin-обёртка над `dexp_*_probe` из `engines/probe.h` → `Bitmap` (8 бит серый → `ALPHA_8`/G0–G15), открыть FB2, EPUB, PDF, DjVu на книге; проверить, есть ли «Noto Serif» в `/system/fonts`.
+- **Дальше: 7.1а — libjpeg-turbo для crengine** (Opus; libjpeg-turbo 3.2.1, план — `ROADMAP.md`, «План 7.1а»). Потом **7.2 — JNI и отладочный экран** (Opus): Kotlin-обёртка над `dexp_*_probe` из `engines/probe.h` → `Bitmap` (8 бит серый → `ALPHA_8`/G0–G15), открыть FB2, EPUB, PDF, DjVu на книге; проверить, есть ли «Noto Serif» в `/system/fonts`.
 - **Хвосты п. 5 и вопросы к чату дизайна** — только в `docs/ROADMAP.md`, «Открытые замечания» и «Открытые вопросы» (здесь не копировать).
 - **Сборка:** для проверки читалки и `.so` нужен Gradle `assembleDebug`; `tools/build.sh` — быстро, но без нативного ядра.
 
@@ -35,4 +35,4 @@ DjVuLibre после оболочки. Макеты — Penpot, файл «UI»,
 
 Порядок старта, режимы Plan/Act, E-Ink-ограничения и правила коммитов — `.clinerules/`.
 
-**Последнее обновление:** 2026-11-11 — п. 7.1: три `.so` движков, APK 8,2 МБ.
+**Последнее обновление:** 2026-11-11 — чистка документов, «План 7.1а» в ROADMAP.

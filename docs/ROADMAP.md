@@ -3,7 +3,7 @@
 > Полный план, подробности текущего пункта и список сделанного. В `docs/CONTEXT.md` — только
 > «СЛЕДУЮЩИЙ ШАГ» и номер текущего пункта.
 
-**П. 6 (E-Ink-слой) закрыт, дальше п. 7 (R0) — Opus.** П. 3, 4, 5, 6 закрыты и проверены на книге (2026-11-11). Закрытые п. 3 и 4, сверка 4.7 и замечания — `docs/archive/ROADMAP-2026-11-12.md`; п. 5 (шаги 5.1–5.2) — `docs/archive/ROADMAP-2026-11-11c.md`; п. 6 — `docs/archive/ROADMAP-2026-11-11d.md`.
+**П. 6 (E-Ink-слой) закрыт, идёт п. 7 (R0) — Opus.** П. 3, 4, 5, 6 закрыты и проверены на книге (2026-11-11). Закрытые п. 3 и 4, сверка 4.7 и замечания — `docs/archive/ROADMAP-2026-11-12.md`; п. 5 (шаги 5.1–5.2) — `docs/archive/ROADMAP-2026-11-11c.md`; п. 6 — `docs/archive/ROADMAP-2026-11-11d.md`; «План 7.1» и закрытые вопросы п. 7 — `docs/archive/ROADMAP-2026-11-11e.md`.
 
 ## Дальше (roadmap)
 
@@ -56,30 +56,26 @@ R0, проба движков (`docs/READER_SPEC.md`, R0). Основной ко
 | Шаг | Что | Модель Act |
 |---|---|---|
 | 7.0 ✅ | Подмодули `koreader/crengine`, MuPDF, DjVuLibre; проверка NDK 26.3 + CMake (2026-11-11, DEVLOG) | Opus |
-| 7.1 ✅ | Три `.so` (`mupdf`, `djvu`, `cre`) под `armeabi-v7a`, APK 8,2 МБ (2026-11-11, DEVLOG). Хвост: JPEG в crengine выключен — вопрос ниже | Opus |
-| 7.1а | libjpeg-turbo для crengine (решение «а», см. «Открытые вопросы (п. 7)») | Opus |
+| 7.1 ✅ | Три `.so` (`mupdf`, `djvu`, `cre`) под `armeabi-v7a`, APK 8,2 МБ (2026-11-11, DEVLOG; план — `archive/ROADMAP-2026-11-11e.md`) | Opus |
+| 7.1а | libjpeg-turbo 3.2.1 для crengine — «План 7.1а» ниже | Opus |
 | 7.2 | JNI и отладочный экран: первая страница в `Bitmap` | Opus |
 | 7.3 | Замеры на книге, запись в DEVLOG | Sonnet |
 | 7.4 | Решение «идём / не идём» | вместе |
 
-### План 7.1 (уточнён 2026-11-11, выполнен 2026-11-11 — итоги и отступления в DEVLOG «шаг 7.1»)
+### План 7.1а — libjpeg-turbo для crengine (решение «а» 2026-11-11, Opus)
 
-**Решение: три отдельные `.so`, у каждой зависимости вшиты статически и скрыты** (`-fvisibility=hidden`, `--exclude-libs,ALL`). Заменяет «общие freetype/harfbuzz» из DEVLOG 7.0. Причины:
-
-- harfbuzz в MuPDF собран с `-Dhb_malloc_impl=fz_hb_malloc` (память через `fz_context` под замком), из crengine такой вызывать нельзя. Для PDF/CBZ harfbuzz и gumbo не нужны: в MuPDF они работают только в HTML-движке (`FZ_ENABLE_HTML_ENGINE=0`).
-- freetype в MuPDF урезан (`scripts/freetype/slimftmodules.h`, `slimftoptions.h`: без autofit и harfbuzz), а crengine нужен полный.
-- Плюсы: нет конфликта символов, в память грузится только нужный движок, размер и PSS видны по каждому. Цена — вторая копия freetype (~0,5 МБ). zlib для всех — системный из NDK (`-lz`).
+`lvimg.cpp` написан под libjpeg-turbo (`JCS_EXT_BGRX`), в подмодулях только IJG (crengine 6b, MuPDF 9). Пока не сделано — `USE_LIBJPEG 0`, JPEG-картинки и обложки в FB2/EPUB не рисуются.
 
 | # | Что | Файлы |
 |---|---|---|
-| 1 | `abiFilters` = только `armeabi-v7a` в debug и release; `ANDROID_STL=c++_static`; `-std=c99` убрать из общих `cFlags` (оставить в `dexp_core`, там уже `CMAKE_C_STANDARD 99`) | `app/build.gradle.kts`, `app/src/main/cpp/CMakeLists.txt` |
-| 2 | `libdexp_mupdf.so`: `source/{fitz,pdf,cbz}`, шрифты `generated/resources/fonts/urw/*.c` (уже в репозитории MuPDF, `make generate` не нужен); `FZ_ENABLE_{JS,HTML,HTML_ENGINE,EPUB,FB2,MOBI,OFFICE,TXT,MD,XPS,SVG,BROTLI,BARCODE,DOCX_OUTPUT,ODT_OUTPUT,OCR_OUTPUT,HYPHEN}=0`, `TOFU_CJK`, `TOFU_NOTO`, `TOFU_SIL`, `AA_BITS=8`. Внутри: freetype (slim), libjpeg (`scripts/libjpeg`), jbig2dec, openjpeg, lcms2 (или `FZ_ENABLE_ICC=0`). Флаги и списки — по `Makelists` и `platform/java/Android.mk` | `app/src/main/cpp/engines/mupdf.cmake` |
-| 3 | `libdexp_djvu.so`: `libdjvu/*.cpp` + `ddjvuapi`; свой `config.h` вместо autotools (`HAVE_STDINT_H`, `HAVE_PTHREAD`, `HAVE_NAMESPACES` и т.п. по `configure.ac`) | `engines/djvu.cmake`, `engines/djvu/config.h` |
-| 4 | `libdexp_cre.so`: свой список `crengine/src/*.cpp` (образец — `crengine/android/jni/Android.mk`, без `crgui`, `cri18n`, `crtest`); свой `crsetup.h` вместо `crsetup.h.cmake` (`CR_USE_THREADS 0`, `CHM 0`, `ANTIWORD 1`, `LUNASVG/NANOSVG/WEBP/ZSTD/MATHML 0`). Внутри: freetype полный (исходники из `mupdf/thirdparty/freetype`), harfbuzz (исходники MuPDF, без `fz_hb_*`), libpng и libjpeg из `crengine/thirdparty`, libunibreak, utf8proc, fribidi (свой `config.h`), xxhash, antiword. **Факт:** список взят из корневого `CMakeLists.txt` (Android.mk устарел); libjpeg не подошёл (нужен turbo) — `USE_LIBJPEG 0` | `engines/cre.cmake`, `engines/cre/*.h` |
-| 5 | В каждой `.so` — экспортируемая C-функция «открыть файл → первая страница в 8-битный серый буфер», чтобы `--gc-sections` не выкинул движок. JNI и экран — 7.2 | `engines/*_probe.c(pp)` |
-| 6 | `assembleDebug`, размер APK и каждой `.so` (`llvm-readelf`, экспорт), DEVLOG/BUILD/ROADMAP/CONTEXT, коммит | `docs/*` |
+| 1 | Подмодуль `third_party/libjpeg-turbo`, тег **`3.2.1`** (в 3.2 исходники в `src/`), `shallow = true` | `.gitmodules` |
+| 2 | Их CMake под NDK в `/tmp` (`armeabi-v7a`, `WITH_SIMD=0`, `ENABLE_SHARED=0`, без утилит и тестов) — только чтобы получить `jconfig.h`, `jconfigint.h` (и `jversion.h`, если генерируется); сгенерированное — в репозиторий, как fribidi | `engines/cre/jpeg/*.h` |
+| 3 | Цель `cre_jpeg` STATIC: только библиотека; списки 8/12/16-битных исходников — **из их `CMakeLists.txt` того же тега**, не по памяти; `CRE_LIB_OPTS`; в `CRE_INC` и в линковку `dexp_cre` | `engines/cre.cmake` |
+| 4 | `USE_LIBJPEG 1`, убрать комментарии «JPEG выключен» | `engines/cre/crsetup.h`, `engines/cre.cmake` |
+| 5 | Прямая сборка CMake (`/tmp/r0-cmake.sh`), затем `assembleDebug > /tmp/x.log 2>&1`. Проверить: наружу один символ, в `NEEDED` ничего нового, `jpeg_read_header`/`jpeg_start_decompress` внутри (`llvm-nm`); размер `.so` и APK (оценка +0,2 МБ — сверить, в 3.x может быть больше) | — |
+| 6 | DEVLOG (версия, лицензия IJG/BSD-3/zlib — совместима с AGPL, для B75; размер), BUILD (строка `JCS_EXT_BGRX` → решено, `submodule update` для нового подмодуля), ✅ здесь, CONTEXT | `docs/*` |
 
-Флаги подбирать прямой сборкой CMake из NDK (команда — DEVLOG 7.0, `/tmp/r0-probe`), Gradle — в конце. Порядок: 1 → 2 → 3 → 4; самое долгое — crengine, шаг может занять две сессии (по правилам: не вышло за 2 захода — записать в DEVLOG и остановиться).
+Приёмка на книге — в 7.2: FB2 с JPEG-обложкой показывает картинку. 7.1а и 7.2 можно в одном чате Opus, но двумя коммитами.
 
 ## Открытые замечания (проверка на книге 2026-11-11)
 
@@ -94,12 +90,9 @@ R0, проба движков (`docs/READER_SPEC.md`, R0). Основной ко
 
 Не проверено на книге: «назад» с B12, «Идёт поиск книг…», пауза скана 10 мин, один скан после права, 12-часовое время (AM/PM).
 
-
 ### Открытые вопросы к пользователю (п. 7)
 
-- ✅ **Решено 2026-11-11: crengine + JPEG — вариант (а).** `lvimg.cpp` написан под libjpeg-turbo (`JCS_EXT_BGRX`), у нас только IJG. Делаем шаг **7.1а** перед 7.2 (Opus): подмодуль libjpeg-turbo 3.x в `third_party/`, своя цель в `engines/cre.cmake` без SIMD (`jconfig.h`/`jconfigint.h` заранее, как у djvu), `USE_LIBJPEG 1` в `engines/cre/crsetup.h`, проверка: `libdexp_cre.so` линкуется, наружу один символ, прирост ~0,2 МБ. Пока не сделано — `USE_LIBJPEG 0`, обложки в FB2/EPUB не рисуются.
-- **Лицензия crengine:** в README — «GPL version 2», «or later» есть только в 3 файлах из 115. GPL-2.0-only несовместим с AGPL-3.0 (MuPDF) в одном APK. Для R0 не блокер; решить до релиза читалки (DEVLOG 7.0).
-- ✅ **Решено 2026-11-11:** на время R0 debug собирается только под `armeabi-v7a`; release — тоже `armeabi-v7a` (прошивка 32-битная, как в `ARCHITECTURE.md`). Правка `abiFilters` в `app/build.gradle.kts` — первым делом в 7.1.
+- **Лицензия crengine (GPL-2.0-only?) против AGPL-3.0 MuPDF** — для R0 не блокер, решить до релиза читалки. Подробно — DEVLOG 7.0. Решает пользователь.
 
 ### Открытые вопросы в чат дизайна
 
