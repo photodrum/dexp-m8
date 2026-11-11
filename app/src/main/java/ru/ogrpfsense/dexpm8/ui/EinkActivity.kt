@@ -350,8 +350,8 @@ class EinkActivity : Activity() {
             SCR_SET_READ, SCR_SET_KEYS -> SetReadScreen(this)
             SCR_SET_SLEEP -> SetSleepScreen(this)
             SCR_SET_LANG -> SetLangScreen(this)
-            SCR_SET_STORAGE -> stub("Память")
-            SCR_SET_ABOUT -> stub("Об устройстве")
+            SCR_SET_STORAGE -> SetStorageScreen(this)
+            SCR_SET_ABOUT -> SetAboutScreen(this)
             SCR_READER -> SimpleScreen(this, "Чтение", "ядро на C — следующий этап", "library")
             else -> HomeScreen(this)
         }

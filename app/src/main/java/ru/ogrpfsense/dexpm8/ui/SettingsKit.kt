@@ -62,6 +62,10 @@ class SettingsKit(private val ink: Ink, private val icons: Icons) {
     fun valueRow(c: Canvas, s: String, top: Float) =
         right(c, s, 1267.6f, top, T.TS_BODY, 600, T.G4)
 
+    /** Значение строки сведений (B43): 34/600 G4, правый край 1316. */
+    fun valueInfo(c: Canvas, s: String, top: Float) =
+        right(c, s, 1316f, top, T.TS_BODY, 600, T.G4)
+
     fun next(c: Canvas, y: Float) {
         icons.draw(c, "next@11x23.8", 1305f, y, 11f, 23.8f)
     }

@@ -50,6 +50,9 @@ PRIMARY = {
     "check": (42, 43.9),
     "moon": (53, 55.2),
     "font": (53, 55.2),
+    "files": (53, 55.2),
+    "info": (53, 55.2),
+    "refresh": (32.9, 36.9),
 }
 NUM_RE = re.compile(r"-?\d+(?:\.\d+)?")
 

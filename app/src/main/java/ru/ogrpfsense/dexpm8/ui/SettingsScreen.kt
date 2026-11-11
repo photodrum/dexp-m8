@@ -4,7 +4,6 @@ import android.graphics.Canvas
 import android.os.Build
 import android.os.Environment
 import android.os.StatFs
-import java.util.Locale
 
 /**
  * B13 · Настройки · разделы. Числа — из design/v5/B13.json.
@@ -85,13 +84,11 @@ class SettingsScreen(act: EinkActivity) : Screen(act) {
         val st = StatFs(Environment.getExternalStorageDirectory().path)
         val total = st.blockCountLong * st.blockSizeLong
         val used = total - st.availableBlocksLong * st.blockSizeLong
-        "Занято ${gb(used)} из ${gb(total)} ГБ"
+        "Занято ${SettingsData.gb1(used)} из ${SettingsData.capacityGb(total)} ГБ"
     } catch (t: Throwable) {
         Trace.step("settings storage FAIL: ${t.javaClass.simpleName}: ${t.message}")
         ""
     }
-
-    private fun gb(bytes: Long): String = String.format(Locale("ru"), "%.1f", bytes / 1e9)
 
     private companion object {
         const val VALUE_W = 987.2f
