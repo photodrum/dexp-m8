@@ -194,14 +194,66 @@ class Scanner(private val ctx: Context, private val db: LibraryDb) {
         val m = if (format == "fb2") NativeBook.metaFb2(f, buf) else null
         val name = f.name
         val base = name.substring(0, name.length - format.length - 1).trim()
+        // Нет метаданных (EPUB, PDF… до движков читалки) — «Автор. Название» из имени файла.
+        val parsed = splitName(base)
         val t = m?.title?.trim()
-        val title = if (!t.isNullOrEmpty()) t else base.ifEmpty { name }
+        val title = if (!t.isNullOrEmpty()) t else parsed?.second ?: base.ifEmpty { name }
+        val author = clean(m?.authors) ?: parsed?.first
         return LibraryDb.Info(
             path = f.path, size = size, mtime = mtime, format = format, title = title,
-            author = clean(m?.authors), authorSort = authorSort(m),
+            author = author, authorSort = authorSort(m) ?: parsed?.first?.let { sortFromName(it) },
             series = clean(m?.series), seriesNum = m?.seriesNum ?: 0,
             lang = clean(m?.lang), coverId = clean(m?.coverId),
         )
+    }
+
+    /**
+     * «Автор. Название» → (автор, название); null — не похоже на такое имя.
+     * Инициалы не считаем концом автора: «Иэн М. Бэнкс. Культура» и «Чехов А. Доктор».
+     * Без «. » — «Автор, Название» (два-три слова слева).
+     */
+    private fun splitName(base: String): Pair<String, String>? {
+        var from = 0
+        while (true) {
+            val i = base.indexOf(". ", from)
+            if (i < 0) break
+            val left = base.substring(0, i)
+            val right = base.substring(i + 2).trim()
+            if (right.isEmpty()) return null
+            val word = left.substringAfterLast(' ')
+            if (word.length <= 2 && word[0].isUpperCase()) {
+                val next = right.indexOf(". ")
+                val seg = if (next < 0) null else right.substring(0, next)
+                if (seg != null && seg.count { it == ' ' } <= 1 && ',' !in seg) {
+                    from = i + 2
+                    continue
+                }
+                return authorOrNull(left + ".", right)
+            }
+            return authorOrNull(left, right)
+        }
+        val c = base.indexOf(", ")
+        if (c <= 0) return null
+        val left = base.substring(0, c)
+        val words = left.count { it == ' ' } + 1
+        return if (words in 2..3) authorOrNull(left, base.substring(c + 2).trim()) else null
+    }
+
+    private fun authorOrNull(author: String, title: String): Pair<String, String>? {
+        val a = author.trim()
+        if (a.isEmpty() || title.isEmpty() || a.length > 120) return null
+        if (a.any { it.isDigit() }) return null
+        if (a == a.uppercase(Locale.ROOT)) return null
+        if (a.lowercase(Locale.ROOT) in NOT_AUTHORS) return null
+        return Pair(a, title)
+    }
+
+    /** «Имя Фамилия» → «Фамилия Имя» для первого автора; «Чехов А.» и одно слово — как есть. */
+    private fun sortFromName(author: String): String {
+        val first = author.substringBefore(',').trim()
+        val w = first.split(' ')
+        if (w.size < 2 || w.last().endsWith(".")) return first
+        return w.last() + " " + w.dropLast(1).joinToString(" ")
     }
 
     /** «Фамилия Имя» первого автора; без них — ник; null — автора нет. */
@@ -230,6 +282,8 @@ class Scanner(private val ctx: Context, private val db: LibraryDb) {
         private const val TAG = "DexpM8"
         private const val MAX_DEPTH = 12
 
+        /** Слова слева от «. », которые не автор. */
+        private val NOT_AUTHORS = setOf("сборник", "антология", "разное", "сборники", "журнал")
         /** Минимальный промежуток между проходами из [startIfDue]. */
         private const val PAUSE_MS = 10L * 60L * 1000L
 

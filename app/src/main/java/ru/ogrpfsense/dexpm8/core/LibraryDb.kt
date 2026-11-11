@@ -88,8 +88,10 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         db.execSQL("CREATE INDEX books_opened ON books (opened)")
     }
 
-    // Версия 1 — первая; миграции появятся вместе со схемой версии 2.
+    // Версия 2: автор и название из имени файла — сбрасываем mtime, и сканер переразберёт все файлы
+    // (статус, прогресс и «добавлена» при этом не меняются: upsert обновляет только метаданные).
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) db.execSQL("UPDATE books SET mtime = 0")
     }
 
     /** `adb install -d` ставит старый APK поверх нового: схему не трогаем, а не падаем. */
@@ -231,7 +233,7 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
 
     companion object {
         const val NAME = "library.db"
-        const val VERSION = 1
+        const val VERSION = 2
 
         const val STATUS_NEW = 0
         const val STATUS_READING = 1
