@@ -18,13 +18,14 @@ android {
         ndk {
             // Прошивка книги может быть 32-битной даже на 64-битном PX30:
             // без armeabi-v7a установка падает с INSTALL_FAILED_NO_MATCHING_ABIS.
-            // x86_64 — для эмулятора.
-            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86_64")
+            // Прошивка 32-битная (ARCHITECTURE.md) — только armeabi-v7a, и в debug, и в release.
+            abiFilters += listOf("armeabi-v7a")
         }
         externalNativeBuild {
             cmake {
-                arguments += listOf("-DANDROID_STL=none")
-                cFlags += listOf("-std=c99", "-Os", "-ffunction-sections", "-fdata-sections", "-Wall")
+                // c++_static: движки читалки (crengine, djvulibre) на C++; dexp_core остаётся на C99.
+                arguments += listOf("-DANDROID_STL=c++_static")
+                cFlags += listOf("-Os", "-ffunction-sections", "-fdata-sections", "-Wall")
             }
         }
     }
@@ -41,10 +42,6 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            ndk {
-                // 16 ГБ flash, но ставим только то, что нужно устройству
-                abiFilters += listOf("arm64-v8a")
-            }
         }
     }
 
