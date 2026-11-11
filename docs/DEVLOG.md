@@ -2,6 +2,20 @@
 
 > Старые записи — `docs/archive/`: до 2026-11-10 — `DEVLOG-2026-11-07_09.md`, `DEVLOG-2026-11-10-p3.md`, `DEVLOG-2026-11-10-p3_9-p4_2.md`; п. 4 (4.3–4.7) и проверки 2026-11-10 — 11 — `DEVLOG-2026-11-10_11.md`.
 
+## 2026-11-12 — п. 6, шаг 6.1: полная перерисовка при смене экрана (Opus)
+
+Код: `ui/Epd.kt` — рефлексия `View.requestEpdMode(View.EINK_MODE, Boolean)`, enum по `getValue()`, ищется один раз; нет метода — `false`. `Epd.CLEAN = EPD_FULL_GL16 (21)`. `EinkActivity.changeTo` → `fullOnSwitch()`: «Очищать при смене экрана» (B37, `Prefs.cleanOnSwitch`) — на каждом переходе, иначе каждый `screen_sync_time`-й (Settings.System, на книге 5). Режим заказывается `force=false` до кадра нового экрана и уходит с ним (способ А). Первый экран при запуске не трогаем (первый кадр окна и так полный). `cleanRefresh` после системного диалога: есть `Epd` — `CLEAN` + `invalidate`, нет — прежний белый кадр G15. Временная ручка проверки (`settings global dexp_epd_way` / `dexp_epd_mode`) и способ Б (`OnDrawListener` → `requestEpdMode(mode, true)`) удалены после выбора.
+
+Проверка на книге (Gradle-APK, `typecheck` 79 классов, 0 ошибок): logcat — `epd: requestEpdMode ok, modes=25`, `epd: switch A mode=1 -> true`, затем `applyEinkMode … dirty 1404×1872`.
+- **Шаг 1, А + `EPD_FULL`:** B1 → B13 → B41 → B42 → B43 — следов нет, мигание одно. Замечание 6 этим закрыто.
+- **Шаг 2, А + `EPD_FULL_GL16` (21):** следов нет, мигание мягче («приятно»), скорость та же, текст не бледнее. Logcat: `epd: switch A mode=21 -> true`, `applyEinkMode … 1404×1872`.
+- Шаг 3 (способ Б) — не проверялся: пользователь выбрал А (одно мигание уже есть). **Итог: А + `EPD_FULL_GL16`.**
+- Не проверено (→ 6.2): выключатель B37 (раз в 5), очистка после системного диалога без белого кадра.
+
+**Грабли USB.** Книга пропала с шины (в LXC `/sys/bus/usb/devices` без `2207`) — помог другой порт ПК; на хосте `lsusb | grep 2207` → `2207:0011`, в контейнере появилась сама, затем `pkill adb; adb start-server`.
+
+**Грабли.** Вывод долгих команд в терминал Cline не приходит — `typecheck.sh`/Gradle запускать с `> /tmp/x.log 2>&1` и читать файл; в фоне нет `java` в `PATH` — `export JAVA_HOME=$HOME/.local/jdk PATH=$JAVA_HOME/bin:$PATH`.
+
 ## 2026-11-12 — п. 6, шаг 6.0: разведка E-Ink на книге (Opus, только чтение)
 
 Прошивка `M8-V2-userdebug-230519`, `px30_eink`, ядро 4.4.138, SELinux **Permissive**, adb — `uid=shell` (root нет, `sys.rkadb.root=0`). Ничего не записывалось; `framework.jar`, `ELauncher.apk`, `hwcomposer.rk30board.so` скачаны в `/tmp/dexp-eink/` и разобраны `dexdump` (build-tools 34) и `strings`.

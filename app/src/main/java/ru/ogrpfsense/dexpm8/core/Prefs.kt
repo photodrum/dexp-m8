@@ -20,6 +20,7 @@ class Prefs(ctx: Context) {
     var refreshMode: Int
         get() = sp.getInt("refresh_mode", 0)
         set(v) = sp.edit().putInt("refresh_mode", v).apply()
+    /** Полная перерисовка на каждой смене экрана; выключено — каждые `screen_sync_time` (п. 6.1). */
     var cleanOnSwitch: Boolean
         get() = sp.getBoolean("clean_on_switch", true)
         set(v) = sp.edit().putBoolean("clean_on_switch", v).apply()

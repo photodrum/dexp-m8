@@ -150,7 +150,7 @@ class EinkActivity : Activity() {
 
         try {
             stack.add(SCR_HOME)
-            changeTo(SCR_HOME)
+            changeTo(SCR_HOME, switch = false)   // первый кадр окна — и так полный
             Trace.step("HomeScreen attached")
         } catch (t: Throwable) {
             Trace.step("changeTo(SCR_HOME) FAIL: ${t.javaClass.simpleName}: ${t.message}")
@@ -366,11 +366,18 @@ class EinkActivity : Activity() {
      * Полная очистка панели после системного диалога права. Окно под диалогом не
      * перерисовывается: система возвращает старый кадр, а контроллер E-Ink быстро
      * обновляет только место диалога — его текст («ОТКЛОНИТЬ») остаётся следом.
-     * Обычный invalidate() даёт тот же кадр и следа не снимает. Поэтому один белый
+     * Обычный invalidate() частичным режимом даёт тот же кадр и следа не снимает. Поэтому
+     * кадр заново, но полным режимом ([Epd], п. 6.1). Если метода прошивки нет — один белый
      * кадр G15 на весь экран, через [CLEAN_MS] — снова экран: два мигания, только здесь.
      */
     private fun cleanRefresh() {
         if (!this::host.isInitialized) return
+        if (Epd.ok) {
+            val r = Epd.request(host, Epd.CLEAN, false)
+            Trace.step("eink: clean after dialog (epd full) -> $r")
+            for (i in 0 until host.childCount) host.getChildAt(i).invalidate()
+            return
+        }
         val v = blank ?: View(this).apply {
             setBackgroundColor(T.G15)
             isClickable = true          // касания в белом кадре никуда не уходят
@@ -432,9 +439,36 @@ class EinkActivity : Activity() {
         changeTo(stack[stack.size - 1])
     }
 
-    private fun changeTo(screenId: Int) {
+    private fun changeTo(screenId: Int, switch: Boolean = true) {
         host.removeAllViews()
         host.addView(obtain(screenId))
+        if (switch) fullOnSwitch()
+    }
+
+    // ------------------------------------------------------------ E-Ink: полная перерисовка (п. 6.1)
+
+    /** Переходов между экранами с последней полной перерисовки. */
+    private var switches = 0
+
+    /**
+     * Политика при смене экрана. «Очищать при смене экрана» (B37) включено — полная перерисовка
+     * на каждом переходе; выключено — на каждом N-м, N = `screen_sync_time` (настройка родного
+     * лаунчера, по умолчанию 5). Режим заказывается до кадра нового экрана (`force=false`) и уходит
+     * вместе с ним — одно мигание. Внутри экрана ничего не заказываем: прошивка рисует `EPD_PART`.
+     */
+    private fun fullOnSwitch() {
+        switches++
+        if (!prefs.cleanOnSwitch && switches < syncEvery()) return
+        switches = 0
+        if (!Epd.ok) return
+        val r = Epd.request(host, Epd.CLEAN, false)
+        Trace.step("epd: switch full -> $r")
+    }
+
+    private fun syncEvery(): Int = try {
+        android.provider.Settings.System.getInt(contentResolver, "screen_sync_time", 5).coerceAtLeast(1)
+    } catch (t: Throwable) {
+        5
     }
 
     private fun obtain(screenId: Int): Screen {
