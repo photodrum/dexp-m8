@@ -30,7 +30,9 @@ for f in "$BT/aapt2" "$AJ" "$KSTD"; do
     [ -e "$f" ] || { echo "нет $f — запусти tools/setup_sdk.sh"; exit 1; }
 done
 
-rm -rf "$OUT"
+# Чистим только свои подпапки: в build/ лежат ещё ref/ (эталоны Penpot) и shots/ (снимки с книги).
+for d in res gen cls dex stage; do rm -rf "$OUT/$d"; done
+rm -f "$OUT/app-debug.apk" "$OUT/app-debug.apk.idsig"
 mkdir -p "$OUT/res" "$OUT/gen" "$OUT/cls" "$OUT/dex" "$OUT/stage"
 
 echo "==> ресурсы"
@@ -62,28 +64,37 @@ echo "==> Kotlin"
     $(find "$ROOT/app/src/main/java" -name '*.kt')
 
 echo "==> dex"
-(cd "$OUT/cls" && unzip -q -o "$KSTD" -x 'META-INF/*' 'kotlin/**' >/dev/null 2>&1 || true)
+# Kotlin stdlib обязана попасть в dex: без неё на книге падает
+# NoClassDefFoundError kotlin.jvm.internal.Lambda (лямбды и lazy в коде).
 # d8 — шелл-обёртка, которая ищет java в PATH, поэтому PATH выставляем явно
 PATH="$JDK/bin:$PATH" "$BT/d8" --release --min-api $MIN_SDK --lib "$AJ" \
     --output "$OUT/dex" \
-    $(find "$OUT/cls" -name '*.class')
+    $(find "$OUT/cls" -name '*.class') "$KSTD"
 
 echo "==> упаковка"
 cp "$OUT/dex/classes.dex" "$OUT/stage/classes.dex"
 (cd "$OUT/stage" && zip -q -u base.apk classes.dex)
 "$BT/zipalign" -f -p 4 "$OUT/stage/base.apk" "$OUT/stage/aligned.apk"
 
-KEYSTORE="$ROOT/tools/debug.keystore"
-if [ ! -f "$KEYSTORE" ]; then
-    echo "==> ключ отладки"
-    "$JDK/bin/keytool" -genkeypair -keystore "$KEYSTORE" \
-        -storepass dexpdebug -keypass dexpdebug -alias dexp \
-        -keyalg RSA -keysize 2048 -validity 10000 -dname 'CN=DEXP M8 Debug' >/dev/null 2>&1
+# Ключ — тот же, что у Gradle (~/.android/debug.keystore): подпись совпадает,
+# и APK из build.sh ставится поверх APK из Gradle без удаления данных.
+KEYSTORE="$HOME/.android/debug.keystore"
+if [ -f "$KEYSTORE" ]; then
+    KS_PASS=android; KEY_PASS=android; KEY_ALIAS=androiddebugkey
+else
+    KEYSTORE="$ROOT/tools/debug.keystore"
+    KS_PASS=dexpdebug; KEY_PASS=dexpdebug; KEY_ALIAS=dexp
+    if [ ! -f "$KEYSTORE" ]; then
+ echo "==> ключ отладки"
+ "$JDK/bin/keytool" -genkeypair -keystore "$KEYSTORE" \
+     -storepass $KS_PASS -keypass $KEY_PASS -alias $KEY_ALIAS \
+            -keyalg RSA -keysize 2048 -validity 10000 -dname 'CN=DEXP M8 Debug' >/dev/null 2>&1
+    fi
 fi
 
 "$BT/apksigner" sign \
-    --ks "$KEYSTORE" --ks-pass pass:dexpdebug --key-pass pass:dexpdebug \
-    --ks-key-alias dexp \
+    --ks "$KEYSTORE" --ks-pass pass:$KS_PASS --key-pass pass:$KEY_PASS \
+    --ks-key-alias $KEY_ALIAS \
     --out "$OUT/app-debug.apk" "$OUT/stage/aligned.apk"
 
 "$BT/apksigner" verify "$OUT/app-debug.apk"

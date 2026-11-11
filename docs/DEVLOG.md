@@ -2,11 +2,18 @@
 
 > Записи до 2026-11-10 (п. 2б и раньше) — `docs/archive/DEVLOG-2026-11-07_09.md`; п. 3, шаги 1–8 — `docs/archive/DEVLOG-2026-11-10-p3.md`; шаги 3.9а–г, 4.1, 4.2 — `docs/archive/DEVLOG-2026-11-10-p3_9-p4_2.md`.
 
+## 2026-11-11 — п. 5: ответ про кнопку «…» (B36)
+
+Пользователь: «…» — в правом верхнем углу каждой плитки приложения, точки **вертикальные**. 5.2 не начат (ждёт «делай» и уточнения размера и зоны нажатия). Вертикальной иконки в `design/v5/icons` нет — есть горизонтальная `more` (49.4×51.4 на B12, 53×55.2 на B13); варианты: повернуть `more` на 90° в коде или попросить чат дизайна нарисовать. Код не тронут.
+
+
 ## 2026-11-11 — проверка 5.1 на книге и сверка 4.7 по эталонам
 
 **5.1:** все пункты проверки на книге в порядке (число на плитке и в подзаголовке — 7; «Открывается…», запуск, возврат, «назад»).
 
-**Сборка.** `tools/build.sh` собирает APK без Kotlin stdlib (в `unzip` стоит `-x 'kotlin/**'`, а `d8` берёт только распакованные классы): на книге `NoClassDefFoundError: kotlin.jvm.internal.Lambda` при старте `EinkActivity`. Рабочий APK — Gradle `assembleDebug` (1,2 МБ). Ключ подписи у Gradle другой, чем у `build.sh`: при переходе пришлось `adb uninstall` (данные приложения пропали). `build.sh` не правили — вопрос к пользователю.
+**Сборка.** `tools/build.sh` собирает APK без Kotlin stdlib (в `unzip` стоит `-x 'kotlin/**'`, а `d8` берёт только распакованные классы): на книге `NoClassDefFoundError: kotlin.jvm.internal.Lambda` при старте `EinkActivity`. Рабочий APK — Gradle `assembleDebug` (1,2 МБ). Ключ подписи у Gradle другой, чем у `build.sh`: при переходе пришлось `adb uninstall` (данные приложения пропали). `build.sh` исправлен тем же днём: stdlib в dex; ключ — `~/.android/debug.keystore`, как у Gradle (поверх ставится без удаления данных); вместо `rm -rf build` чистятся только `res gen cls dex stage` и APK (раньше сносил эталоны и снимки). Проверено: APK 908 КБ, `apksigner` — тот же SHA-256, что у Gradle-APK; установка поверх, запуск без ошибок.
+
+**Иконки B6.** `AppsScreen`: «Настройки» → `settings`, AIReaderX Pro → `library`; набор `SMALL` (apps/settings/library, 73.1×76.2) по центру 98.7×102.8. Gradle-APK поставлен, снимок B6 — иконки разные; ELauncher — общая `apps`.
 
 **Подключение книги.** Работаем в LXC-контейнере `tools` (VMID 113) на Proxmox-ноде. USB проброшен: на ноде правило udev `51-android.rules` (vendor `2207`, `MODE=0666`) и в `/etc/pve/lxc/113.conf` — `lxc.cgroup2.devices.allow: c 189:*` и `lxc.mount.entry: /dev/bus/usb dev/bus/usb none bind,optional,create=dir`. После переподключения кабеля `adb` может не видеть книгу — помогает `pkill adb; adb start-server`. Терминал Cline на длинных heredoc зависает — скрипты писать файлом.
 

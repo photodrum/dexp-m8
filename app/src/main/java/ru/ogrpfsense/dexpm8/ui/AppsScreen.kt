@@ -73,8 +73,8 @@ class AppsScreen(act: EinkActivity) : Screen(act) {
             ink.convex(c, x - T.SURFACE_DX, y - T.SURFACE_DY, TILE_W + T.SHADOW_DX,
                 TILE_H + T.SHADOW_DY, T.R_TILE)
         }
-        if (a.icon == GENERIC) {
-            // Общая иконка 73.1×76.2 — по центру места 98.7×102.8.
+        if (a.icon in SMALL) {
+            // Иконки 73.1×76.2 (общая, настройки, книги) — по центру места 98.7×102.8.
             icons.draw(c, a.icon, x + 168.2f, y + 86.5f, 73.1f, 76.2f)
         } else {
             icons.draw(c, a.icon, x + 155.4f, y + 73.2f, 98.7f, 102.8f)
@@ -200,6 +200,7 @@ class AppsScreen(act: EinkActivity) : Screen(act) {
         private const val SEG_TOTAL = 164.6f    // желоб 170 минус зазоры
         private const val OPEN_DELAY_MS = 150L
         private const val GENERIC = "apps"
+        private val SMALL = setOf("apps", "settings", "library")
 
         private val COL_X = floatArrayOf(51.2f, 489.9f, 928.7f)
         private val ROW_Y = floatArrayOf(263.3f, 628.9f, 994.5f, 1360.1f)
@@ -249,7 +250,9 @@ class AppsScreen(act: EinkActivity) : Screen(act) {
             arrayOf("documentsui", "filemanager", "files", "файлы") to "files@98.7x102.8",
             arrayOf("dict", "словар") to "dict",
             arrayOf("music", "player", "audio", "плеер") to "player",
-            arrayOf("vending", "market", "store", "магазин") to "store"
+            arrayOf("vending", "market", "store", "магазин") to "store",
+            arrayOf("android.settings", "настройки") to "settings",
+            arrayOf("alreader", "neverland", "fbreader", "читалка") to "library"
         )
     }
 }
