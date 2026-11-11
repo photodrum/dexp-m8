@@ -38,3 +38,4 @@ set(DEXP_ENGINE_LDFLAGS
         -Wl,--exclude-libs,ALL
         -Wl,-z,max-page-size=16384)
 include(engines/mupdf.cmake)
+include(engines/djvu.cmake)
