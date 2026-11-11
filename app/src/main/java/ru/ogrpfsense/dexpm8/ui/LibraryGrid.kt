@@ -15,8 +15,9 @@ internal class GridCard(val title: String, val author: String, val kind: Int, va
  *   гнездо       лицо +32.9,+29.2, 343.7×288 (вдавленное, r 25.59, дно G12);
  *                обложка +14.6,+14.6 314.4×258.8 (r 14.625, G14), корешок 12.8 (G7, у выбранной G3)
  *   на обложке   Literata 34/600 lh 1.25 G1, x обложки +32.9, верх лица +73.1, ширина 255.9, до 2 строк
- *   название     Literata 36/600 lh 1.25 G1, x гнезда, верх лица +339.2, ширина 343.7, до 2 строк
- *   автор        Manrope 30/600 lh 1.3 G4, x гнезда, верх лица +433.2
+ *   название     в макете Literata 36/600 под обложкой — в коде не рисуется (дубль)
+ *   автор        в коде: Manrope 30/600 lh 1.3 G4, x гнезда, верх лица +339.2, ширина 343.7,
+ *         до 2 строк (в макете: одна строка на +433.2)
  *   прогресс     шкала 255.9×18.3 на лице +496.1 (вдавленная, дно G12), заливка +2.7,+5.5 высотой
  *                10.1 шириной 250.5·% (G3); «%» 30/700 lh 1.2 G1 по правому краю гнезда, верх +487.2
  *   «Новая»      метка 117×43.9 (r 21.94, G3) на лице +483.3; текст 28/800 lh 1.2 G15, по центру
@@ -30,6 +31,8 @@ internal class GridCard(val title: String, val author: String, val kind: Int, va
 internal class LibraryGrid(private val ink: Ink, private val icons: Icons) {
 
     private val lit: Typeface = T.literata(ink.res, 600)
+
+    private val manrope: Typeface = T.manrope(ink.res, 600)
 
     private val lines = arrayOfNulls<String>(2)
 
@@ -71,7 +74,8 @@ internal class LibraryGrid(private val ink: Ink, private val icons: Icons) {
         private const val TS_COVER = 34f
         private const val TS_NAME = 36f
         private const val TS_META = 30f
-        private const val LH_TITLE = 1.25f
+        private const val LH_COVER = 1.25f
+        private const val LH_META = 1.3f
 
         private const val TRACK_DY = 496.1f
         private const val TRACK_W = 255.9f
@@ -106,10 +110,11 @@ internal class LibraryGrid(private val ink: Ink, private val icons: Icons) {
         ink.roundRect(c, cx, cy, 2f * R_COVER, COVER_H, R_COVER, if (selected) T.G3 else T.G7)
         ink.rect(c, cx + SPINE_W, cy, 2f * R_COVER, COVER_H, T.G14)
 
-        wrapped(c, card.title, cx + COVER_TEXT_DX, fy + 73.1f, COVER_TEXT_W, TS_COVER)
-        wrapped(c, card.title, nx, fy + 339.2f, NEST_W, TS_NAME)
-        ink.text(c, ink.ellipsize(card.author, NEST_W, TS_META, 600), nx,
-            T.base(fy + 433.2f, TS_META, 1.3f), TS_META, 600, T.G4)
+        // Название — только на обложке; под обложкой на его месте автор до 2 строк
+        // (отступ от макета, решение пользователя 2026-11-11).
+        wrapped(c, card.title, cx + COVER_TEXT_DX, fy + 73.1f, COVER_TEXT_W, TS_COVER,
+            lit, LH_COVER, T.G1, true)
+        wrapped(c, card.author, nx, fy + 339.2f, NEST_W, TS_META, manrope, LH_META, T.G4, false)
 
         when (card.kind) {
             KIND_PROGRESS -> {
@@ -134,32 +139,33 @@ internal class LibraryGrid(private val ink: Ink, private val icons: Icons) {
     }
 
     /**
-     * Название Literata 600 в рамку шириной [maxW]: одна строка, если влезает; иначе перенос по
+     * Текст шрифта [font] (600) в рамку шириной [maxW]: одна строка, если влезает; иначе перенос по
      * последнему пробелу, который влезает, и «…» в конце второй строки. [top] — верх рамки текста
-     * в макете, шаг строк fs·1.25.
+     * в макете, шаг строк fs·[lh].
      */
-    private fun wrapped(c: Canvas, s: String, x: Float, top: Float, maxW: Float, size: Float) {
+    private fun wrapped(c: Canvas, s: String, x: Float, top: Float, maxW: Float, size: Float,
+       font: Typeface, lh: Float, color: Int, literata: Boolean) {
         var n = 1
-        if (ink.measure(s, size, 600, lit) <= maxW) {
+        if (ink.measure(s, size, 600, font) <= maxW) {
             lines[0] = s
         } else {
             var cut = -1
             var sp = s.indexOf(' ')
-            while (sp >= 0 && ink.measure(s.substring(0, sp), size, 600, lit) <= maxW) {
+            while (sp >= 0 && ink.measure(s.substring(0, sp), size, 600, font) <= maxW) {
                 cut = sp
                 sp = s.indexOf(' ', sp + 1)
             }
             if (cut < 0) {
-                lines[0] = ink.ellipsize(s, maxW, size, 600, lit)
+                lines[0] = ink.ellipsize(s, maxW, size, 600, font)
             } else {
                 lines[0] = s.substring(0, cut)
-                lines[1] = ink.ellipsize(s.substring(cut + 1), maxW, size, 600, lit)
+                lines[1] = ink.ellipsize(s.substring(cut + 1), maxW, size, 600, font)
                 n = 2
             }
         }
         for (k in 0 until n) {
-            ink.text(c, lines[k]!!, x, T.base(top + k * size * LH_TITLE, size, LH_TITLE, true),
-                size, 600, T.G1, lit)
+            ink.text(c, lines[k]!!, x, T.base(top + k * size * lh, size, lh, literata),
+  size, 600, color, font)
         }
     }
 }
