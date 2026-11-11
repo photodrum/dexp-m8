@@ -119,6 +119,42 @@ class Sys(ctx: Context) {
         }
     }
 
+    // ------------------------------------------------------------ контраст (замечание 4, проба)
+
+    /**
+     * Контраст панели — системное свойство `sys.gray.gammalevel` (0…80, 16 делений; найдено на
+     * книге 2026-11-11). Через `adb shell setprop` работает; может ли обычное приложение —
+     * неизвестно (SELinux). Доступ — рефлексией к скрытому `android.os.SystemProperties`.
+     * −1 — не прочитано.
+     */
+    fun gamma(): Int = try {
+        val v = Class.forName("android.os.SystemProperties")
+            .getMethod("get", String::class.java).invoke(null, GAMMA) as String
+        v.trim().toIntOrNull() ?: -1
+    } catch (t: Throwable) {
+        fail("gamma", t); -1
+    }
+
+    /** false — система отказала (на 8.1 отказ приходит исключением) или значение не легло. */
+    fun setGamma(v: Int): Boolean = try {
+        Class.forName("android.os.SystemProperties")
+            .getMethod("set", String::class.java, String::class.java).invoke(null, GAMMA, v.toString())
+        gamma() == v
+    } catch (t: Throwable) {
+        val c = (t as? java.lang.reflect.InvocationTargetException)?.targetException ?: t
+        fail("gamma set", c); false
+    }
+
+    /**
+     * Проба один раз: записать текущее значение обратно (экран не меняется) и записать итог
+     * в трассу — «sys gamma probe: …». Убрать, когда решится, как делать B37.
+     */
+    fun probeGamma() {
+        val cur = gamma()
+        if (cur < 0) { Trace.step("sys gamma probe: не прочитано"); return }
+        Trace.step("sys gamma probe: cur=$cur write=${if (setGamma(cur)) "OK" else "FAIL"}")
+    }
+
     // ------------------------------------------------------------ память
 
     /** Удалить содержимое внутреннего и внешнего кэша оболочки (сами каталоги остаются). */
@@ -133,4 +169,8 @@ class Sys(ctx: Context) {
 
     private fun fail(what: String, t: Throwable) =
         Trace.step("sys $what FAIL: ${t.javaClass.simpleName}: ${t.message}")
+
+    private companion object {
+        const val GAMMA = "sys.gray.gammalevel"
+    }
 }

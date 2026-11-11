@@ -59,9 +59,13 @@ class SetScreenScreen(act: EinkActivity) : Screen(act) {
         kit.next(c, 1672.5f)
     }
 
+    private var probed = false
+
     private fun refresh() {
         val v = act.sys.brightness()
         if (v >= 0) brightness = v
+        // Замечание 4: проба записи контраста, один раз за процесс; итог — в трассе.
+        if (!probed) { probed = true; act.sys.probeGamma() }
     }
 
     override fun onUp(x: Float, y: Float) {

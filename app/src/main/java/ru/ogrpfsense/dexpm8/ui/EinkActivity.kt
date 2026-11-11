@@ -90,6 +90,7 @@ class EinkActivity : Activity() {
 
     // Очистка E-Ink после системного диалога (см. [cleanRefresh]).
     private var cleanOnFocus = false
+    private var cleanedWhileAsking = false
     private var blank: View? = null
     private val unblank = Runnable { endClean() }
 
@@ -145,10 +146,10 @@ class EinkActivity : Activity() {
 
         try {
             stack.add(SCR_HOME)
-            show(SCR_HOME)
+            changeTo(SCR_HOME)
             Trace.step("HomeScreen attached")
         } catch (t: Throwable) {
-            Trace.step("show(SCR_HOME) FAIL: ${t.javaClass.simpleName}: ${t.message}")
+            Trace.step("changeTo(SCR_HOME) FAIL: ${t.javaClass.simpleName}: ${t.message}")
             showCrashSafely(t)
             return
         }
@@ -208,6 +209,16 @@ class EinkActivity : Activity() {
         // grantResults пуст, если диалог прервали; верим фактическому состоянию.
         val ok = hasStorage()
         Trace.step("storage: ${if (ok) "granted" else "denied"}")
+        // Ответ приходит после закрытия диалога. На холодном старте окно до диалога фокуса
+        // не получало, onWindowFocusChanged(false) не было и cleanOnFocus не ставился —
+        // поэтому очистку заказываем и здесь (замечание 1). Если фокус уже вернулся и
+        // очистка по нему прошла (cleanedWhileAsking) — второй белый кадр не нужен.
+        when {
+            cleanedWhileAsking -> cleanedWhileAsking = false
+            cleanOnFocus -> {}
+            hasWindowFocus() -> cleanRefresh()
+            else -> cleanOnFocus = true
+        }
         if (ok != storageOk) storageChanged(ok)
         if (storageWaiters.isEmpty()) return
         val waiters = ArrayList(storageWaiters)
@@ -342,6 +353,7 @@ class EinkActivity : Activity() {
         applyImmersive()
         if (cleanOnFocus) {
             cleanOnFocus = false
+            if (storageAsking) cleanedWhileAsking = true
             cleanRefresh()
         }
     }
@@ -416,11 +428,6 @@ class EinkActivity : Activity() {
         changeTo(stack[stack.size - 1])
     }
 
-    private fun show(screenId: Int) {
-        host.removeAllViews()
-        host.addView(obtain(screenId))
-    }
-
     private fun changeTo(screenId: Int) {
         host.removeAllViews()
         host.addView(obtain(screenId))
@@ -446,26 +453,6 @@ class EinkActivity : Activity() {
         }
         screens[screenId] = s
         return s
-    }
-
-    private fun stub(title: String) = SimpleScreen(this, title, "Настройки", "settings")
-
-    /** Экран отправляет себя на перерисовку. */
-    fun repaint(screenId: Int) {
-        screens[screenId]?.let { s ->
-            if (s.parent != null) s.redraw()
-        }
-    }
-
-    /** Отложенная перерисовка — для обновлений времени/батареи без мигания на каждый тик. */
-    fun schedule(delayMs: Long, what: Runnable) = ui.postDelayed(what, delayMs)
-
-    /**
-     * Показ стека на экране (см. [showCrashSafely]). Оставлено как runOnUiThread-обёртка
-     * для случаев, когда обработчик вызывается не в UI-потоке.
-     */
-    private fun showCrash(error: Throwable) {
-        runOnUiThread { showCrashSafely(error) }
     }
 
     override fun onDestroy() {
