@@ -57,6 +57,17 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean("delete_archives", true)
         set(v) = sp.edit().putBoolean("delete_archives", v).apply()
 
+    // B6/B36 «Приложения»
+    /** Пакеты, скрытые из списка («Скрыть из списка»); вернуть можно сбросом настроек оболочки. */
+    var hiddenApps: Set<String>
+        get() = HashSet<String>(sp.getStringSet("hidden_apps", null) ?: emptySet<String>())
+ set(v) = sp.edit().putStringSet("hidden_apps", HashSet<String>(v)).apply()
+    /** Пакет, закреплённый на B1 вместо плитки «Аудиокниги»; пусто — не закреплено. */
+    var pinnedApp: String
+        get() = sp.getString("pinned_app", "") ?: ""
+        set(v) = sp.edit().putString("pinned_app", v).apply()
+
+
     /** Сброс к значениям макета (B43 «Сбросить настройки оболочки» — после диалога подтверждения). */
     fun reset() = sp.edit().clear().apply()
 }

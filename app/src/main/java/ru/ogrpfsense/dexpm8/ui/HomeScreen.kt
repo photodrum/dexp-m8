@@ -153,7 +153,7 @@ class HomeScreen(act: EinkActivity) : Screen(act) {
 
     /** [count] пустой — счётчик не рисуем (данных нет до п. 9 «Аудиокниги» и п. 5 «Приложения»). */
     private class Tile(
-        val label: String, var count: String, val icon: String,
+        var label: String, var count: String, var icon: String,
         val x: Float, val y: Float, val screen: Int
     )
 
@@ -173,10 +173,28 @@ class HomeScreen(act: EinkActivity) : Screen(act) {
             book = act.db.lastOpened()
             tiles[0].count = booksWord(act.db.count())
             tiles[2].count = appsWord(AppsScreen.count(act))
+            refreshPinned()
         } catch (t: Throwable) {
             Trace.step("home refresh FAIL: ${t.javaClass.simpleName}: ${t.message}")
         }
     }
+    /** «Закрепить на главном» (B36): вторая плитка — выбранное приложение вместо «Аудиокниг». */
+    private var pinned: AppEntry? = null
+
+    private fun refreshPinned() {
+        val a = AppsScreen.pinned(act, act.prefs.pinnedApp)
+        pinned = a
+        val t = tiles[1]
+ if (a == null) {
+     t.label = "Аудиокниги"
+     t.icon = "audio"
+        } else {
+            t.label = a.label
+     t.icon = if (a.icon in PINNED_ICONS) a.icon else "apps"
+        }
+    }
+
+
 
     private fun booksWord(n: Int): String {
         val m100 = n % 100
@@ -224,14 +242,25 @@ class HomeScreen(act: EinkActivity) : Screen(act) {
         const val BTN_W = 1233.1f
         const val BTN_H = 141.6f
         const val COVER_TEXT_W = 200f     // обложка 252.3 минус поля 25.6 с каждой стороны
-        const val TITLE_MAX_W = 884.8f    // от 431.4 до края дорожки
+ const val TITLE_MAX_W = 884.8f    // от 431.4 до края дорожки
+        /** Иконки плиток B1 нарисованы под 73.1×76.2 — только они годятся для закреплённого приложения. */
+        val PINNED_ICONS = setOf("apps", "settings", "library", "audio")
     }
 
     // --------------------------------------------------------------- ввод
 
     override fun onUp(x: Float, y: Float) {
         for (h in hits) {
-            if (x >= h.x && x <= h.x + h.w && y >= h.y && y <= h.y + h.h) {
+     if (x >= h.x && x <= h.x + h.w && y >= h.y && y <= h.y + h.h) {
+  val p = pinned
+         if (p != null && h.x == tiles[1].x && h.y == tiles[1].y) {
+      try {
+          AppsScreen.launch(act, p)
+      } catch (t: Throwable) {
+          Trace.step("home pinned FAIL ${p.pkg}: ${t.javaClass.simpleName}: ${t.message}")
+      }
+      return
+  }
                 // Нечего продолжать — кнопка ведёт в библиотеку.
                 act.go(if (h.id == EinkActivity.SCR_READER && book == null) EinkActivity.SCR_LIBRARY else h.id)
                 return
