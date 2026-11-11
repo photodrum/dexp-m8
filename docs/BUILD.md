@@ -133,7 +133,13 @@ adb shell getprop ro.product.cpu.abi    # ожидаем armeabi-v7a (проши
 adb shell wm size                       # ожидаем 1404x1872
 adb logcat -s DexpM8:V AndroidRuntime:E # логи и падения
 adb shell dumpsys meminfo ru.ogrpfsense.dexpm8   # PSS — главная метрика на 1 ГБ
+# R0 (только debug): открыть файл на отладочном экране движков, минуя базу (EinkActivity.probeFromIntent)
+adb shell am start -W -n ru.ogrpfsense.dexpm8/.ui.EinkActivity --es probe "'/sdcard/Books/r0/r0-test.pdf'"
+adb logcat -s DexpM8:V | grep probe     # «probe: <движок> rc=0 <мс>»
 ```
+
+В скриптах с циклом `while read` по файлам каждому `adb shell`/`adb exec-out` давать `< /dev/null`:
+иначе adb съедает stdin, и цикл заканчивается после первого файла.
 
 ## Git и доступы
 

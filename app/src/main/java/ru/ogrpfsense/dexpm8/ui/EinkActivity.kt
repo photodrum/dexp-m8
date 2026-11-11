@@ -163,6 +163,7 @@ class EinkActivity : Activity() {
         storageOk = hasStorage()
         Trace.step("storage: ${if (storageOk) "granted" else "missing"}")
         if (!storageOk && savedInstanceState == null) requestStorage()
+        if (savedInstanceState == null) probeFromIntent(intent)
     }
 
     // ------------------------------------------------------------ память
@@ -410,6 +411,25 @@ class EinkActivity : Activity() {
                 View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
     }
 
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        probeFromIntent(intent)
+    }
+
+    /**
+     * Только debug, R0 (шаг 7.2): `adb shell am start -n ru.ogrpfsense.dexpm8/.ui.EinkActivity
+     * --es probe /sdcard/Books/x.pdf` открывает файл на отладочном экране движков без базы.
+     */
+    private fun probeFromIntent(intent: android.content.Intent?) {
+        if (!ru.ogrpfsense.dexpm8.BuildConfig.DEBUG) return
+        val p = intent?.getStringExtra("probe") ?: return
+        intent.removeExtra("probe")
+        Trace.step("probe: intent $p")
+        ru.ogrpfsense.dexpm8.reader.ProbeScreen.debugPath = p
+        if (stack.isNotEmpty() && stack[stack.size - 1] == SCR_READER) changeTo(SCR_READER) else go(SCR_READER)
+    }
+
     override fun onBackPressed() {
         if (stack.size > 1) {
             pop()
@@ -490,7 +510,7 @@ class EinkActivity : Activity() {
             SCR_SET_LANG -> SetLangScreen(this)
             SCR_SET_STORAGE -> SetStorageScreen(this)
             SCR_SET_ABOUT -> SetAboutScreen(this)
-            SCR_READER -> SimpleScreen(this, "Чтение", "ядро на C — следующий этап", "library")
+            SCR_READER -> ru.ogrpfsense.dexpm8.reader.ProbeScreen(this)   // R0, шаг 7.2: отладка движков
             else -> HomeScreen(this)
         }
         screens[screenId] = s

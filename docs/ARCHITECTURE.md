@@ -111,9 +111,11 @@ app/src/main/java/ru/ogrpfsense/dexpm8/
         LibraryDb, Scanner   база на SQLiteDatabase, сканер книг
         AdminReceiver  device admin (блокировка)
         NativeBook     JNI-мост к C-ядру, грузится лениво
+  reader/ EngineProbe, ProbeScreen   R0 (7.2): JNI к движкам и временный отладочный экран на SCR_READER
 app/src/main/cpp/
   core/book.c,.h       потоковый разбор FB2
   jni_bridge.c         JNI
+  engines/             движки R0: *.cmake, *_probe.*, probe_jni.c (JNI, 16 уровней, ALPHA_8)
   test/                хостовые тесты (gcc + ASan), без NDK
 ```
 

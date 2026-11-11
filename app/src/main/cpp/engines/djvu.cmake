@@ -24,8 +24,9 @@ target_compile_options(djvu_lib PRIVATE
         -Os -ffunction-sections -fdata-sections -fvisibility=hidden -fvisibility-inlines-hidden
         -fexceptions -w -DNDEBUG)
 
-add_library(dexp_djvu SHARED engines/djvu_probe.cpp)
+add_library(dexp_djvu SHARED engines/djvu_probe.cpp engines/probe_jni.c)
 target_include_directories(dexp_djvu PRIVATE engines ${DEXP_THIRD}/djvulibre)
+target_compile_definitions(dexp_djvu PRIVATE DEXP_ENGINE=djvu)
 target_compile_options(dexp_djvu PRIVATE -Os -ffunction-sections -fdata-sections -fvisibility=hidden -Wall)
 target_link_options(dexp_djvu PRIVATE ${DEXP_ENGINE_LDFLAGS})
 target_link_libraries(dexp_djvu djvu_lib m log)

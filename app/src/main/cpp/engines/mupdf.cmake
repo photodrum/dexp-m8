@@ -98,10 +98,10 @@ target_include_directories(mupdf_core PRIVATE ${MUPDF_INC})
 target_compile_definitions(mupdf_core PRIVATE ${MUPDF_DEFS})
 target_compile_options(mupdf_core PRIVATE ${MUPDF_LIB_OPTS})
 
-# --- итоговая .so: пробный вход (JNI — шаг 7.2) ---
-add_library(dexp_mupdf SHARED engines/mupdf_probe.c)
+# --- итоговая .so: пробный вход + JNI (шаг 7.2) ---
+add_library(dexp_mupdf SHARED engines/mupdf_probe.c engines/probe_jni.c)
 target_include_directories(dexp_mupdf PRIVATE ${MUPDF_INC} engines)
-target_compile_definitions(dexp_mupdf PRIVATE ${MUPDF_DEFS})
+target_compile_definitions(dexp_mupdf PRIVATE ${MUPDF_DEFS} DEXP_ENGINE=mupdf)
 target_compile_options(dexp_mupdf PRIVATE -Os -ffunction-sections -fdata-sections -fvisibility=hidden -Wall)
 target_link_options(dexp_mupdf PRIVATE ${DEXP_ENGINE_LDFLAGS})
 target_link_libraries(dexp_mupdf

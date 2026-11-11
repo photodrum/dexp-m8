@@ -6,3 +6,5 @@
 # и R8 выкидывает класс, пока его никто не вызывает из Kotlin.
 -keep class ru.ogrpfsense.dexpm8.core.NativeBook { *; }
 -keep class ru.ogrpfsense.dexpm8.core.NativeBook$Block { *; }
+# JNI к движкам R0 (cpp/engines/probe_jni.c).
+-keep class ru.ogrpfsense.dexpm8.reader.EngineProbe { *; }
