@@ -57,25 +57,10 @@ R0, проба движков (`docs/READER_SPEC.md`, R0). Основной ко
 |---|---|---|
 | 7.0 ✅ | Подмодули `koreader/crengine`, MuPDF, DjVuLibre; проверка NDK 26.3 + CMake (2026-11-11, DEVLOG) | Opus |
 | 7.1 ✅ | Три `.so` (`mupdf`, `djvu`, `cre`) под `armeabi-v7a`, APK 8,2 МБ (2026-11-11, DEVLOG; план — `archive/ROADMAP-2026-11-11e.md`) | Opus |
-| 7.1а ✅ | libjpeg-turbo 3.2.1 для crengine, `libdexp_cre.so` +157 КБ (2026-11-11, DEVLOG); обложка на книге — в 7.2 | Opus |
+| 7.1а ✅ | libjpeg-turbo 3.2.1 для crengine, `libdexp_cre.so` +157 КБ (2026-11-11, DEVLOG; план — `archive/ROADMAP-2026-11-11e.md`); обложка на книге — в 7.2 | Opus |
 | 7.2 ✅ | JNI и отладочный экран: первая страница в `Bitmap` — FB2 (с JPEG-обложкой), EPUB, PDF, DjVu открываются на книге (2026-11-11, DEVLOG) | Opus |
 | 7.3 | Замеры на книге, запись в DEVLOG: PSS по одному движку на процесс, время разметки 5-МБ FB2 отдельно от отрисовки, «мс на страницу» (нужно листание в пробе), размер APK чистой сборки; разобрать пустую рамку-обложку EPUB | Sonnet |
 | 7.4 | Решение «идём / не идём» | вместе |
-
-### План 7.1а — libjpeg-turbo для crengine ✅ (выполнен 2026-11-11, DEVLOG; таблицу перенести в архив при следующей чистке)
-
-`lvimg.cpp` написан под libjpeg-turbo (`JCS_EXT_BGRX`), в подмодулях только IJG (crengine 6b, MuPDF 9). Пока не сделано — `USE_LIBJPEG 0`, JPEG-картинки и обложки в FB2/EPUB не рисуются.
-
-| # | Что | Файлы |
-|---|---|---|
-| 1 | Подмодуль `third_party/libjpeg-turbo`, тег **`3.2.1`** (в 3.2 исходники в `src/`), `shallow = true` | `.gitmodules` |
-| 2 | Их CMake под NDK в `/tmp` (`armeabi-v7a`, `WITH_SIMD=0`, `ENABLE_SHARED=0`, без утилит и тестов) — только чтобы получить `jconfig.h`, `jconfigint.h` (и `jversion.h`, если генерируется); сгенерированное — в репозиторий, как fribidi | `engines/cre/jpeg/*.h` |
-| 3 | Цель `cre_jpeg` STATIC: только библиотека; списки 8/12/16-битных исходников — **из их `CMakeLists.txt` того же тега**, не по памяти; `CRE_LIB_OPTS`; в `CRE_INC` и в линковку `dexp_cre` | `engines/cre.cmake` |
-| 4 | `USE_LIBJPEG 1`, убрать комментарии «JPEG выключен» | `engines/cre/crsetup.h`, `engines/cre.cmake` |
-| 5 | Прямая сборка CMake (`/tmp/r0-cmake.sh`), затем `assembleDebug > /tmp/x.log 2>&1`. Проверить: наружу один символ, в `NEEDED` ничего нового, `jpeg_read_header`/`jpeg_start_decompress` внутри (`llvm-nm`); размер `.so` и APK (оценка +0,2 МБ — сверить, в 3.x может быть больше) | — |
-| 6 | DEVLOG (версия, лицензия IJG/BSD-3/zlib — совместима с AGPL, для B75; размер), BUILD (строка `JCS_EXT_BGRX` → решено, `submodule update` для нового подмодуля), ✅ здесь, CONTEXT | `docs/*` |
-
-Приёмка на книге — в 7.2: FB2 с JPEG-обложкой показывает картинку. 7.1а и 7.2 можно в одном чате Opus, но двумя коммитами.
 
 ## Открытые замечания (проверка на книге 2026-11-11)
 
