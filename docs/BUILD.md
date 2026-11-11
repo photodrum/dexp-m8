@@ -50,6 +50,16 @@ export PATH=$JAVA_HOME/bin:$PATH
 
 Первая сборка Gradle ~2 минуты (качает AGP и CMake), повторная ~40–70 сек.
 
+**Движки читалки (с п. 7)** — git-подмодули в `third_party/` (`shallow = true`, ~250 МБ):
+crengine, djvulibre, mupdf (тег 1.28.6), xxhash, fribidi, libunibreak, utf8proc. После клона:
+
+```bash
+cd ~/projects/dexp-m8
+git submodule update --init --depth 1
+# у MuPDF — только нужные вложенные (без curl, tesseract, freeglut, zxing и т.п.)
+git -C third_party/mupdf submodule update --init --depth 1 thirdparty/{freetype,harfbuzz,libjpeg,zlib,jbig2dec,openjpeg,lcms2,gumbo-parser,brotli}
+```
+
 ## Тесты C-ядра на хосте
 
 Без NDK и без устройства — обычным `gcc`:
@@ -139,3 +149,5 @@ GIT_ASKPASS=$PWD/tools/git-askpass.sh GIT_TERMINAL_PROMPT=0 \
 | `NoClassDefFoundError: kotlin.jvm.internal.Lambda` | APK без Kotlin stdlib (старый `build.sh`); исправлено 2026-11-11 |
 | `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | другой ключ подписи; `build.sh` и Gradle используют один `~/.android/debug.keystore`. Иначе `adb uninstall` (данные пропадут) |
 | `run-as` не работает | APK не debuggable; значения проверять через `settings get`/`getprop` |
+| `git submodule add -b 1.28.x` у MuPDF: `'origin/1.28.x' is not a commit` | с `--depth 1` ветку не взять; добавить без `-b`, затем `git fetch --depth 1 origin tag 1.28.6 && git checkout 1.28.6` |
+| `git ls-remote` на `github.com/koreader/djvulibre` висит | брать с `gitlab.com/koreader/djvulibre` |
