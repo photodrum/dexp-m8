@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Canvas
+import android.net.wifi.WifiManager
 import android.os.BatteryManager
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -32,11 +33,20 @@ class StatusBar(
     private var timeFmt = SimpleDateFormat("HH:mm", Locale.getDefault())
     private var clock = timeFmt.format(Date())
     private var battery = 78
+    private var wifi = true
     private var attached = false
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context?, intent: Intent?) {
             intent ?: return
+            if (intent.action == WifiManager.WIFI_STATE_CHANGED_ACTION) {
+                val on = act.sys.wifiOn()
+                if (on != wifi) {
+                    wifi = on
+                    if (owner.parent != null) owner.redraw()
+                }
+                return
+            }
             val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
             val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, 100)
             if (level < 0 || scale <= 0) return
@@ -53,10 +63,14 @@ class StatusBar(
         val pattern = if (android.text.format.DateFormat.is24HourFormat(act)) "HH:mm" else "h:mm"
         timeFmt = SimpleDateFormat(pattern, Locale.getDefault())
         clock = timeFmt.format(Date())
+        wifi = act.sys.wifiOn()
         if (attached) return
         try {
-            // Липкое событие: onReceive придёт сразу с текущим зарядом.
-            act.registerReceiver(receiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            // Батарея — липкое событие: onReceive придёт сразу с текущим зарядом.
+            // Wi-Fi — не липкое: начальное состояние взято выше.
+            val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+            filter.addAction(WifiManager.WIFI_STATE_CHANGED_ACTION)
+            act.registerReceiver(receiver, filter)
             attached = true
         } catch (ignored: Exception) {
         }
@@ -76,8 +90,8 @@ class StatusBar(
         // Время: рамка 51.2,26.9, 36/700, lh 1.25 → baseline 63.2.
         ink.text(c, clock, X_CLOCK, BASE_CLOCK, T.TS_LABEL, 700, T.G1)
 
-        // Wi-Fi (иконка 38.4×40.2).
-        icons.draw(c, "wifi", 1165.4f, 29.2f, 38.4f, 40.2f)
+        // Wi-Fi (иконка 38.4×40.2). Вид «выключен» в макете не нарисован — пока скрыт.
+        if (wifi) icons.draw(c, "wifi", 1165.4f, 29.2f, 38.4f, 40.2f)
 
         // Корпус: нижний блик 124.3×43.9, внутренняя тень 121.6×41.1, дно 118.8×35.6 (G11).
         ink.inset(c, BAT_X, BAT_Y, BAT_W, BAT_H, T.R_BATTERY)
