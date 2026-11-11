@@ -6,7 +6,7 @@
 ## СЛЕДУЮЩИЙ ШАГ
 
 - **Сделано:** п. 3–6 закрыты; **7.0 ✅** — подмодули движков в `third_party/`, NDK + `c++_static` под `armeabi-v7a` собирается (DEVLOG 2026-11-11).
-- **Дальше: 7.1 — сборка `.so` движков с зависимостями под `armeabi-v7a`** (Opus). Исходные данные и решения — запись DEVLOG «шаг 7.0» (crengine без pkg-config, общие freetype/harfbuzz из MuPDF, свои CMake для libdjvu и fribidi, `make generate` у MuPDF). Перед началом — ответы на «Открытые вопросы к пользователю (п. 7)» в `ROADMAP.md`.
+- **Дальше: 7.1 — сборка `.so` движков с зависимостями под `armeabi-v7a`** (Opus). Исходные данные и решения — запись DEVLOG «шаг 7.0» (crengine без pkg-config, общие freetype/harfbuzz из MuPDF, свои CMake для libdjvu и fribidi, `make generate` у MuPDF). Начать с `abiFilters` = только `armeabi-v7a` в debug и release (решено, `ROADMAP.md`, «Открытые вопросы к пользователю (п. 7)»).
 - **Хвосты п. 5 и вопросы к чату дизайна** — только в `docs/ROADMAP.md`, «Открытые замечания» и «Открытые вопросы» (здесь не копировать).
 - **Сборка:** для проверки читалки и `.so` нужен Gradle `assembleDebug`; `tools/build.sh` — быстро, но без нативного ядра.
 

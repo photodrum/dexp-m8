@@ -78,8 +78,7 @@ R0, проба движков (`docs/READER_SPEC.md`, R0). Основной ко
 ### Открытые вопросы к пользователю (п. 7)
 
 - **Лицензия crengine:** в README — «GPL version 2», «or later» есть только в 3 файлах из 115. GPL-2.0-only несовместим с AGPL-3.0 (MuPDF) в одном APK. Для R0 не блокер; решить до релиза читалки (DEVLOG 7.0).
-- **ABI в debug на время R0:** оставить только `armeabi-v7a` (сейчас три ABI, сборка движков будет втрое дольше).
-- **Release ABI:** `ARCHITECTURE.md` — «только `armeabi-v7a`», `app/build.gradle.kts` — `arm64-v8a`. Привести к одному в 7.1.
+- ✅ **Решено 2026-11-11:** на время R0 debug собирается только под `armeabi-v7a`; release — тоже `armeabi-v7a` (прошивка 32-битная, как в `ARCHITECTURE.md`). Правка `abiFilters` в `app/build.gradle.kts` — первым делом в 7.1.
 
 ### Открытые вопросы в чат дизайна
 
