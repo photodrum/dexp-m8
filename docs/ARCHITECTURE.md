@@ -94,33 +94,27 @@ Manrope для интерфейса (400/600/700/800), Literata для текс�
 
 ## Структура кода
 
-> Перенесено из `docs/CONTEXT.md` (2026-11-09).
-
 ```
 app/src/main/java/ru/ogrpfsense/dexpm8/
-  ui/   EinkActivity  единственная Activity: стек экранов, immersive, без анимаций
-        Screen        базовый View: layout/render/onUp, касания без скролла
-        Ink           рисование: convex / convexDark / inset, текст, абзацы
-        Tokens        палитра G0..G15, радиусы, кегли, кэш Typeface
-        D             дизайн-пространство: u = width/1404, масштаб Canvas
-        Icons         отрисовка иконок из числовой геометрии
-        IconSpecs     геометрия 76 иконок (генерируется tools/icon_specs.py из design/v5/icons)
-        HomeScreen    B1 «Главный»
-        LibraryScreen B2/B11 «Библиотека» (список и сетка)
-        LibraryGrid   карточка сетки B11 (помощник LibraryScreen)
-        SimpleScreen  заглушка раздела для проверки навигации
-  core/ NativeBook    JNI-мост к C-ядру, грузится лениво
+  ui/   EinkActivity   единственная Activity: стек экранов, immersive, без анимаций, cleanRefresh
+        Screen         базовый View: layout/render/onUp, касания без скролла
+        Ink, Tokens, D, Icons, IconSpecs   рисование, палитра G0..G15, дизайн-px, иконки (IconSpecs генерирует tools/icon_specs.py)
+        StatusBar      время / батарея / Wi-Fi
+        HomeScreen B1 · LibraryScreen, LibraryGrid B2/B11 · BookScreen B12 · AppsScreen B6/B36
+        SettingsScreen B13 · SetScreenScreen B37 · SetNetScreen B38 · SetReadScreen B39
+        SetSleepScreen B40 · SetLangScreen B41 · SetStorageScreen B42 · SetAboutScreen B43
+        SettingsKit, SettingsData   общие элементы и данные настроек
+        SimpleScreen, CrashScreen, Trace   заглушка, экран сбоя, трассировка
+  core/ Sys            яркость, сон, 12/24 ч, Wi-Fi, Bluetooth, lockNow, кэш
+        Prefs          настройки оболочки (SharedPreferences)
+        LibraryDb, Scanner   база на SQLiteDatabase, сканер книг
+        AdminReceiver  device admin (блокировка)
+        NativeBook     JNI-мост к C-ядру, грузится лениво
 app/src/main/cpp/
-  core/book.c,.h      потоковый разбор FB2
-  jni_bridge.c        JNI
-  test/               хостовые тесты (gcc + ASan), без NDK
+  core/book.c,.h       потоковый разбор FB2
+  jni_bridge.c         JNI
+  test/                хостовые тесты (gcc + ASan), без NDK
 ```
-
-## Почему не dp
-
-**Почему не dp:** в ТЗ была формула «1 pt ≈ 4.2 px». Это типографский пункт (`300/72 = 4.17`),
-а dp в Android считается от 160, не от 72. Правильно: `density = 300/160 ≈ 1.875 → 2.0`,
-`1404 px / 2.0 = 702 dp`. По формуле 4.2 вышло бы `334 dp` — вёрстка вдвое мельче нужной.
 
 ## Правила E-Ink
 

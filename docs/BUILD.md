@@ -128,3 +128,10 @@ GIT_ASKPASS=$PWD/tools/git-askpass.sh GIT_TERMINAL_PROMPT=0 \
 | Gradle: `'-' is not a valid file-based resource name` | в `res/` только `a-z0-9_` |
 | `UnsatisfiedLinkError` в release | R8 выкинул `NativeBook` — нужен `-keep class ... { *; }` |
 | `aapt2: <manifest> must have a 'package' attribute` | AGP 8 вырезает `package`; в `build.sh` подставляем `sed` |
+| `apksigner` / `d8`: не найден `java` | `export PATH=$JAVA_HOME/bin:$PATH` |
+| Терминал Cline зависает на длинном heredoc | писать скрипт файлом (редактором), затем запускать |
+| `adb` не видит книгу после переподключения (LXC `tools`, VMID 113, USB проброшен: udev `51-android.rules`, vendor `2207`) | `pkill adb; adb start-server` |
+| `screencap` отдаёт чёрный кадр | экран погас по таймауту: `adb shell input keyevent KEYCODE_WAKEUP` |
+| `NoClassDefFoundError: kotlin.jvm.internal.Lambda` | APK без Kotlin stdlib (старый `build.sh`); исправлено 2026-11-11 |
+| `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | другой ключ подписи; `build.sh` и Gradle используют один `~/.android/debug.keystore`. Иначе `adb uninstall` (данные пропадут) |
+| `run-as` не работает | APK не debuggable; значения проверять через `settings get`/`getprop` |

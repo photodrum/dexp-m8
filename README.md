@@ -58,31 +58,8 @@ adb shell getprop ro.sf.lcd_density
 
 ## Структура
 
-```
-app/src/main/java/ru/ogrpfsense/dexpm8/
-  ui/
-    EinkActivity.kt   единственная Activity, стек экранов, immersive, без анимаций
-    Screen.kt         базовый View-экран: layout/render/onUp, касания без скролла
-    Ink.kt            рисование: convex / convexDark / inset, текст, абзацы
-    Tokens.kt         палитра G0..G15, радиусы, кегли, кэш Typeface
-    D.kt              дизайн-пространство, масштаб, проверка dp
-    Icons.kt          отрисовка иконок из геометрии
-    IconSpecs.kt      геометрия 24 иконок, снятая с Penpot
-    HomeScreen.kt     B1 · Главный экран
-    LibraryScreen.kt  B2/B11 · Библиотека (список и сетка)
-    LibraryGrid.kt    карточка сетки B11 (помощник LibraryScreen)
-    SimpleScreen.kt   заглушка раздела для проверки навигации
-  core/
-    NativeBook.kt     JNI-мост к C-ядру
-app/src/main/cpp/
-  core/book.c,.h      потоковый разбор FB2
-  jni_bridge.c        JNI
-  test/               хост-тесты (gcc, без NDK)
-tools/
-  build.sh            сборка APK без Gradle (aapt2 + kotlinc + d8 + apksigner)
-  typecheck.sh        проверка Kotlin против android.jar
-  fonts/              статические начертания Manrope/Literata (subset)
-```
+Код — `app/src/main/java/ru/ogrpfsense/dexpm8/` (`ui/` — экраны и рисование, `core/` — база, сканер, система, JNI),
+C-ядро — `app/src/main/cpp/`, утилиты — `tools/`. Подробно — `docs/ARCHITECTURE.md`, «Структура кода».
 
 ## Сборка
 
@@ -131,54 +108,7 @@ gcc -std=gnu99 -O1 -g -Wall -Wextra -Icore -fsanitize=address,undefined \
 cd test && /tmp/test_core testdata/sample.fb2
 ```
 
-## Что уже есть
-
-* B1 «Главный»: карточка «Сейчас читаю», прогресс, тёмная кнопка, 4 плитки,
-  статистика, свой статус-бар (время / батарея / wifi).
-* B2 «Библиотека»: шапка с «Назад», переключатель вид, поле поиска,
-  сегментированная сортировка, список из 6 книг с разделителями,
-  постраничность кнопками и номер страницы.
-* Навигация: стек экранов, `onBackPressed` → `pop()`, без анимаций.
-* C-ядро: разбор FB2 в плоский список блоков + метаданные, собирается NDK
-  под `arm64-v8a` и `x86_64`, `.so` 12 КБ.
-
-## Состояние сборки (проверено)
-
-| | |
-|---|---|
-| `assembleDebug` | ✅ 965 КБ, `libdexp_core.so` внутри |
-| `assembleRelease` (R8) | ✅ 145 КБ, JNI-класс сохранён |
-| `tools/build.sh` | ✅ 148 КБ, **без** `.so` (только Kotlin) |
-| C-ядро, хостовые тесты | ✅ 9/9, ASan+UBSan чисто |
-
-## Грабли, уже набитые
-
-1. **Дефисы в именах ресурсов запрещены.** `res/font/manrope-700.ttf` проходит
-   `aapt2` напрямую, но Gradle падает: только `a-z0-9_`. Файлы называются
-   `manrope_700.ttf`, а `R.font.manrope_700` получается сам.
-2. **R8 удаляет JNI-класс.** `-keepclasseswithmembernames` разрешает shrinking —
-   пока `NativeBook` никто не вызывает, он вылетает из APK, и JNI падает на
-   `UnsatisfiedLinkError`. Нужен именно `-keep class ... { *; }`.
-3. **`R` из пакета `ui` не виден** без `import ru.ogrpfsense.dexpm8.R`.
-4. **`aapt2` требует `package`** в манифесте, а AGP 8 его вырезает (берёт из
-   `namespace`). В `tools/build.sh` подставляем `sed` в копию.
-5. **`d8` — шелл-обёртка**, ищет `java` в `PATH`.
-6. `buf_normalize` в `book.c` зацикливался на нераспознанной сущности.
-
-## Дальше по плану
-
-1. Проверить APK на книге: `adb install -r -d app-debug.apk`, посмотреть B1/B2,
-   срабатывание тач-зон, читаемость при 16 градациях.
-2. `adb shell getprop ro.sf.lcd_density` — подтвердить density (ожидаем 320 → 2.0).
-3. B11 «Библиотека · сетка», сканер `/sdcard/Books` + `MediaStore`.
-4. B12 «О книге», B13 и B37–B43 «Настройки».
-5. E-Ink-слой: политика полной/частичной перерисовки через sysfs контроллера.
-6. Проба движков читалки (R0), затем остальная оболочка: панель управления, полки,
-   OPDS, плеер B7 / B33–B35, первый запуск.
-7. Читалка после оболочки: CREngine + MuPDF + DjVuLibre за интерфейсом `ReaderEngine`,
-   этапы R1–R6 — `docs/READER_SPEC.md`.
-
-Полный и актуальный план — раздел «Дальше (roadmap)» в `docs/ROADMAP.md`.
+Состояние проекта, план и грабли — `docs/CONTEXT.md`, `docs/ROADMAP.md`, `docs/BUILD.md`.
 
 ## Лицензия
 
