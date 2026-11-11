@@ -23,7 +23,7 @@
 #define ARBITRARY_IMAGE_SCALE_ENABLED        1
 #define MAX_IMAGE_SCALE_MUL                  2
 #define USE_GIF                              1
-#define USE_LIBJPEG                          0 // lvimg.cpp требует libjpeg-turbo (JCS_EXT_BGRX), см. cre.cmake
+#define USE_LIBJPEG                          1 // libjpeg-turbo 3.2.1, цель cre_jpeg в cre.cmake
 #define USE_LIBPNG                           1
 #define USE_LIBWEBP                          0
 #define USE_LUNASVG                          0

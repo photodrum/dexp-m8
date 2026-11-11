@@ -26,3 +26,7 @@
 	path = third_party/utf8proc
 	url = https://github.com/JuliaStrings/utf8proc.git
 	shallow = true
+[submodule "third_party/libjpeg-turbo"]
+	path = third_party/libjpeg-turbo
+	url = https://github.com/libjpeg-turbo/libjpeg-turbo.git
+	shallow = true

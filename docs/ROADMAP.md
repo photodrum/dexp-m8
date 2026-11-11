@@ -57,12 +57,12 @@ R0, проба движков (`docs/READER_SPEC.md`, R0). Основной ко
 |---|---|---|
 | 7.0 ✅ | Подмодули `koreader/crengine`, MuPDF, DjVuLibre; проверка NDK 26.3 + CMake (2026-11-11, DEVLOG) | Opus |
 | 7.1 ✅ | Три `.so` (`mupdf`, `djvu`, `cre`) под `armeabi-v7a`, APK 8,2 МБ (2026-11-11, DEVLOG; план — `archive/ROADMAP-2026-11-11e.md`) | Opus |
-| 7.1а | libjpeg-turbo 3.2.1 для crengine — «План 7.1а» ниже | Opus |
+| 7.1а ✅ | libjpeg-turbo 3.2.1 для crengine, `libdexp_cre.so` +157 КБ (2026-11-11, DEVLOG); обложка на книге — в 7.2 | Opus |
 | 7.2 | JNI и отладочный экран: первая страница в `Bitmap` | Opus |
 | 7.3 | Замеры на книге, запись в DEVLOG | Sonnet |
 | 7.4 | Решение «идём / не идём» | вместе |
 
-### План 7.1а — libjpeg-turbo для crengine (решение «а» 2026-11-11, Opus)
+### План 7.1а — libjpeg-turbo для crengine ✅ (выполнен 2026-11-11, DEVLOG; таблицу перенести в архив при следующей чистке)
 
 `lvimg.cpp` написан под libjpeg-turbo (`JCS_EXT_BGRX`), в подмодулях только IJG (crengine 6b, MuPDF 9). Пока не сделано — `USE_LIBJPEG 0`, JPEG-картинки и обложки в FB2/EPUB не рисуются.
 

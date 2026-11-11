@@ -70,8 +70,23 @@ $CM/ninja -C /tmp/r0-build -k 0 dexp_cre > /tmp/x.log 2>&1   # или dexp_mupdf
 **Таблицы fribidi** (`app/src/main/cpp/engines/cre/fribidi/`) генерирует `tools/gen_fribidi.sh`
 хостовым `gcc` (meson не нужен). Результат в git; перезапускать только после обновления подмодуля.
 
+**Заголовки libjpeg-turbo** (`app/src/main/cpp/engines/cre/jpeg/`: `jconfig.h`, `jconfigint.h`,
+`jversion.h`) сгенерированы их CMake (только configure, без сборки) и лежат в git. После обновления
+подмодуля — перегенерировать и сверить список `CRE_JPEG_NAMES` в `engines/cre.cmake` с `JPEG_SOURCES`
+их `CMakeLists.txt`:
+
+```bash
+SDK=~/.local/android-sdk; CM=$SDK/cmake/3.22.1/bin
+$CM/cmake -S third_party/libjpeg-turbo -B /tmp/ljt-gen -G Ninja -DCMAKE_MAKE_PROGRAM=$CM/ninja \
+  -DCMAKE_TOOLCHAIN_FILE=$SDK/ndk/26.3.11579264/build/cmake/android.toolchain.cmake \
+  -DANDROID_ABI=armeabi-v7a -DANDROID_PLATFORM=android-27 -DWITH_SIMD=0 -DENABLE_SHARED=0 \
+  -DWITH_TOOLS=0 -DWITH_TESTS=0 -DWITH_TURBOJPEG=0
+cp /tmp/ljt-gen/{jconfig,jconfigint,jversion}.h app/src/main/cpp/engines/cre/jpeg/
+```
+
 **Движки читалки (с п. 7)** — git-подмодули в `third_party/` (`shallow = true`, ~250 МБ):
-crengine, djvulibre, mupdf (тег 1.28.6), xxhash, fribidi, libunibreak, utf8proc. После клона:
+crengine, djvulibre, mupdf (тег 1.28.6), xxhash, fribidi, libunibreak, utf8proc, libjpeg-turbo
+(тег 3.2.1). После клона (или после `git pull`, если добавился подмодуль):
 
 ```bash
 cd ~/projects/dexp-m8
@@ -159,7 +174,7 @@ GIT_ASKPASS=$PWD/tools/git-askpass.sh GIT_TERMINAL_PROMPT=0 \
 | `UnsatisfiedLinkError` в release | R8 выкинул `NativeBook` — нужен `-keep class ... { *; }` |
 | `aapt2: <manifest> must have a 'package' attribute` | AGP 8 вырезает `package`; в `build.sh` подставляем `sed` |
 | antiword: `Exactly one of the DEBUG and NDEBUG flags MUST be set` | Gradle Debug не задаёт `NDEBUG`; в `engines/*.cmake` у библиотек движков `-DNDEBUG` всегда |
-| crengine `lvimg.cpp`: `undeclared identifier 'JCS_EXT_BGRX'` | нужен libjpeg-turbo, а не IJG; пока `USE_LIBJPEG 0` в `engines/cre/crsetup.h` (ROADMAP, «План 7.1а») |
+| crengine `lvimg.cpp`: `undeclared identifier 'JCS_EXT_BGRX'` | нужен libjpeg-turbo, а не IJG. Решено в 7.1а: цель `cre_jpeg` (libjpeg-turbo 3.2.1); если ошибка вернулась — в `CRE_INC` перед `jpeglib.h` IJG стоит другой каталог |
 | ld: `undefined symbol: png_init_filter_functions_neon` | libpng 1.6 на ARM ждёт `arm/*.c`; задано `PNG_ARM_NEON_OPT=0` |
 | `apksigner` / `d8`: не найден `java` | `export PATH=$JAVA_HOME/bin:$PATH` |
 | Терминал Cline зависает на длинном heredoc | писать скрипт файлом (редактором), затем запускать |

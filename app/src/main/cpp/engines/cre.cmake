@@ -51,8 +51,56 @@ target_include_directories(cre_png PRIVATE ${CRE_TP}/libpng)
 target_compile_definitions(cre_png PRIVATE PNG_ARM_NEON_OPT=0)
 target_compile_options(cre_png PRIVATE ${CRE_LIB_OPTS})
 
-# JPEG в crengine пока выключен (USE_LIBJPEG 0 в crsetup.h): lvimg.cpp требует libjpeg-turbo
-# (JCS_EXT_BGRX), а в crengine/thirdparty/libjpeg — старый IJG 6b. Решение — ROADMAP «План 7.1».
+# --- libjpeg-turbo 3.2.1 (lvimg.cpp требует JCS_EXT_BGRX), API libjpeg 6.2, без SIMD ---
+# Исходники — JPEG_SOURCES из third_party/libjpeg-turbo/CMakeLists.txt (тег 3.2.1) + арифметика.
+# jconfig.h, jconfigint.h, jversion.h — сгенерированы их CMake под NDK (WITH_SIMD=0), лежат в
+# engines/cre/jpeg; перегенерировать при обновлении подмодуля (docs/BUILD.md).
+set(CRE_JPEG ${DEXP_THIRD}/libjpeg-turbo/src)
+set(CRE_JPEG_NAMES
+        jcapimin
+        wrapper/jcapistd-8 wrapper/jcapistd-12 wrapper/jcapistd-16
+        wrapper/jccoefct-8 wrapper/jccoefct-12
+        wrapper/jccolor-8 wrapper/jccolor-12 wrapper/jccolor-16
+        wrapper/jcdctmgr-8 wrapper/jcdctmgr-12
+        wrapper/jcdiffct-8 wrapper/jcdiffct-12 wrapper/jcdiffct-16
+        jchuff jcicc jcinit jclhuff
+        wrapper/jclossls-8 wrapper/jclossls-12 wrapper/jclossls-16
+        wrapper/jcmainct-8 wrapper/jcmainct-12 wrapper/jcmainct-16
+        jcmarker jcmaster jcomapi jcparam jcphuff
+        wrapper/jcprepct-8 wrapper/jcprepct-12 wrapper/jcprepct-16
+        wrapper/jcsample-8 wrapper/jcsample-12 wrapper/jcsample-16
+        jctrans jdapimin
+        wrapper/jdapistd-8 wrapper/jdapistd-12 wrapper/jdapistd-16
+        jdatadst jdatasrc
+        wrapper/jdcoefct-8 wrapper/jdcoefct-12
+        wrapper/jdcolor-8 wrapper/jdcolor-12 wrapper/jdcolor-16
+        wrapper/jddctmgr-8 wrapper/jddctmgr-12
+        wrapper/jddiffct-8 wrapper/jddiffct-12 wrapper/jddiffct-16
+        jdhuff jdicc jdinput jdlhuff
+        wrapper/jdlossls-8 wrapper/jdlossls-12 wrapper/jdlossls-16
+        wrapper/jdmainct-8 wrapper/jdmainct-12 wrapper/jdmainct-16
+        jdmarker jdmaster
+        wrapper/jdmerge-8 wrapper/jdmerge-12
+        jdphuff
+        wrapper/jdpostct-8 wrapper/jdpostct-12 wrapper/jdpostct-16
+        wrapper/jdsample-8 wrapper/jdsample-12 wrapper/jdsample-16
+        jdtrans jerror jfdctflt
+        wrapper/jfdctfst-8 wrapper/jfdctfst-12
+        wrapper/jfdctint-8 wrapper/jfdctint-12
+        wrapper/jidctflt-8 wrapper/jidctflt-12
+        wrapper/jidctfst-8 wrapper/jidctfst-12
+        wrapper/jidctint-8 wrapper/jidctint-12
+        wrapper/jidctred-8 wrapper/jidctred-12
+        jmemmgr jmemnobs jpeg_nbits
+        wrapper/jquant1-8 wrapper/jquant1-12
+        wrapper/jquant2-8 wrapper/jquant2-12
+        wrapper/jutils-8 wrapper/jutils-12 wrapper/jutils-16
+        jaricom jcarith jdarith)
+list(TRANSFORM CRE_JPEG_NAMES PREPEND ${CRE_JPEG}/ OUTPUT_VARIABLE CRE_JPEG_SRC)
+list(TRANSFORM CRE_JPEG_SRC APPEND .c)
+add_library(cre_jpeg STATIC ${CRE_JPEG_SRC})
+target_include_directories(cre_jpeg PRIVATE ${CRE_GEN}/jpeg ${CRE_JPEG})
+target_compile_options(cre_jpeg PRIVATE ${CRE_LIB_OPTS})
 
 # --- libunibreak, utf8proc, xxhash ---
 set(CRE_UB ${DEXP_THIRD}/libunibreak/src)
@@ -112,6 +160,7 @@ set(CRE_INC
         ${CRE_DIR}/crengine/include
         ${CRE_FT}/include ${CRE_HB}
         ${CRE_TP}/libpng ${CRE_TP}/antiword
+        ${CRE_GEN}/jpeg ${CRE_JPEG}     # jconfig.h, затем jpeglib.h libjpeg-turbo
         ${CRE_UB} ${DEXP_THIRD}/utf8proc ${DEXP_THIRD}/xxhash
         ${CRE_GEN}/fribidi ${CRE_FRIBIDI})
 set(CRE_DEFS CR3_ANTIWORD_PATCH=1 UTF8PROC_STATIC FRIBIDI_LIB_STATIC)
@@ -130,7 +179,7 @@ target_compile_features(dexp_cre PRIVATE cxx_std_17)
 target_compile_options(dexp_cre PRIVATE -Os -ffunction-sections -fdata-sections -fvisibility=hidden -Wall)
 target_link_options(dexp_cre PRIVATE ${DEXP_ENGINE_LDFLAGS})
 target_link_libraries(dexp_cre
-        cre_core cre_antiword cre_harfbuzz cre_freetype cre_png cre_fribidi
+        cre_core cre_antiword cre_harfbuzz cre_freetype cre_png cre_jpeg cre_fribidi
         cre_unibreak cre_utf8proc cre_xxhash
         z m log)
 

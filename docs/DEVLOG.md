@@ -2,6 +2,19 @@
 
 > Старые записи — `docs/archive/`: до 2026-11-10 — `DEVLOG-2026-11-07_09.md`, `DEVLOG-2026-11-10-p3.md`, `DEVLOG-2026-11-10-p3_9-p4_2.md`; п. 4 (4.3–4.7) и проверки 2026-11-10 — 11 — `DEVLOG-2026-11-10_11.md`; п. 5 (5.1–5.2), замечания 2026-11-11, полный п. 6.0 — `DEVLOG-2026-11-11-p5_6_0.md`; хвосты п. 5, автор из имени файла, п. 6.0–6.1 — `DEVLOG-2026-11-11-p5tail_6_1.md`. П. 6.2 и оптимизация документов 2026-11-11 — `DEVLOG-2026-11-11-p6_2_docs.md`.
 
+## 2026-11-11 — п. 7, шаг 7.1а: libjpeg-turbo для crengine (Opus)
+
+По «Плану 7.1а». Код оболочки не тронут.
+
+- **Подмодуль** `third_party/libjpeg-turbo` — тег **3.2.1** (`7b49937`), `shallow = true`. Лицензия: IJG + BSD-3 (+ zlib у SIMD, его не собираем), совместима с AGPL-3.0 — внести в B75.
+- **Заголовки** `engines/cre/jpeg/{jconfig,jconfigint,jversion}.h` — сгенерированы их CMake (только configure) под NDK 26.3, `armeabi-v7a`, `android-27`, `WITH_SIMD=0`, `ENABLE_SHARED=0`, без утилит, тестов и TurboJPEG. API libjpeg 6.2 (`JPEG_LIB_VERSION 62`), арифметическое кодирование включено. Команда — `BUILD.md`.
+- **`cre.cmake`:** цель `cre_jpeg` STATIC — `JPEG_SOURCES` из их `CMakeLists.txt` того же тега (обёртки `src/wrapper/*-8/12/16.c`) + `jaricom`, `jcarith`, `jdarith`; `CRE_LIB_OPTS`. В `CRE_INC` — `engines/cre/jpeg` и `libjpeg-turbo/src` (перед ними нет каталогов с IJG `jpeglib.h`). `crsetup.h`: `USE_LIBJPEG 1`.
+- **Проверка.** Прямая сборка (`/tmp/r0-cmake.sh dexp_cre`) и Gradle `assembleDebug` прошли без ошибок. В `libdexp_cre.so` наружу по-прежнему один символ `dexp_cre_probe`, в `NEEDED` ничего нового (`libz`, `libm`, `liblog`, `libdl`, `libc`); `jpeg_CreateDecompress`, `jpeg_read_header`, `jpeg_start_decompress` внутри, локальные (`llvm-nm`).
+- **Размер:** `libdexp_cre.so` 3 062 048 → **3 219 264** байт (+157 КБ). Содержимое APK — 8,35 МБ сжатого (было 8,2 МБ); сам `app-debug.apk` после инкрементальной сборки — 11,47 МБ, похоже, из-за промежутков, которые оставляет инкрементальная упаковка Debug (не проверено; для замера 7.3 брать чистую сборку).
+- **Gradle в фоне** не видит `java`, если не выставлены переменные из `BUILD.md` (`JAVA_HOME`, `ANDROID_HOME`, `PATH`) — так и было, отдельная строка в «частых ошибках» уже есть.
+
+Приёмка на книге — в 7.2: FB2 с JPEG-обложкой показывает картинку.
+
 ## 2026-11-11 — оптимизация документов перед 7.1а (Sonnet)
 
 `ROADMAP.md`: выполненный «План 7.1» и закрытые вопросы п. 7 (ABI, JPEG) → `archive/ROADMAP-2026-11-11e.md`; вместо них «План 7.1а» (libjpeg-turbo 3.2.1, заголовки — генерацией их CMake, списки исходников — из их `CMakeLists.txt`, проверка `llvm-nm`, приёмка обложки в 7.2); вопрос о лицензии crengine — одна строка со ссылкой на DEVLOG 7.0. `DEVLOG.md`: записи 6.2 и «оптимизация документов» → `archive/DEVLOG-2026-11-11-p6_2_docs.md`, устаревший раздел «Что выяснилось для 7.1» в записи 7.0 сжат до ссылки. `CONTEXT.md`: ссылка на «План 7.1а». Код не тронут.
