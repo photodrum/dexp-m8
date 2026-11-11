@@ -61,6 +61,25 @@ R0, проба движков (`docs/READER_SPEC.md`, R0). Основной ко
 | 7.3 | Замеры на книге, запись в DEVLOG | Sonnet |
 | 7.4 | Решение «идём / не идём» | вместе |
 
+### План 7.1 (уточнён 2026-11-11, до начала работы)
+
+**Решение: три отдельные `.so`, у каждой зависимости вшиты статически и скрыты** (`-fvisibility=hidden`, `--exclude-libs,ALL`). Заменяет «общие freetype/harfbuzz» из DEVLOG 7.0. Причины:
+
+- harfbuzz в MuPDF собран с `-Dhb_malloc_impl=fz_hb_malloc` (память через `fz_context` под замком), из crengine такой вызывать нельзя. Для PDF/CBZ harfbuzz и gumbo не нужны: в MuPDF они работают только в HTML-движке (`FZ_ENABLE_HTML_ENGINE=0`).
+- freetype в MuPDF урезан (`scripts/freetype/slimftmodules.h`, `slimftoptions.h`: без autofit и harfbuzz), а crengine нужен полный.
+- Плюсы: нет конфликта символов, в память грузится только нужный движок, размер и PSS видны по каждому. Цена — вторая копия freetype (~0,5 МБ). zlib для всех — системный из NDK (`-lz`).
+
+| # | Что | Файлы |
+|---|---|---|
+| 1 | `abiFilters` = только `armeabi-v7a` в debug и release; `ANDROID_STL=c++_static`; `-std=c99` убрать из общих `cFlags` (оставить в `dexp_core`, там уже `CMAKE_C_STANDARD 99`) | `app/build.gradle.kts`, `app/src/main/cpp/CMakeLists.txt` |
+| 2 | `libdexp_mupdf.so`: `source/{fitz,pdf,cbz}`, шрифты `generated/resources/fonts/urw/*.c` (уже в репозитории MuPDF, `make generate` не нужен); `FZ_ENABLE_{JS,HTML,HTML_ENGINE,EPUB,FB2,MOBI,OFFICE,TXT,MD,XPS,SVG,BROTLI,BARCODE,DOCX_OUTPUT,ODT_OUTPUT,OCR_OUTPUT,HYPHEN}=0`, `TOFU_CJK`, `TOFU_NOTO`, `TOFU_SIL`, `AA_BITS=8`. Внутри: freetype (slim), libjpeg (`scripts/libjpeg`), jbig2dec, openjpeg, lcms2 (или `FZ_ENABLE_ICC=0`). Флаги и списки — по `Makelists` и `platform/java/Android.mk` | `app/src/main/cpp/engines/mupdf.cmake` |
+| 3 | `libdexp_djvu.so`: `libdjvu/*.cpp` + `ddjvuapi`; свой `config.h` вместо autotools (`HAVE_STDINT_H`, `HAVE_PTHREAD`, `HAVE_NAMESPACES` и т.п. по `configure.ac`) | `engines/djvu.cmake`, `engines/djvu/config.h` |
+| 4 | `libdexp_cre.so`: свой список `crengine/src/*.cpp` (образец — `crengine/android/jni/Android.mk`, без `crgui`, `cri18n`, `crtest`); свой `crsetup.h` вместо `crsetup.h.cmake` (`CR_USE_THREADS 0`, `CHM 0`, `ANTIWORD 1`, `LUNASVG/NANOSVG/WEBP/ZSTD/MATHML 0`). Внутри: freetype полный (исходники из `mupdf/thirdparty/freetype`), harfbuzz (исходники MuPDF, без `fz_hb_*`), libpng и libjpeg из `crengine/thirdparty`, libunibreak, utf8proc, fribidi (свой `config.h`), xxhash, antiword | `engines/cre.cmake`, `engines/cre/*.h` |
+| 5 | В каждой `.so` — экспортируемая C-функция «открыть файл → первая страница в 8-битный серый буфер», чтобы `--gc-sections` не выкинул движок. JNI и экран — 7.2 | `engines/*_probe.c(pp)` |
+| 6 | `assembleDebug`, размер APK и каждой `.so` (`llvm-readelf`, экспорт), DEVLOG/BUILD/ROADMAP/CONTEXT, коммит | `docs/*` |
+
+Флаги подбирать прямой сборкой CMake из NDK (команда — DEVLOG 7.0, `/tmp/r0-probe`), Gradle — в конце. Порядок: 1 → 2 → 3 → 4; самое долгое — crengine, шаг может занять две сессии (по правилам: не вышло за 2 захода — записать в DEVLOG и остановиться).
+
 ## Открытые замечания (проверка на книге 2026-11-11)
 
 Закрытые (1, 2, 3, 5, 9, 11, 13, 14) — в архиве. Замечание 6 (остаток на B41–B43) закрыто: п. 6.1, проверено в 6.2.
