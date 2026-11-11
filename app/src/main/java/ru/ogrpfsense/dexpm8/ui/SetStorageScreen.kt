@@ -12,8 +12,9 @@ import java.util.Locale
  * из `LibraryDb`; «Приложения» — APK и каталог данных; «Кэш» — внутренний и внешний кэш;
  * «Система» — остаток. «Аудиокниги» — всегда 0 (аудио в оболочке пока нет).
  * Не рисуется (данных нет): «Страницы PDF и DjVu» — описание, движков ещё нет.
- * «Файлы загрузок» — значение по умолчанию из макета. Ввод не обрабатывается, работает только
- * «Назад» (кнопки «Очистить» — шаг 4.6).
+ * Нажимается (шаг 4.6): «Очистить» у «Кэша обложек» — `act.sys.clearCache` (кэш оболочки целиком,
+ * отдельного кэша обложек пока нет); «Очистить» у страниц PDF/DjVu — нечего чистить до движков;
+ * «Файлы загрузок» — тумблер в `act.prefs`.
  */
 class SetStorageScreen(act: EinkActivity) : Screen(act) {
 
@@ -26,7 +27,6 @@ class SetStorageScreen(act: EinkActivity) : Screen(act) {
     private var apps = 0L
     private var cache = 0L
     private var avgBook = 0L
-    private val deleteArchives = true
 
     override fun render(c: Canvas) {
         val used = (total - free).coerceAtLeast(0L)
@@ -76,7 +76,7 @@ class SetStorageScreen(act: EinkActivity) : Screen(act) {
         icons.draw(c, "download", 128.3f, 1379.2f, 35.3f, 40.9f)
         kit.title(c, "Файлы загрузок", 1350f, 237f)
         kit.desc(c, "Удалять архивы после добавления", 1403f, 237f)
-        kit.toggle(c, 1362f, deleteArchives, 1174f)
+        kit.toggle(c, 1362f, act.prefs.deleteArchives, 1174f)
     }
 
     /** Шкала: сегменты по долям [parts] от занятого, ширина дорожки 1213 при заполнении `used / total`. */
@@ -130,7 +130,17 @@ class SetStorageScreen(act: EinkActivity) : Screen(act) {
     }
 
     override fun onUp(x: Float, y: Float) {
-        if (kit.isBack(x, y)) act.pop()
+        if (kit.isBack(x, y)) { act.pop(); return }
+        if (x >= 1040f && x <= 1334f && y >= 1024.5f && y <= 1146.5f) {
+            act.sys.clearCache()
+            refresh()
+            redraw()
+            return
+        }
+        if (kit.inRow(x, y, 1330f, 158f)) {
+            act.prefs.deleteArchives = !act.prefs.deleteArchives
+            redraw()
+        }
     }
 
     override fun onAttachedToWindow() {

@@ -3,19 +3,23 @@ package ru.ogrpfsense.dexpm8.ui
 import android.content.Context
 import android.graphics.Canvas
 import android.net.ConnectivityManager
-import android.provider.Settings
 
 /**
  * B38 · Настройки · Сеть. Числа — из design/v5/B38.json.
  *
- * Без новых прав (они — шаг 4.6): состояние Wi-Fi и Bluetooth читается из `Settings.Global`
- * (`wifi_on`, `bluetooth_on`), подключение — через `ConnectivityManager` (ACCESS_NETWORK_STATE).
- * Не рисуются: список сетей и название сети (нужны ACCESS_WIFI_STATE и геолокация), строка
- * «Сопряжённые устройства» (нужен BLUETOOTH). Вместо них панели сжаты до одной строки, всё
- * ниже сдвинуто вверх — относительно макета: Wi-Fi 870 → 190, Bluetooth 340 → 190.
- * «Выключать Wi-Fi во сне» — значение по умолчанию из макета. Ввод не обрабатывается.
+ * Wi-Fi и Bluetooth — `act.sys` (WifiManager / BluetoothAdapter, обычные права из манифеста).
+ * Переключение асинхронное: тумблер меняется сразу, через [SETTLE_MS] экран один раз сверяется
+ * с системой (без таймеров по кругу). Подключение — через `ConnectivityManager`.
+ * Не рисуются: список сетей и название сети (нужна геолокация), строка «Сопряжённые устройства».
+ * Вместо них панели сжаты до одной строки, всё ниже сдвинуто вверх — относительно макета:
+ * Wi-Fi 870 → 190, Bluetooth 340 → 190. «Выключать Wi-Fi во сне» хранится в `act.prefs`
+ * (исполнится вместе со сном, п. 8).
  */
 class SetNetScreen(act: EinkActivity) : Screen(act) {
+
+    private companion object {
+        const val SETTLE_MS = 2500L
+    }
 
     private val status = StatusBar(act, this, ink, icons)
     private val kit = SettingsKit(ink, icons)
@@ -23,7 +27,7 @@ class SetNetScreen(act: EinkActivity) : Screen(act) {
     private var wifiOn = false
     private var wifiLinked = false
     private var btOn = false
-    private val sleepOff = true
+    private val settle = Runnable { if (parent != null) { refresh(); redraw() } }
 
     override fun render(c: Canvas) {
         ink.rect(c, 0f, 0f, W, H, T.BG)
@@ -48,7 +52,7 @@ class SetNetScreen(act: EinkActivity) : Screen(act) {
 
         kit.title(c, "Выключать Wi-Fi во сне", 816f, 59f)
         kit.desc(c, "Бережёт заряд, при пробуждении подключится снова", 869f, 59f)
-        kit.toggle(c, 828f, sleepOff, 1206f)
+        kit.toggle(c, 828f, act.prefs.wifiSleepOff, 1206f)
     }
 
     private fun wifiText() = when {
@@ -58,9 +62,8 @@ class SetNetScreen(act: EinkActivity) : Screen(act) {
     }
 
     private fun refresh() {
-        val cr = act.contentResolver
-        wifiOn = Settings.Global.getInt(cr, "wifi_on", 0) != 0
-        btOn = Settings.Global.getInt(cr, "bluetooth_on", 0) != 0
+        wifiOn = act.sys.wifiOn()
+        btOn = act.sys.btOn()
         wifiLinked = try {
             val cm = act.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
             val ni = cm.activeNetworkInfo
@@ -72,7 +75,26 @@ class SetNetScreen(act: EinkActivity) : Screen(act) {
     }
 
     override fun onUp(x: Float, y: Float) {
-        if (kit.isBack(x, y)) act.pop()
+        if (kit.isBack(x, y)) { act.pop(); return }
+        when {
+            kit.inRow(x, y, 298f, 190f) -> {
+                if (act.sys.setWifi(!wifiOn)) { wifiOn = !wifiOn; wifiLinked = false; settleLater() }
+                redraw()
+            }
+            kit.inRow(x, y, 568f, 190f) -> {
+                if (act.sys.setBt(!btOn)) { btOn = !btOn; settleLater() }
+                redraw()
+            }
+            kit.inRow(x, y, 790f, 150f) -> {
+                act.prefs.wifiSleepOff = !act.prefs.wifiSleepOff
+                redraw()
+            }
+        }
+    }
+
+    private fun settleLater() {
+        removeCallbacks(settle)
+        postDelayed(settle, SETTLE_MS)
     }
 
     override fun onAttachedToWindow() {
@@ -82,6 +104,7 @@ class SetNetScreen(act: EinkActivity) : Screen(act) {
     }
 
     override fun onDetachedFromWindow() {
+        removeCallbacks(settle)
         status.detach()
         super.onDetachedFromWindow()
     }

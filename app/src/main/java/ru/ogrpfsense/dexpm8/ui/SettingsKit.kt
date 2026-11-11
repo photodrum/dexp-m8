@@ -13,7 +13,7 @@ import android.graphics.Canvas
  *   сегменты   желоб 1221×95, активный сегмент — выпуклая плашка 404.3×90
  *   тумблер    желоб 139×73; включён — дно G3, ручка справа; выключен — дно G12, ручка слева
  *
- * Только рисование: значения передаёт экран, ввод не обрабатывается (запись — шаг 4.6).
+ * Рисование и попадание касаний; значения хранит экран, запись — через `act.sys` / `act.prefs` (шаг 4.6).
  */
 class SettingsKit(private val ink: Ink, private val icons: Icons) {
 
@@ -117,5 +117,31 @@ class SettingsKit(private val ink: Ink, private val icons: Icons) {
     fun toggle(c: Canvas, y: Float, on: Boolean, x: Float = 1177f) {
         ink.inset(c, x, y, 139f, 73f, 37f, if (on) T.G3 else T.G12)
         ink.convex(c, if (on) x + 70f else x + 4f, y + 4f, 63f, 68f, 29f)
+    }
+
+    // ---------------------------------------------------------------- касания (шаг 4.6)
+    // Зоны шире органов: тач ≥ 96 px макета (docs/ARCHITECTURE.md, «Правила E-Ink»).
+
+    /** Попадание в строку панели [top]…[top]+[h] (x 41…1362). */
+    fun inRow(x: Float, y: Float, top: Float, h: Float) = x >= 41f && x <= 1362f && y >= top && y < top + h
+
+    /**
+     * Ползунок с верхом ручки [handleY]: касание дорожки → новое значение 0…100 (шаг 5);
+     * иконки по краям — −10 / +10 от [cur]. null — мимо ползунка.
+     */
+    fun sliderHit(x: Float, y: Float, handleY: Float, cur: Int): Int? {
+        if (y < handleY - 10f || y > handleY + 108f) return null
+        return when {
+            x in 60f..158f -> (cur - 10).coerceIn(0, 100)
+            x in 1222f..1362f -> (cur + 10).coerceIn(0, 100)
+            x > 158f && x < 1222f -> ((x - 163f) / 1055f * 100f / 5f).let { Math.round(it) * 5 }.coerceIn(0, 100)
+            else -> null
+        }
+    }
+
+    /** Номер сегмента под касанием (желоб на [y], [n] сегментов) или −1. */
+    fun segmentHit(x: Float, y: Float, segY: Float, n: Int): Int {
+        if (y < segY - 10f || y > segY + 105f || x < 88f || x > 1309f) return -1
+        return ((x - 92f) / (1213.2f / n)).toInt().coerceIn(0, n - 1)
     }
 }

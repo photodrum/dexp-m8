@@ -9,6 +9,8 @@ import android.os.Looper
 import android.view.View
 import android.view.WindowManager
 import ru.ogrpfsense.dexpm8.core.LibraryDb
+import ru.ogrpfsense.dexpm8.core.Prefs
+import ru.ogrpfsense.dexpm8.core.Sys
 
 /**
  * Единственная Activity оболочки. Экраны — это View в стеке, переходы —
@@ -23,7 +25,7 @@ class EinkActivity : Activity() {
         const val SCR_SETTINGS = 4
         const val SCR_READER = 5
 
-        // Разделы B13 — заглушки до шагов 4.5/4.6 (экраны B37–B43).
+        // Разделы B13 — экраны B37–B43.
         const val SCR_SET_SCREEN = 10
         const val SCR_SET_NET = 11
         const val SCR_SET_READ = 12
@@ -34,6 +36,8 @@ class EinkActivity : Activity() {
         const val SCR_SET_ABOUT = 17
 
         private const val REQ_STORAGE = 1
+        private const val REQ_WRITE_SETTINGS = 2
+        private const val REQ_ADMIN = 3
 
         /**
          * Сколько держать белый кадр после системного диалога. Полное обновление Carta —
@@ -63,6 +67,15 @@ class EinkActivity : Activity() {
 
     /** База библиотеки — одна на приложение; экраны берут её отсюда. */
     val db: LibraryDb by lazy { LibraryDb(this) }
+
+    /** Системные настройки (B37–B42, B5) и свои настройки оболочки. */
+    val sys: Sys by lazy { Sys(this) }
+    val prefs: Prefs by lazy { Prefs(this) }
+
+    // Особые права через системные экраны (WRITE_SETTINGS, device admin). Итог — в onActivityResult:
+    // экран WRITE_SETTINGS ничего не возвращает, поэтому право проверяется заново.
+    private var writeWaiter: ((Boolean) -> Unit)? = null
+    private var adminWaiter: ((Boolean) -> Unit)? = null
 
     private lateinit var host: android.widget.FrameLayout
     private val stack = ArrayList<Int>(8)
@@ -200,6 +213,82 @@ class EinkActivity : Activity() {
         val waiters = ArrayList(storageWaiters)
         storageWaiters.clear()
         for (w in waiters) w(ok)
+    }
+
+    // ------------------------------------------------------------ особые права (шаг 4.6)
+
+    /**
+     * Выполнить [action], когда есть WRITE_SETTINGS. Права нет — открывается системный экран
+     * «Изменение системных настроек» для оболочки; [action] выполнится после возврата, если
+     * право выдали. Действие с неудачей не повторяется: пользователь нажмёт ещё раз.
+     */
+    fun withWriteSettings(action: () -> Unit) {
+        if (sys.canWrite()) {
+            action()
+            return
+        }
+        writeWaiter = { ok -> if (ok) action() }
+        Trace.step("write_settings: request")
+        try {
+            startActivityForResult(android.content.Intent(
+                android.provider.Settings.ACTION_MANAGE_WRITE_SETTINGS,
+                android.net.Uri.parse("package:$packageName")), REQ_WRITE_SETTINGS)
+            cleanOnFocus = true
+        } catch (t: Throwable) {
+            Trace.step("write_settings: no screen ${t.javaClass.simpleName}")
+            writeWaiter = null
+        }
+    }
+
+    /**
+     * Включить администратора устройства (нужен только для сна по кнопке, B5). [done] получает итог.
+     */
+    fun requestAdmin(done: (Boolean) -> Unit) {
+        if (sys.adminActive()) {
+            done(true)
+            return
+        }
+        adminWaiter = done
+        Trace.step("admin: request")
+        try {
+            val i = android.content.Intent(android.app.admin.DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN)
+                .putExtra(android.app.admin.DevicePolicyManager.EXTRA_DEVICE_ADMIN, sys.adminComponent)
+                .putExtra(android.app.admin.DevicePolicyManager.EXTRA_ADD_EXPLANATION,
+                    "Нужно только для кнопки «Сон»: оболочка сможет выключать экран.")
+            startActivityForResult(i, REQ_ADMIN)
+            cleanOnFocus = true
+        } catch (t: Throwable) {
+            Trace.step("admin: no screen ${t.javaClass.simpleName}")
+            adminWaiter = null
+            done(false)
+        }
+    }
+
+    /** Сон сейчас: админ есть — экран гаснет; нет — сначала системный запрос. */
+    fun sleepNow() {
+        if (sys.lockNow()) return
+        requestAdmin { ok -> if (ok) sys.lockNow() }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        when (requestCode) {
+            REQ_WRITE_SETTINGS -> {
+                // Экран ничего не возвращает: проверяем само право.
+                val w = writeWaiter
+                writeWaiter = null
+                val ok = sys.canWrite()
+                Trace.step("write_settings: ${if (ok) "granted" else "denied"}")
+                w?.invoke(ok)
+            }
+            REQ_ADMIN -> {
+                val w = adminWaiter
+                adminWaiter = null
+                val ok = sys.adminActive()
+                Trace.step("admin: ${if (ok) "granted" else "denied"}")
+                w?.invoke(ok)
+            }
+        }
     }
 
     private fun storageChanged(ok: Boolean) {
@@ -383,6 +472,8 @@ class EinkActivity : Activity() {
         ui.removeCallbacksAndMessages(null)
         storageWaiters.clear()
         storageListeners.clear()
+        writeWaiter = null
+        adminWaiter = null
         screens.clear()
         if (lastInstance === this) lastInstance = null
         super.onDestroy()

@@ -14,7 +14,9 @@ import java.util.TimeZone
  * Читается: время и дата, 12/24-часовой формат, язык, часовой пояс, «Время по сети»
  * (`Settings.Global.auto_time`). Не рисуются (данных нет): значения «Раскладки клавиатуры»
  * и «Словари». Время не обновляется само (на E-Ink нет таймеров) — только при открытии экрана
- * и при перерисовке. Ввод не обрабатывается, работает только «Назад» (запись — шаг 4.6).
+ * и при перерисовке. Пишется (шаг 4.6) только «24-часовой формат» — `Settings.System.TIME_12_24`
+ * (WRITE_SETTINGS). «Время по сети» — Settings.Global, обычному приложению закрыт: только чтение.
+ * Пояс, язык, раскладки и словари не нажимаются (своих экранов в макете нет).
  */
 class SetLangScreen(act: EinkActivity) : Screen(act) {
 
@@ -88,7 +90,14 @@ class SetLangScreen(act: EinkActivity) : Screen(act) {
     }
 
     override fun onUp(x: Float, y: Float) {
-        if (kit.isBack(x, y)) act.pop()
+        if (kit.isBack(x, y)) { act.pop(); return }
+        if (kit.inRow(x, y, 934f, 144f)) {
+            val want = !DateFormat.is24HourFormat(act)
+            act.withWriteSettings {
+                act.sys.setTime24(want)
+                redraw()
+            }
+        }
     }
 
     override fun onAttachedToWindow() {

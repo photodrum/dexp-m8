@@ -5,8 +5,9 @@ import android.graphics.Canvas
 /**
  * B39 · Настройки · Чтение по умолчанию. Числа — из design/v5/B39.json.
  *
- * Читалки ещё нет, поэтому все значения — по умолчанию из макета (Литерата · 20, «Обычный ·
- * широкие», «Классическая», «Листание»). Ввод не обрабатывается, работает только «Назад».
+ * Читалки ещё нет: «Переносы слов», вариант зон касаний и «Листать свайпом» хранятся в `act.prefs`
+ * (шаг 4.6) и будут прочитаны читалкой. «Шрифт и размер», «Интервал и поля», «Кнопки громкости» —
+ * значения по умолчанию из макета, не нажимаются (их экраны — вместе с читалкой).
  * Блок «Кнопки и жесты» внизу — это и есть экран `SCR_SET_KEYS`: он открывает тот же экран.
  */
 class SetReadScreen(act: EinkActivity) : Screen(act) {
@@ -21,9 +22,9 @@ class SetReadScreen(act: EinkActivity) : Screen(act) {
         Zone("Две половины", "Левая — назад, правая — вперёд", 1062f),
         Zone("Только вперёд", "Любое касание листает вперёд", 1224f)
     )
-    private val zoneSel = 0
 
     override fun render(c: Canvas) {
+        val p = act.prefs
         ink.rect(c, 0f, 0f, W, H, T.BG)
         status.draw(c)
         kit.header(c, "Чтение", "Для новых книг · шрифт, зоны, кнопки")
@@ -41,12 +42,12 @@ class SetReadScreen(act: EinkActivity) : Screen(act) {
         kit.next(c, 547f)
         kit.divider(c, 634f)
         kit.title(c, "Переносы слов", 676.5f)
-        kit.toggle(c, 667f, true)
+        kit.toggle(c, 667f, p.hyphens)
 
         kit.section(c, "ЗОНЫ КАСАНИЙ", 810f)
         kit.panel(c, 858f, 570f)
         scheme(c)
-        for (i in zones.indices) variant(c, zones[i], i == zoneSel)
+        for (i in zones.indices) variant(c, zones[i], i == p.tapZones)
 
         kit.section(c, "КНОПКИ И ЖЕСТЫ", 1460f)
         kit.panel(c, 1508f, 310f)
@@ -55,7 +56,7 @@ class SetReadScreen(act: EinkActivity) : Screen(act) {
         kit.next(c, 1586.5f)
         kit.divider(c, 1684f)
         kit.title(c, "Листать свайпом", 1721.5f)
-        kit.toggle(c, 1712f, true)
+        kit.toggle(c, 1712f, p.swipe)
     }
 
     /** Схема страницы 360×480: зона «Назад» и «Меню» (вперёд — остальное поле). */
@@ -81,7 +82,17 @@ class SetReadScreen(act: EinkActivity) : Screen(act) {
     }
 
     override fun onUp(x: Float, y: Float) {
-        if (kit.isBack(x, y)) act.pop()
+        if (kit.isBack(x, y)) { act.pop(); return }
+        val p = act.prefs
+        if (kit.inRow(x, y, 634f, 144f)) { p.hyphens = !p.hyphens; redraw(); return }
+        for (i in zones.indices) {
+            val z = zones[i]
+            if (x >= 490f && x <= 1314f && y >= z.y && y <= z.y + 140f) {
+                if (p.tapZones != i) { p.tapZones = i; redraw() }
+                return
+            }
+        }
+        if (kit.inRow(x, y, 1684f, 134f)) { p.swipe = !p.swipe; redraw() }
     }
 
     override fun onAttachedToWindow() {

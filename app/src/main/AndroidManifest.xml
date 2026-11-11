@@ -11,6 +11,14 @@
     <!-- Та же группа STORAGE, выдаётся тем же диалогом. Нужно для записи DexpM8-crash.txt
          в корень внутреннего хранилища: стек падения открывается файловым менеджером книги. -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <!-- Шаг 4.6, общий слой core/Sys.kt (B37–B42 и панель B5).
+         WRITE_SETTINGS — особое право: выдаётся на системном экране (EinkActivity.withWriteSettings).
+         Остальные — обычные, выдаются при установке. -->
+    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
 
     <uses-feature
         android:name="android.hardware.touchscreen"
@@ -52,6 +60,19 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity-alias>
+
+        <!-- Device admin только для сна по кнопке (core/AdminReceiver.kt, B5) -->
+        <receiver
+            android:name=".core.AdminReceiver"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/device_admin" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+            </intent-filter>
+        </receiver>
 
     </application>
 

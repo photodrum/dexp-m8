@@ -11,9 +11,11 @@ import android.provider.Settings
  *
  * Читается: заряд (липкий `ACTION_BATTERY_CHANGED`, право не нужно), «Засыпать через» —
  * `Settings.System.SCREEN_OFF_TIMEOUT`, порог экономии — `Settings.Global.low_power_trigger_level`.
+ * Пишется (шаг 4.6): «Засыпать через» — `act.sys.setSleepTimeout` (WRITE_SETTINGS; «Никогда» —
+ * Int.MAX_VALUE); «Экономия заряда» и «Показывать заряд на заставке» — `act.prefs` (исполнятся
+ * с B19/B20). Порог экономии не пишется: Settings.Global закрыт для обычных приложений.
  * Не рисуются (данных нет): «Хватит примерно на…» и «Последняя зарядка — …» — отступ от макета,
- * место справа от «78 %» остаётся пустым. Остальное — значения по умолчанию из макета.
- * Ввод не обрабатывается, работает только «Назад» (запись — шаг 4.6).
+ * место справа от «78 %» остаётся пустым. «Заставка сна» и «Выключать после сна» не нажимаются.
  */
 class SetSleepScreen(act: EinkActivity) : Screen(act) {
 
@@ -21,12 +23,12 @@ class SetSleepScreen(act: EinkActivity) : Screen(act) {
     private val kit = SettingsKit(ink, icons)
 
     private val timeouts = arrayOf("5 мин", "10 мин", "30 мин", "Никогда")
+    private val timeoutMs = intArrayOf(300_000, 600_000, 1_800_000, Int.MAX_VALUE)
     private var active = 1
     private var saverAt = 15
-    private val saverOn = true
-    private val coverCharge = true
 
     override fun render(c: Canvas) {
+        val p = act.prefs
         ink.rect(c, 0f, 0f, W, H, T.BG)
         status.draw(c)
         kit.header(c, "Сон и питание", "Заставка, засыпание, батарея")
@@ -43,7 +45,7 @@ class SetSleepScreen(act: EinkActivity) : Screen(act) {
 
         kit.title(c, "Экономия заряда", 606f)
         kit.desc(c, "Включится при $saverAt%: без Wi-Fi и подсветки", 659f)
-        kit.toggle(c, 618f, saverOn, 1170f)
+        kit.toggle(c, 618f, p.saver, 1170f)
 
         kit.section(c, "СОН", 810f)
         kit.panel(c, 858f, 730f)
@@ -59,7 +61,7 @@ class SetSleepScreen(act: EinkActivity) : Screen(act) {
         kit.divider(c, 1274f, 237f, 1079f)
 
         kit.title(c, "Показывать заряд на заставке", 1328f)
-        kit.toggle(c, 1318.5f, coverCharge)
+        kit.toggle(c, 1318.5f, p.coverCharge)
         kit.divider(c, 1434f)
 
         kit.title(c, "Выключать после сна", 1460f)
@@ -77,24 +79,31 @@ class SetSleepScreen(act: EinkActivity) : Screen(act) {
 
     private fun refresh() {
         val cr = act.contentResolver
-        try {
-            val ms = Settings.System.getInt(cr, Settings.System.SCREEN_OFF_TIMEOUT)
-            active = when {
-                ms < 300_000 -> -1          // короче 5 минут: такого сегмента в макете нет
-                ms <= 300_000 -> 0
-                ms <= 600_000 -> 1
-                ms <= 1_800_000 -> 2
-                else -> 3
-            }
-        } catch (t: Throwable) {
-            Trace.step("settings sleep FAIL: ${t.javaClass.simpleName}: ${t.message}")
+        val ms = act.sys.sleepTimeout()
+        if (ms >= 0) active = when {
+            ms < 300_000 -> -1          // короче 5 минут: такого сегмента в макете нет
+            ms <= 300_000 -> 0
+            ms <= 600_000 -> 1
+            ms <= 1_800_000 -> 2
+            else -> 3
         }
         val lvl = Settings.Global.getInt(cr, "low_power_trigger_level", 0)
         if (lvl in 1..99) saverAt = lvl
     }
 
     override fun onUp(x: Float, y: Float) {
-        if (kit.isBack(x, y)) act.pop()
+        if (kit.isBack(x, y)) { act.pop(); return }
+        val p = act.prefs
+        val s = kit.segmentHit(x, y, 962f, timeouts.size)
+        if (s >= 0) {
+            if (s != active) act.withWriteSettings {
+                if (act.sys.setSleepTimeout(timeoutMs[s])) active = s
+                redraw()
+            }
+            return
+        }
+        if (kit.inRow(x, y, 580f, 160f)) { p.saver = !p.saver; redraw(); return }
+        if (kit.inRow(x, y, 1274f, 160f)) { p.coverCharge = !p.coverCharge; redraw() }
     }
 
     override fun onAttachedToWindow() {
