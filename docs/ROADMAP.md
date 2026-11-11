@@ -57,6 +57,7 @@ R0, проба движков (`docs/READER_SPEC.md`, R0). Основной ко
 |---|---|---|
 | 7.0 ✅ | Подмодули `koreader/crengine`, MuPDF, DjVuLibre; проверка NDK 26.3 + CMake (2026-11-11, DEVLOG) | Opus |
 | 7.1 ✅ | Три `.so` (`mupdf`, `djvu`, `cre`) под `armeabi-v7a`, APK 8,2 МБ (2026-11-11, DEVLOG). Хвост: JPEG в crengine выключен — вопрос ниже | Opus |
+| 7.1а | libjpeg-turbo для crengine (решение «а», см. «Открытые вопросы (п. 7)») | Opus |
 | 7.2 | JNI и отладочный экран: первая страница в `Bitmap` | Opus |
 | 7.3 | Замеры на книге, запись в DEVLOG | Sonnet |
 | 7.4 | Решение «идём / не идём» | вместе |
@@ -96,7 +97,7 @@ R0, проба движков (`docs/READER_SPEC.md`, R0). Основной ко
 
 ### Открытые вопросы к пользователю (п. 7)
 
-- **crengine без JPEG (7.1).** `lvimg.cpp` написан под libjpeg-turbo (`JCS_EXT_BGRX`), у нас только IJG (crengine 6b, MuPDF 9). Сейчас `USE_LIBJPEG 0`: JPEG-картинки и обложки в FB2/EPUB не рисуются, PSS в 7.3 будет занижен. Варианты: **(а)** подмодуль libjpeg-turbo 3.x, собрать его CMake без SIMD (+~0,2 МБ к `libdexp_cre.so`) — предлагаю этот, делать перед 7.2 (Opus); (б) патч `lvimg.cpp` под `JCS_RGB` с переводом в BGRA — правка подмодуля, держать патч у себя; (в) оставить на R0 без JPEG и решить в R1.
+- ✅ **Решено 2026-11-11: crengine + JPEG — вариант (а).** `lvimg.cpp` написан под libjpeg-turbo (`JCS_EXT_BGRX`), у нас только IJG. Делаем шаг **7.1а** перед 7.2 (Opus): подмодуль libjpeg-turbo 3.x в `third_party/`, своя цель в `engines/cre.cmake` без SIMD (`jconfig.h`/`jconfigint.h` заранее, как у djvu), `USE_LIBJPEG 1` в `engines/cre/crsetup.h`, проверка: `libdexp_cre.so` линкуется, наружу один символ, прирост ~0,2 МБ. Пока не сделано — `USE_LIBJPEG 0`, обложки в FB2/EPUB не рисуются.
 - **Лицензия crengine:** в README — «GPL version 2», «or later» есть только в 3 файлах из 115. GPL-2.0-only несовместим с AGPL-3.0 (MuPDF) в одном APK. Для R0 не блокер; решить до релиза читалки (DEVLOG 7.0).
 - ✅ **Решено 2026-11-11:** на время R0 debug собирается только под `armeabi-v7a`; release — тоже `armeabi-v7a` (прошивка 32-битная, как в `ARCHITECTURE.md`). Правка `abiFilters` в `app/build.gradle.kts` — первым делом в 7.1.
 
