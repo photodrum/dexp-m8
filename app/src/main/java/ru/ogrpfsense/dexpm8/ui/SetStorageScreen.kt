@@ -1,8 +1,6 @@
 package ru.ogrpfsense.dexpm8.ui
 
 import android.graphics.Canvas
-import android.os.Environment
-import android.os.StatFs
 import java.util.Locale
 
 /**
@@ -114,13 +112,7 @@ class SetStorageScreen(act: EinkActivity) : Screen(act) {
     private fun thousands(n: Long): String = String.format(Locale("ru"), "%,d", n).replace('\u00a0', ' ')
 
     private fun refresh() {
-        try {
-            val st = StatFs(Environment.getExternalStorageDirectory().path)
-            total = st.blockCountLong * st.blockSizeLong
-            free = st.availableBlocksLong * st.blockSizeLong
-        } catch (t: Throwable) {
-            Trace.step("settings storage FAIL: ${t.javaClass.simpleName}: ${t.message}")
-        }
+        SettingsData.storage()?.let { total = it.first; free = it.second }
         books = act.db.totalSize()
         val n = act.db.count()
         avgBook = if (n > 0) books / n else 0L

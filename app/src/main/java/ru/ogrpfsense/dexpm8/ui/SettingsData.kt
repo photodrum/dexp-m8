@@ -1,6 +1,8 @@
 package ru.ogrpfsense.dexpm8.ui
 
 import android.content.Context
+import android.os.Environment
+import android.os.StatFs
 import android.text.format.DateFormat
 import java.util.Locale
 
@@ -21,6 +23,15 @@ object SettingsData {
 
     /** Число гигабайт одной цифрой после запятой: «9,1». */
     fun gb1(bytes: Long): String = String.format(Locale("ru"), "%.1f", bytes / 1e9)
+
+    /** Общее хранилище: (всего, свободно) в байтах; null — не прочитано. */
+    fun storage(): Pair<Long, Long>? = try {
+        val st = StatFs(Environment.getExternalStorageDirectory().path)
+        Pair(st.blockCountLong * st.blockSizeLong, st.availableBlocksLong * st.blockSizeLong)
+    } catch (t: Throwable) {
+        Trace.step("settings storage FAIL: ${t.javaClass.simpleName}: ${t.message}")
+        null
+    }
 
     /** Размер каталога со всем содержимым, байт; недоступный каталог — 0. */
     fun dirSize(f: java.io.File?): Long {

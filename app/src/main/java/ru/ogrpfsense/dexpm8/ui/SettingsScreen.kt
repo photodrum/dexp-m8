@@ -2,8 +2,6 @@ package ru.ogrpfsense.dexpm8.ui
 
 import android.graphics.Canvas
 import android.os.Build
-import android.os.Environment
-import android.os.StatFs
 
 /**
  * B13 · Настройки · разделы. Числа — из design/v5/B13.json.
@@ -74,21 +72,27 @@ class SettingsScreen(act: EinkActivity) : Screen(act) {
             ""
         }
         subtitle = if (ver.isEmpty()) "DEXP M8 Prudentia" else "DEXP M8 Prudentia · оболочка $ver"
+        val p = act.prefs
+        val br = act.sys.brightness()
+        rows[0].value = if (br >= 0) "Подсветка $br%" else ""
+        rows[1].value = "Wi-Fi ${onOff(act.sys.wifiOn())} · Bluetooth ${onOff(act.sys.btOn())}"
+        rows[2].value = "Зоны касаний: " + arrayOf("классическая", "две половины", "только вперёд")
+            .getOrElse(p.tapZones) { "" }
+        rows[3].value = "Листание свайпом ${onOff(p.swipe)}"
+        rows[4].value = when (val ms = act.sys.sleepTimeout()) {
+            -1 -> ""
+            Int.MAX_VALUE -> "Не засыпать"
+            else -> "Засыпать через ${ms / 60_000} мин"
+        }
         rows[5].value = SettingsData.langValue(act)
-        rows[6].value = storageValue()
+        rows[6].value = SettingsData.storage()?.let { (total, free) ->
+            "Занято ${SettingsData.gb1(total - free)} из ${SettingsData.capacityGb(total)} ГБ"
+        } ?: ""
         rows[7].value = if (ver.isEmpty()) "Android ${Build.VERSION.RELEASE}"
             else "Android ${Build.VERSION.RELEASE} · версия оболочки $ver"
     }
 
-    private fun storageValue(): String = try {
-        val st = StatFs(Environment.getExternalStorageDirectory().path)
-        val total = st.blockCountLong * st.blockSizeLong
-        val used = total - st.availableBlocksLong * st.blockSizeLong
-        "Занято ${SettingsData.gb1(used)} из ${SettingsData.capacityGb(total)} ГБ"
-    } catch (t: Throwable) {
-        Trace.step("settings storage FAIL: ${t.javaClass.simpleName}: ${t.message}")
-        ""
-    }
+    private fun onOff(on: Boolean) = if (on) "вкл." else "выкл."
 
     private companion object {
         const val VALUE_W = 987.2f

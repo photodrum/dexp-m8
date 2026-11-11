@@ -91,13 +91,7 @@ class SetAboutScreen(act: EinkActivity) : Screen(act) {
         } catch (t: Throwable) {
             ""
         }
-        val flash = try {
-            val st = StatFs(Environment.getExternalStorageDirectory().path)
-            SettingsData.capacityGb(st.blockCountLong * st.blockSizeLong).toString() + " ГБ встроенной"
-        } catch (t: Throwable) {
-            Trace.step("settings about FAIL: ${t.javaClass.simpleName}: ${t.message}")
-            ""
-        }
+        val flash = SettingsData.storage()?.let { SettingsData.capacityGb(it.first).toString() + " ГБ встроенной" } ?: ""
         mem = if (ram.isNotEmpty() && flash.isNotEmpty()) "$ram · $flash" else ram + flash
     }
 

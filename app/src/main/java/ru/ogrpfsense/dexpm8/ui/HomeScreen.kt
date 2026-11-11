@@ -56,7 +56,7 @@ class HomeScreen(act: EinkActivity) : Screen(act) {
         card(c)
         continueButton(c)
         tiles(c)
-        statistics(c)
+        // Строка «Сегодня N мин · …» из макета не рисуется: статистики чтения нет до читалки.
     }
 
     private fun header(c: Canvas) {
@@ -199,11 +199,6 @@ class HomeScreen(act: EinkActivity) : Screen(act) {
                     T.TS_BODY_S, 600, T.G4)
             }
         }
-    }
-
-    private fun statistics(c: Canvas) {
-        ink.textCenter(c, "Сегодня 42 мин · 31 стр. · синхронизировано в 10:15",
-            0f, W, T.base(1803.6f, T.TS_META, 1.25f), T.TS_META, 600, T.G4)
     }
 
     private companion object {

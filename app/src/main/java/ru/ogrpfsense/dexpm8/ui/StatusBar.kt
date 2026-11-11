@@ -28,7 +28,8 @@ class StatusBar(
     private val icons: Icons
 ) {
 
-    private val timeFmt = SimpleDateFormat("HH:mm", Locale.getDefault())
+    // Формат — по системной настройке 12/24 (B41), проверяется при каждом attach().
+    private var timeFmt = SimpleDateFormat("HH:mm", Locale.getDefault())
     private var clock = timeFmt.format(Date())
     private var battery = 78
     private var attached = false
@@ -49,6 +50,8 @@ class StatusBar(
 
     /** Подписка на батарею и обновление времени. Вызывать из onAttachedToWindow экрана. */
     fun attach() {
+        val pattern = if (android.text.format.DateFormat.is24HourFormat(act)) "HH:mm" else "h:mm"
+        timeFmt = SimpleDateFormat(pattern, Locale.getDefault())
         clock = timeFmt.format(Date())
         if (attached) return
         try {
