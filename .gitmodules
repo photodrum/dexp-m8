@@ -6,10 +6,6 @@
 	path = third_party/djvulibre
 	url = https://gitlab.com/koreader/djvulibre.git
 	shallow = true
-[submodule "third_party/mupdf"]
-	path = third_party/mupdf
-	url = https://github.com/ArtifexSoftware/mupdf.git
-	shallow = true
 [submodule "third_party/xxhash"]
 	path = third_party/xxhash
 	url = https://github.com/Cyan4973/xxHash.git

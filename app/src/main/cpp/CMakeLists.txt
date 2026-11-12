@@ -31,12 +31,12 @@ if (ZLIB_LIB)
     target_link_libraries(dexp_core ${ZLIB_LIB})
 endif()
 
-# --- Движки читалки, R0 (ROADMAP «План 7.1»): три отдельные .so, зависимости вшиты и скрыты ---
+# --- Движки читалки, R0 (ROADMAP «План 7.1»): две отдельные .so, зависимости вшиты и скрыты.
+# MuPDF (PDF/CBZ) снят в 7.3б: AGPL-3.0 несовместим с GPL-2.0-only. ---
 set(DEXP_THIRD ${CMAKE_CURRENT_SOURCE_DIR}/../../../../third_party)
 set(DEXP_ENGINE_LDFLAGS
         -Wl,--gc-sections
         -Wl,--exclude-libs,ALL
         -Wl,-z,max-page-size=16384)
-include(engines/mupdf.cmake)
 include(engines/djvu.cmake)
 include(engines/cre.cmake)

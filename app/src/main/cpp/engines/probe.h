@@ -22,7 +22,6 @@ enum {
     DEXP_PROBE_ERENDER = -4 /* ошибка отрисовки */
 };
 
-DEXP_PROBE_API int dexp_mupdf_probe(const char *path, int w, int h, unsigned char *gray);
 DEXP_PROBE_API int dexp_djvu_probe(const char *path, int w, int h, unsigned char *gray);
 DEXP_PROBE_API int dexp_cre_probe(const char *path, int w, int h, unsigned char *gray);
 

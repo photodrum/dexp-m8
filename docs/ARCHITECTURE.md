@@ -71,8 +71,8 @@ Manrope для интерфейса (400/600/700/800), Literata для текс�
 | FB2, EPUB, MOBI, TXT, RTF, DOC | CREngine (`koreader/crengine`, JNI по образцу CoolReader `cr3engine`) |
 | DjVu | DjVuLibre |
 
-PDF и CBZ в читалке не поддерживаются (решение 2026-11-11: MuPDF — AGPL-3.0, несовместим с GPL-2.0 CREngine).
-В коде MuPDF пока есть как проба R0, удаляется в шаге 7.3б.
+PDF и CBZ в читалке не поддерживаются (решение 2026-11-11: MuPDF — AGPL-3.0, несовместим с GPL-2.0 CREngine;
+из кода и подмодулей удалён в шаге 7.3б).
 
 ```
 Экраны читалки ─► ReaderEngine ─► CrEngine | DjvuEngine ─► JNI ─► движки (C/C++)

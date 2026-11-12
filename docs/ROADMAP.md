@@ -52,7 +52,7 @@ DjVuLibre для DjVu). Своя вёрстка страниц на C и сво�
 
 ## Пункт 7 — подробно
 
-R0, проба движков (`docs/READER_SPEC.md`, R0). Основной код оболочки не трогается. Приёмка: на книге открываются FB2, EPUB, PDF, DjVu; в DEVLOG — PSS с открытой книгой, мс на страницу, первая разметка 5-МБ FB2, размер APK. Идём, если PSS ≤ 60 МБ и страница ≤ 300 мс.
+R0, проба движков (`docs/READER_SPEC.md`, R0). Основной код оболочки не трогается. Приёмка: на книге открываются FB2, EPUB, DjVu (PDF снят 2026-11-11); в DEVLOG — PSS с открытой книгой, мс на страницу, первая разметка 5-МБ FB2, размер APK. Идём, если PSS ≤ 60 МБ и страница ≤ 300 мс.
 
 | Шаг | Что | Модель Act |
 |---|---|---|
@@ -62,7 +62,7 @@ R0, проба движков (`docs/READER_SPEC.md`, R0). Основной ко
 | 7.2 ✅ | JNI и отладочный экран: первая страница в `Bitmap` — FB2 (с JPEG-обложкой), EPUB, PDF, DjVu открываются на книге (2026-11-11, DEVLOG) | Opus |
 | 7.3 | **Разбит на шаги ниже (решение 2026-11-11: без PDF, лицензия GPL-2.0-only).** | — |
 | 7.3а ✅ | Подмодули `freetype` 2.14.3 и `harfbuzz` 13.0.1 вместо `third_party/mupdf/thirdparty/...` в `cre.cmake`; `libdexp_cre.so` того же размера, FB2/EPUB на книге открываются (2026-11-12, DEVLOG) | Opus |
-| 7.3б | Удалить MuPDF: `mupdf.cmake`, `mupdf_probe.c`, `include(engines/mupdf.cmake)`, подмодуль `third_party/mupdf`, форматы `pdf`/`cbz` в `EngineProbe.kt`, `-keep` в `proguard-rules.pro`, `BUILD.md` (подмодули, `dexp_mupdf`, команда с `r0-test.pdf`). Только после 7.3а | Opus |
+| 7.3б ✅ | MuPDF удалён: `mupdf.cmake`, `mupdf_probe.c`, подмодуль, `pdf`/`cbz` в `EngineProbe.kt`, `BUILD.md`; `-keep` в `proguard-rules.pro` оставлен (нужен `EngineProbe` для cre/djvu). APK 4,95 МБ (было 8,6); FB2/EPUB/DjVu на книге открываются, PDF — «движка нет» (2026-11-12, DEVLOG) | Opus |
 | 7.3в | `LICENSE` (GPL-2.0-only), сверка README/документов (`grep -ri agpl`), список библиотек для B75 | Sonnet |
 | 7.3г | Замеры на книге, запись в DEVLOG: PSS по одному движку на процесс, время разметки 5-МБ FB2 отдельно от отрисовки, «мс на страницу» (нужно листание в пробе), размер APK чистой сборки; разобрать пустую рамку-обложку EPUB | Sonnet |
 | 7.4 | Решение «идём / не идём» | вместе |

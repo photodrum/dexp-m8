@@ -1,6 +1,6 @@
 /*
  * JNI к пробным входам движков R0 (шаг 7.2). Один файл собирается в каждую .so движка
- * с -DDEXP_ENGINE=mupdf|djvu|cre и даёт метод
+ * с -DDEXP_ENGINE=djvu|cre и даёт метод
  *   ru.ogrpfsense.dexpm8.reader.EngineProbe.<engine>Native(path, w, h, out): Int.
  *
  * Страница рисуется прямо в out (byte[w*h], stride = w), затем сводится к 16 уровням

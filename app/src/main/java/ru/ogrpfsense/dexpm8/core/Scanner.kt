@@ -287,7 +287,10 @@ class Scanner(private val ctx: Context, private val db: LibraryDb) {
         /** Минимальный промежуток между проходами из [startIfDue]. */
         private const val PAUSE_MS = 10L * 60L * 1000L
 
-        /** Форматы из `READER_SPEC`: CREngine, MuPDF, DjVuLibre. */
+        /**
+         * Форматы из `READER_SPEC`: CREngine, DjVuLibre. `pdf` и `cbz` читалка не открывает
+         * (решение 2026-11-11); что показывать для них в библиотеке — вопрос чату дизайна.
+         */
         private val EXTS = setOf(
             "fb2", "epub", "mobi", "txt", "rtf", "doc", "pdf", "cbz", "djvu", "djv",
         )

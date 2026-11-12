@@ -2,6 +2,15 @@
 
 > Старые записи — `docs/archive/`: до 2026-11-10 — `DEVLOG-2026-11-07_09.md`, `DEVLOG-2026-11-10-p3.md`, `DEVLOG-2026-11-10-p3_9-p4_2.md`; п. 4 (4.3–4.7) и проверки 2026-11-10 — 11 — `DEVLOG-2026-11-10_11.md`; п. 5 (5.1–5.2), замечания 2026-11-11, полный п. 6.0 — `DEVLOG-2026-11-11-p5_6_0.md`; хвосты п. 5, автор из имени файла, п. 6.0–6.1 — `DEVLOG-2026-11-11-p5tail_6_1.md`. П. 6.2 и оптимизация документов 2026-11-11 — `DEVLOG-2026-11-11-p6_2_docs.md`.
 
+## 2026-11-12 — п. 7, шаг 7.3б: MuPDF удалён (Opus)
+
+- **Код:** удалены `engines/mupdf.cmake`, `engines/mupdf_probe.c`, `include(engines/mupdf.cmake)` в `CMakeLists.txt`, `dexp_mupdf_probe` в `probe.h`; в `EngineProbe.kt` — `MUPDF`, `mupdfNative`, ветка `"pdf", "cbz"` (теперь `engineFor` → `null`, `ProbeScreen` пишет «<формат>: движка нет»). `Scanner.EXTS` **не тронут**: `pdf`/`cbz` по-прежнему попадают в базу — что показывать в библиотеке, ждёт чат дизайна (ROADMAP, «Открытые вопросы»). `-keep class …EngineProbe` в `proguard-rules.pro` оставлен — класс нужен cre/djvu.
+- **Подмодуль:** `git submodule deinit -f` + `git rm` + `rm -rf .git/modules/third_party/mupdf` — освободилось ~275 МБ (153 рабочая папка + 122 `.git/modules`). Подмодулей теперь 9. В старых клонах — команда очистки в `BUILD.md`.
+- **Сборка** (чистая: `rm -rf app/.cxx app/build`, `assembleDebug`) — без ошибок. В APK три `.so`: `libdexp_core.so` 13 144, `libdexp_cre.so` 3 219 624 (как в 7.3а), `libdexp_djvu.so` 547 840 байт. **`app-debug.apk` — 4 950 721 байт** (было 8 602 099, −3,65 МБ).
+- **Проверка на книге** (adb, `--es probe`, снимки `screencap`): `r0-cover.fb2` — cre rc=0, 444 мс; «Отцы и дети» FB2 — rc=0, 787 мс, текст в порядке; EPUB «Немезида» — rc=0, 1577 мс; `r0-test.djvu` — djvu rc=0, 534 мс, 16 полос серого и овал на месте; `r0-test.pdf` — «pdf: движка нет», падений нет.
+- **Грабли:** в `--es probe` путь нужно передавать в кавычках только одного уровня (`"'$f'"`): двойное экранирование оставляет кавычки в пути, и проба получает формат `fb2'` → «движка нет».
+- `docs/BUILD.md` (подмодули, `dexp_djvu`, пример с `r0-cover.fb2`, убрана строка «граблей» про `-b 1.28.x`), `docs/ARCHITECTURE.md`, `docs/COMPARISON.md` поправлены.
+
 ## 2026-11-12 — п. 7, шаг 7.3а: freetype и harfbuzz своими подмодулями (Opus)
 
 - **Подмодули** (`shallow = true`): `third_party/freetype` — тег `VER-2-14-3` (`0a0221a`), `third_party/harfbuzz` — тег `13.0.1` (`c298b92`). В `engines/cre.cmake` `CRE_FT`/`CRE_HB` смотрят на них, а не на `mupdf/thirdparty/`. MuPDF не тронут (его сборка берёт свои копии) — удаление в 7.3б.

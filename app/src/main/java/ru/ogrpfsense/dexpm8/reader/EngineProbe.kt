@@ -14,7 +14,6 @@ import java.util.concurrent.Executors
 object EngineProbe {
 
     const val CRE = "cre"
-    const val MUPDF = "mupdf"
     const val DJVU = "djvu"
 
     /** Коды `DEXP_PROBE_*` из probe.h и свой код «.so не загрузилась». */
@@ -27,10 +26,12 @@ object EngineProbe {
 
     private val loaded = HashMap<String, String?>(4)   // движок → null (ок) или текст ошибки
 
-    /** Движок по формату из `LibraryDb` (`Scanner.formatOf`); null — формат движкам не отдан. */
+    /**
+     * Движок по формату из `LibraryDb` (`Scanner.formatOf`); null — формат движкам не отдан
+     * (PDF и CBZ не поддерживаются — решение 2026-11-11, лицензия).
+     */
     fun engineFor(format: String): String? = when (format) {
         "fb2", "fb2.zip", "epub", "mobi", "txt", "rtf", "doc" -> CRE
-        "pdf", "cbz" -> MUPDF
         "djvu", "djv" -> DJVU
         else -> null
     }
@@ -56,7 +57,6 @@ object EngineProbe {
         if (load(engine) != null) return E_LOAD
         return when (engine) {
             CRE -> creNative(path, w, h, out)
-            MUPDF -> mupdfNative(path, w, h, out)
             DJVU -> djvuNative(path, w, h, out)
             else -> -1
         }
@@ -73,6 +73,5 @@ object EngineProbe {
     }
 
     @JvmStatic private external fun creNative(path: String, w: Int, h: Int, out: ByteArray): Int
-    @JvmStatic private external fun mupdfNative(path: String, w: Int, h: Int, out: ByteArray): Int
     @JvmStatic private external fun djvuNative(path: String, w: Int, h: Int, out: ByteArray): Int
 }

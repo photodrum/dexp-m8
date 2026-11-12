@@ -60,7 +60,7 @@ $CM/cmake -S ~/projects/dexp-m8/app/src/main/cpp -B /tmp/r0-build -G Ninja \
   -DCMAKE_TOOLCHAIN_FILE=$SDK/ndk/26.3.11579264/build/cmake/android.toolchain.cmake \
   -DANDROID_ABI=armeabi-v7a -DANDROID_PLATFORM=android-27 -DANDROID_STL=c++_static \
   -DCMAKE_BUILD_TYPE=Release
-$CM/ninja -C /tmp/r0-build -k 0 dexp_cre > /tmp/x.log 2>&1   # или dexp_mupdf, dexp_djvu
+$CM/ninja -C /tmp/r0-build -k 0 dexp_cre > /tmp/x.log 2>&1   # или dexp_djvu
 ```
 
 Проверка `.so`: `llvm-readelf -d` (в `NEEDED` только системные), `llvm-readelf --dyn-syms -W`
@@ -84,17 +84,18 @@ $CM/cmake -S third_party/libjpeg-turbo -B /tmp/ljt-gen -G Ninja -DCMAKE_MAKE_PRO
 cp /tmp/ljt-gen/{jconfig,jconfigint,jversion}.h app/src/main/cpp/engines/cre/jpeg/
 ```
 
-**Движки читалки (с п. 7)** — git-подмодули в `third_party/` (`shallow = true`, ~250 МБ):
-crengine, djvulibre, mupdf (тег 1.28.6; **будет удалён в 7.3б**, решение 2026-11-11: без PDF), xxhash, fribidi, libunibreak, utf8proc, libjpeg-turbo
+**Движки читалки (с п. 7)** — git-подмодули в `third_party/` (`shallow = true`):
+crengine, djvulibre, xxhash, fribidi, libunibreak, utf8proc, libjpeg-turbo
 (тег 3.2.1), freetype (тег `VER-2-14-3`), harfbuzz (тег `13.0.1`) — последние два для crengine, с 7.3а.
+MuPDF удалён в 7.3б (решение 2026-11-11: без PDF/CBZ, лицензия).
 После клона (или после `git pull`, если добавился подмодуль):
 
 ```bash
 cd ~/projects/dexp-m8
 git submodule update --init --depth 1
-# у MuPDF — только нужные вложенные (без curl, tesseract, freeglut, zxing и т.п.)
-git -C third_party/mupdf submodule update --init --depth 1 thirdparty/{freetype,harfbuzz,libjpeg,zlib,jbig2dec,openjpeg,lcms2,gumbo-parser,brotli}
 ```
+
+Если в старом клоне остался `third_party/mupdf` (после `git pull` с 7.3б): `git submodule deinit -f third_party/mupdf; rm -rf third_party/mupdf .git/modules/third_party/mupdf`.
 
 ## Тесты C-ядра на хосте
 
@@ -135,7 +136,7 @@ adb shell wm size                       # ожидаем 1404x1872
 adb logcat -s DexpM8:V AndroidRuntime:E # логи и падения
 adb shell dumpsys meminfo ru.ogrpfsense.dexpm8   # PSS — главная метрика на 1 ГБ
 # R0 (только debug): открыть файл на отладочном экране движков, минуя базу (EinkActivity.probeFromIntent)
-adb shell am start -W -n ru.ogrpfsense.dexpm8/.ui.EinkActivity --es probe "'/sdcard/Books/r0/r0-test.pdf'"
+adb shell am start -W -n ru.ogrpfsense.dexpm8/.ui.EinkActivity --es probe "'/sdcard/Books/r0/r0-cover.fb2'"
 adb logcat -s DexpM8:V | grep probe     # «probe: <движок> rc=0 <мс>»
 ```
 
@@ -194,5 +195,5 @@ GIT_ASKPASS=$PWD/tools/git-askpass.sh GIT_TERMINAL_PROMPT=0 \
 | `NoClassDefFoundError: kotlin.jvm.internal.Lambda` | APK без Kotlin stdlib (старый `build.sh`); исправлено 2026-11-11 |
 | `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | другой ключ подписи; `build.sh` и Gradle используют один `~/.android/debug.keystore`. Иначе `adb uninstall` (данные пропадут) |
 | `run-as` не работает | APK не debuggable; значения проверять через `settings get`/`getprop` |
-| `git submodule add -b 1.28.x` у MuPDF: `'origin/1.28.x' is not a commit` | с `--depth 1` ветку не взять; добавить без `-b`, затем `git fetch --depth 1 origin tag 1.28.6 && git checkout 1.28.6` |
 | `git ls-remote` на `github.com/koreader/djvulibre` висит | брать с `gitlab.com/koreader/djvulibre` |
+| Проба пишет «fb2': движка нет», в пути видны `'…'` | кавычки двух уровней: путь передавать как `--es probe "'$f'"` (один уровень одинарных внутри двойных) |
