@@ -61,7 +61,7 @@ R0, проба движков (`docs/READER_SPEC.md`, R0). Основной ко
 | 7.1а ✅ | libjpeg-turbo 3.2.1 для crengine, `libdexp_cre.so` +157 КБ (2026-11-11, DEVLOG; план — `archive/ROADMAP-2026-11-11e.md`); обложка на книге — в 7.2 | Opus |
 | 7.2 ✅ | JNI и отладочный экран: первая страница в `Bitmap` — FB2 (с JPEG-обложкой), EPUB, PDF, DjVu открываются на книге (2026-11-11, DEVLOG) | Opus |
 | 7.3 | **Разбит на шаги ниже (решение 2026-11-11: без PDF, лицензия GPL-2.0-only).** | — |
-| 7.3а | Подмодули `freetype` 2.14.3 и `harfbuzz` 13.0.1 вместо путей `third_party/mupdf/thirdparty/...` (`cre.cmake`, строки 10–11, 34). Версии и пути подтвердить при выполнении. Проверка: `assembleDebug`, `libdexp_cre.so` того же размера, FB2/EPUB на книге | Opus |
+| 7.3а ✅ | Подмодули `freetype` 2.14.3 и `harfbuzz` 13.0.1 вместо `third_party/mupdf/thirdparty/...` в `cre.cmake`; `libdexp_cre.so` того же размера, FB2/EPUB на книге открываются (2026-11-12, DEVLOG) | Opus |
 | 7.3б | Удалить MuPDF: `mupdf.cmake`, `mupdf_probe.c`, `include(engines/mupdf.cmake)`, подмодуль `third_party/mupdf`, форматы `pdf`/`cbz` в `EngineProbe.kt`, `-keep` в `proguard-rules.pro`, `BUILD.md` (подмодули, `dexp_mupdf`, команда с `r0-test.pdf`). Только после 7.3а | Opus |
 | 7.3в | `LICENSE` (GPL-2.0-only), сверка README/документов (`grep -ri agpl`), список библиотек для B75 | Sonnet |
 | 7.3г | Замеры на книге, запись в DEVLOG: PSS по одному движку на процесс, время разметки 5-МБ FB2 отдельно от отрисовки, «мс на страницу» (нужно листание в пробе), размер APK чистой сборки; разобрать пустую рамку-обложку EPUB | Sonnet |

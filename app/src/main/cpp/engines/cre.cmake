@@ -1,14 +1,14 @@
 # libdexp_cre.so — crengine (KOReader): FB2, EPUB, MOBI/PDB, TXT, RTF, DOC, DOCX, ODT, FB3, MD.
 # R0, ROADMAP «План 7.1», шаг 4. Свой список вместо CMakeLists crengine (там pkg-config, DEVLOG 7.0):
 # исходники crengine — по CRE_SRCS из third_party/crengine/CMakeLists.txt; crsetup.h — свой.
-# Внутри: freetype полный и harfbuzz (исходники из MuPDF, но своя сборка, без fz_hb_*),
+# Внутри: freetype 2.14.3 полный и harfbuzz 13.0.1 (свои подмодули, шаг 7.3а),
 # libpng из crengine/thirdparty, libunibreak, utf8proc, fribidi, xxhash, antiword.
 # zlib — системная из NDK.
 
 set(CRE_DIR ${DEXP_THIRD}/crengine)
 set(CRE_TP ${CRE_DIR}/thirdparty)
-set(CRE_FT ${DEXP_THIRD}/mupdf/thirdparty/freetype)
-set(CRE_HB ${DEXP_THIRD}/mupdf/thirdparty/harfbuzz/src)
+set(CRE_FT ${DEXP_THIRD}/freetype)
+set(CRE_HB ${DEXP_THIRD}/harfbuzz/src)
 set(CRE_FRIBIDI ${DEXP_THIRD}/fribidi/lib)
 set(CRE_GEN ${CMAKE_CURRENT_SOURCE_DIR}/engines/cre)
 
@@ -31,7 +31,7 @@ target_include_directories(cre_freetype PRIVATE ${CRE_FT}/include)
 target_compile_definitions(cre_freetype PRIVATE FT2_BUILD_LIBRARY FT_CONFIG_OPTION_SYSTEM_ZLIB)
 target_compile_options(cre_freetype PRIVATE ${CRE_LIB_OPTS})
 
-# --- harfbuzz (амальгама harfbuzz.cc), свой malloc, без MuPDF ---
+# --- harfbuzz (амальгама harfbuzz.cc) ---
 add_library(cre_harfbuzz STATIC ${CRE_HB}/harfbuzz.cc)
 target_include_directories(cre_harfbuzz PRIVATE ${CRE_HB} ${CRE_FT}/include)
 target_compile_definitions(cre_harfbuzz PRIVATE
