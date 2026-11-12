@@ -5,7 +5,8 @@ import android.view.View
 /**
  * Режим обновления панели E-Ink через скрытый API прошивки Rockchip (разведка 6.0, DEVLOG
  * 2026-11-12): `View.requestEpdMode(View.EINK_MODE, force)`. Режим одноразовый — действует
- * на один кадр окна, затем прошивка возвращает частичный `EPD_PART`.
+ * на один кадр окна, затем прошивка возвращает частичный `EPD_PART`. Постоянный «Быстрый» —
+ * заказ перед каждым кадром ([beforeFrame], п. 8.2).
  *
  * Метод и значения enum ищутся один раз через рефлексию (на Android 8.1 скрытый API не закрыт).
  * Если метода нет (другая прошивка) — [ok] false, и вызывающий берёт запасной путь: белый кадр G15.
@@ -14,6 +15,8 @@ object Epd {
 
     /** Значения `View.EINK_MODE.getValue()`. */
     const val FULL = 1
+    const val A2 = 2
+    const val DIRECT_A2 = 12
     const val FULL_GL16 = 21
 
     /**
@@ -25,6 +28,11 @@ object Epd {
     private var looked = false
     private var method: java.lang.reflect.Method? = null
     private val modes = HashMap<Int, Any>(32)
+
+    /** Полный кадр заказан и ещё не ушёл: «Быстрый» его не перебивает ([beforeFrame]). */
+    private var fullPending = false
+    /** Последний заказанный быстрый режим — для лога (раз на смену, не на каждый кадр). */
+    private var lastFast = -1
 
     /** Есть ли на прошивке `requestEpdMode`. */
     val ok: Boolean
@@ -43,11 +51,35 @@ object Epd {
         look()
         val m = method ?: return false
         val e = modes[mode] ?: return false
-        return try {
+        val r = try {
             m.invoke(v, e, force) as? Boolean ?: true
         } catch (t: Throwable) {
             Trace.step("epd: request FAIL ${t.javaClass.simpleName}: ${t.cause ?: t.message}")
             false
+        }
+        if (r && !force && (mode == FULL || mode == FULL_GL16)) fullPending = true
+        return r
+    }
+
+    /**
+     * Перед каждым кадром окна (`OnPreDrawListener` в `EinkActivity`, п. 8.2). Режим прошивки
+     * одноразовый, поэтому «Быстрый» (B5, B37) заказывается на каждый кадр: [fast] — значение
+     * `EINK_MODE` ([A2] или [DIRECT_A2]), 0 — «Чёткий», ничего не заказываем (`EPD_PART`).
+     * Если на этот кадр уже заказан полный режим (смена экрана, диалог, «Очистка») — не трогаем.
+     */
+    fun beforeFrame(v: View, fast: Int) {
+        if (fullPending) {
+            fullPending = false
+            return
+        }
+        if (fast <= 0) {
+            lastFast = -1
+            return
+        }
+        val r = request(v, fast, false)
+        if (fast != lastFast) {
+            lastFast = fast
+            Trace.step("epd: fast mode=$fast -> $r")
         }
     }
 

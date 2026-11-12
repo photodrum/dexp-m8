@@ -142,6 +142,8 @@ class EinkActivity : Activity() {
         host.setBackgroundColor(T.BG)
         setContentView(host)
         Trace.step("setContentView ok")
+        host.viewTreeObserver.addOnPreDrawListener(fastFrame)
+        applyRefreshMode()
 
         if (startupError != null) {
             host.addView(CrashScreen(this, startupError))
@@ -336,6 +338,8 @@ class EinkActivity : Activity() {
     override fun onResume() {
         super.onResume()
         applyImmersive()
+        // Временно (8.2): перечитать debug-ручку dexp_fast_mode после adb.
+        if (this::host.isInitialized && ru.ogrpfsense.dexpm8.BuildConfig.DEBUG) applyRefreshMode()
         // Право могли выдать в «Настройках», пока оболочка была в фоне.
         // Отзыв там же система делает убийством процесса, так что сюда придёт только выдача.
         // Пока открыт системный диалог — ответ придёт в onRequestPermissionsResult.
@@ -493,6 +497,7 @@ class EinkActivity : Activity() {
             android.view.ViewGroup.LayoutParams.MATCH_PARENT
         ))
         Trace.step("shade: open")
+        bigFrame("shade open")
     }
 
     fun closeShade() {
@@ -501,6 +506,7 @@ class EinkActivity : Activity() {
         host.removeView(s)
         current()?.dimmed = false
         Trace.step("shade: close")
+        bigFrame("shade close")
     }
 
     /**
@@ -580,7 +586,8 @@ class EinkActivity : Activity() {
      */
     private fun fullOnSwitch() {
         switches++
-        if (!prefs.cleanOnSwitch && switches < syncEvery()) {
+        // «Быстрый» (8.2, вариант А): A2 на большой кадр с серым даёт кашу — смена экрана всегда полная.
+        if (!prefs.cleanOnSwitch && fastEpd == 0 && switches < syncEvery()) {
             Trace.step("epd: switch skip $switches/${syncEvery()}")
             return
         }
@@ -588,6 +595,65 @@ class EinkActivity : Activity() {
         if (!Epd.ok) return
         val r = Epd.request(host, Epd.CLEAN, false)
         Trace.step("epd: switch full -> $r (clean_on_switch=${prefs.cleanOnSwitch})")
+    }
+
+    // ------------------------------------------------------------ E-Ink: «Чёткий / Быстрый», «Очистка» (п. 8.2)
+
+    /** Режим «Быстрый» для [Epd.beforeFrame]: значение `EINK_MODE`, 0 — «Чёткий» (`EPD_PART`). */
+    private var fastEpd = 0
+
+    /** Каждый кадр окна: режим прошивки одноразовый, «Быстрый» заказываем заново. */
+    private val fastFrame = android.view.ViewTreeObserver.OnPreDrawListener {
+        Epd.beforeFrame(host, fastEpd)
+        true
+    }
+
+    /**
+     * Применить `Prefs.refreshMode` (B5, B37): 1 — «Быстрый» (A2-режим на мелкие изменения внутри
+     * экрана), иначе «Чёткий» (частичный `EPD_PART` по умолчанию прошивки). «Без мерцания» (B37, 2)
+     * пока как «Чёткий» — своего режима нет. При выходе из «Быстрого» — одна полная перерисовка:
+     * A2 оставляет следы. Большие кадры в «Быстром» — полные ([bigFrame], [fullOnSwitch]).
+     */
+    fun applyRefreshMode() {
+        val was = fastEpd
+        fastEpd = if (prefs.refreshMode == 1 && Epd.ok) fastMode() else 0
+        Trace.step("epd: refresh mode ${prefs.refreshMode} -> epd $fastEpd")
+        if (was > 0 && fastEpd == 0) cleanScreen()
+    }
+
+    /**
+     * Какой A2-режим у «Быстрого»: `EPD_A2` (2) — проверен на книге 2026-11-12 по схеме варианта А.
+     * Только debug, для сравнения (8.2, шаг б): `adb shell settings put global dexp_fast_mode 12` —
+     * `EPD_DIRECT_A2`, перечитывается в `onResume`. Удалить после выбора.
+     */
+    private fun fastMode(): Int {
+        if (!ru.ogrpfsense.dexpm8.BuildConfig.DEBUG) return Epd.A2
+        val m = try {
+            android.provider.Settings.Global.getInt(contentResolver, "dexp_fast_mode", Epd.A2)
+        } catch (t: Throwable) {
+            Epd.A2
+        }
+        return if (m == Epd.A2 || m == Epd.DIRECT_A2) m else Epd.A2
+    }
+
+    /**
+     * Большой кадр (шторка, лист B36 и т. п.) в «Быстром»: A2 рисует его кашей (проверено на книге
+     * 2026-11-12, 8.2), поэтому этот один кадр — полной перерисовкой, одно мигание. В «Чётком»
+     * ничего не заказываем: `EPD_PART` такие кадры рисует нормально. Вызывать до кадра.
+     */
+    fun bigFrame(what: String) {
+        if (fastEpd == 0 || !this::host.isInitialized) return
+        val r = Epd.request(host, Epd.CLEAN, false)
+        Trace.step("epd: big frame ($what) full -> $r")
+    }
+
+    /**
+     * Разовая полная перерисовка текущего окна («Очистка» в B5, выход из «Быстрого»): тот же
+     * путь, что после системного диалога — `Epd.CLEAN` одним кадром, без метода — белый кадр.
+     */
+    fun cleanScreen() {
+        Trace.step("epd: clean now")
+        cleanRefresh()
     }
 
     private fun syncEvery(): Int = try {

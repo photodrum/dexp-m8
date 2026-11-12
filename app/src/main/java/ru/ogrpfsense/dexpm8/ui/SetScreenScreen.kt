@@ -8,7 +8,8 @@ import android.graphics.Canvas
  * Яркость — `Settings.System.SCREEN_BRIGHTNESS` через `act.sys` (запись — право WRITE_SETTINGS,
  * при первом касании открывается системный экран). Тёплый свет, режим обновления, «Очищать при
  * смене экрана» и контраст в системе не лежат — хранятся в `act.prefs`. «Очищать при смене экрана»
- * работает с п. 6.1 (`EinkActivity.fullOnSwitch`); остальное подействует с драйвером (п. 8).
+ * работает с п. 6.1 (`EinkActivity.fullOnSwitch`), «Режим» — с п. 8.2 (`applyRefreshMode`, общий с
+ * B5; «Без мерцания» пока как «Чёткий»); остальное подействует позже.
  * «Полная очистка» и «Ориентация» не нажимаются (своих экранов в макете нет).
  */
 class SetScreenScreen(act: EinkActivity) : Screen(act) {
@@ -80,7 +81,7 @@ class SetScreenScreen(act: EinkActivity) : Screen(act) {
         }
         kit.sliderHit(x, y, 624f, p.warm)?.let { v -> p.warm = v; redraw(); return }
         val m = kit.segmentHit(x, y, 920f, modes.size)
-        if (m >= 0) { p.refreshMode = m; redraw(); return }
+        if (m >= 0) { p.refreshMode = m; act.applyRefreshMode(); redraw(); return }
         if (kit.inRow(x, y, 1204f, 140f)) { p.cleanOnSwitch = !p.cleanOnSwitch; redraw(); return }
         if (kit.inRow(x, y, 1440f, 164f)) { p.contrast = !p.contrast; redraw() }
     }

@@ -227,6 +227,7 @@ class AppsScreen(act: EinkActivity) : Screen(act) {
         sheet = a
         cleared = false
  info = buildInfo(a)
+        act.bigFrame("sheet open")    // «Быстрый»: большой кадр — полной перерисовкой (8.2)
  redraw()
     }
 
@@ -234,6 +235,7 @@ class AppsScreen(act: EinkActivity) : Screen(act) {
         sheet = null
         info = null
         cleared = false
+        act.bigFrame("sheet close")
         redraw()
     }
 
@@ -350,6 +352,7 @@ class AppsScreen(act: EinkActivity) : Screen(act) {
      if (act.prefs.pinnedApp == a.pkg) act.prefs.pinnedApp = ""
      sheet = null
      info = null
+     act.bigFrame("sheet hide")
             reload()
      redraw()
         } else if (y >= ROW_CACHE && y < ROW_CACHE + ROW_STEP) {

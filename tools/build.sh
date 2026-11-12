@@ -58,6 +58,12 @@ sed "s|<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\">|<
 "$JDK/bin/javac" -encoding UTF-8 -source 8 -target 8 -nowarn \
     -cp "$AJ" -d "$OUT/cls" "$OUT/gen/ru/ogrpfsense/dexpm8/R.java" 2>/dev/null
 
+# BuildConfig генерирует только Gradle; здесь — заглушка как у debug (с 7.2 код его читает).
+printf 'package ru.ogrpfsense.dexpm8;\npublic final class BuildConfig { public static final boolean DEBUG = true; }\n' \
+    > "$OUT/gen/ru/ogrpfsense/dexpm8/BuildConfig.java"
+"$JDK/bin/javac" -encoding UTF-8 -source 8 -target 8 -nowarn \
+    -d "$OUT/cls" "$OUT/gen/ru/ogrpfsense/dexpm8/BuildConfig.java" 2>/dev/null
+
 echo "==> Kotlin"
 "$KOTLINC" -cp "$AJ:$KSTD:$OUT/cls" -d "$OUT/cls" \
     -nowarn \

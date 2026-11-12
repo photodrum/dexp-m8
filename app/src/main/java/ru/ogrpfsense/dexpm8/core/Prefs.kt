@@ -16,7 +16,7 @@ class Prefs(ctx: Context) {
     var warm: Int
         get() = sp.getInt("warm", 30)
         set(v) = sp.edit().putInt("warm", v).apply()
-    /** 0 — «Чёткий», 1 — «Быстрый», 2 — «Без мерцания». */
+    /** 0 — «Чёткий», 1 — «Быстрый» (A2-режим внутри экрана, п. 8.2), 2 — «Без мерцания» (пока как «Чёткий»). */
     var refreshMode: Int
         get() = sp.getInt("refresh_mode", 0)
         set(v) = sp.edit().putInt("refresh_mode", v).apply()

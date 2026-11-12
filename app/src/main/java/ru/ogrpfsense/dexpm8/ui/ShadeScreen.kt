@@ -21,8 +21,10 @@ import ru.ogrpfsense.dexpm8.core.Sys
  *   быстро      круглые Ø138.9 в 196.3 / 630.2 / 1064.1, y 816.3; подпись 32/600 G4 y 970.8
  *   захват      643.5,1020.1 117×11 G11
  *
- * «Чёткий / Быстрый» пока только запоминаются (`Prefs.refreshMode`, как на B37), «Очистка» —
- * без действия: режимы панели через `Epd` — шаг 8.2.
+ * «Чёткий / Быстрый» — `Prefs.refreshMode` (общий с B37) → `EinkActivity.applyRefreshMode`
+ * («Быстрый» — A2-режим на мелкие изменения; открытие и закрытие шторки — полной перерисовкой,
+ * `EinkActivity.bigFrame`); «Очистка» закрывает шторку и полностью перерисовывает
+ * экран одним кадром (`EinkActivity.cleanScreen`) — п. 8.2.
  */
 class ShadeScreen(act: EinkActivity) : Screen(act) {
 
@@ -255,9 +257,16 @@ class ShadeScreen(act: EinkActivity) : Screen(act) {
 
     private fun keyHit(k: Int) {
         when (k) {
-            K_SHARP -> act.prefs.refreshMode = 0
-            K_FAST -> act.prefs.refreshMode = 1
-            K_CLEAN -> Trace.step("shade: clean — шаг 8.2")
+            K_SHARP, K_FAST -> {
+                act.prefs.refreshMode = if (k == K_FAST) 1 else 0
+                act.applyRefreshMode()
+            }
+            K_CLEAN -> {
+                // Разовая полная перерисовка: шторку снимаем, экран под ней — одним кадром (8.2).
+                act.closeShade()
+                act.cleanScreen()
+                return
+            }
             K_NET -> {
                 val on = !status.wifi
                 Trace.step("shade: wifi -> $on (${act.sys.setWifi(on)})")
