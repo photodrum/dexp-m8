@@ -34,6 +34,8 @@ class BookScreen(act: EinkActivity) : Screen(act) {
     private var pickerOpen = false
     private var deleteOpen = false
     private var deleteError = false
+    private val errorDialog = ErrorDialog(ink, icons)
+    private var errorOpen = false
 
     private companion object {
         const val R_BTN = 51.1875f
@@ -46,7 +48,7 @@ class BookScreen(act: EinkActivity) : Screen(act) {
     }
 
     override fun render(c: Canvas) {
-        val dim = if (pickerOpen || deleteOpen) dimBegin(c) else -1
+        val dim = if (pickerOpen || deleteOpen || errorOpen) dimBegin(c) else -1
         ink.rect(c, 0f, 0f, W, H, T.BG)
         header(c)
         val e = entry
@@ -60,6 +62,7 @@ class BookScreen(act: EinkActivity) : Screen(act) {
         if (pickerOpen) picker.draw(c)
         val del = entry
         if (deleteOpen && del != null) deleteDialog(c, del)
+        if (errorOpen) errorDialog.draw(c)
     }
 
     private fun header(c: Canvas) {
@@ -284,6 +287,10 @@ class BookScreen(act: EinkActivity) : Screen(act) {
             deleteUp(x, y)
             return
         }
+        if (errorOpen) {
+            errorUp(x, y)
+            return
+        }
         if (entry != null && x >= 940.6f && x <= 1362f && y >= 1079.5f && y <= 1192f) {
             setDelete(true)
             return
@@ -293,13 +300,65 @@ class BookScreen(act: EinkActivity) : Screen(act) {
         } else if (x >= 41.1f && x <= 148f && y >= 112.3f && y <= 224.7f) {
             act.pop()
         } else if (entry != null && x >= 41.1f && x <= 1361.9f && y >= 904f && y <= 1045.7f) {
-            val e = entry!!
-            try {
-                act.db.markOpened(e.id)
-            } catch (t: Throwable) {
-                Trace.step("markOpened FAIL: ${t.javaClass.simpleName}: ${t.message}")
+            openReader(entry!!)
+        }
+    }
+
+    /**
+     * «Продолжить чтение»: сначала проверяем, чем открывать. Читалки пока нет (R1) и PDF/CBZ
+     * не поддерживаются (решение 2026-11-11) — вместо пустого экрана диалог B45 с причиной.
+     * Файла нет на диске — тоже B45, с кнопкой «Удалить файл» (удаляет только строку базы).
+     */
+    private fun openReader(e: LibraryDb.Entry) {
+        val fmt = e.format.lowercase(Locale.ROOT)
+        val unsupported = fmt == "pdf" || fmt == "cbz"
+        val missing = !java.io.File(e.path).exists()
+        if (unsupported || missing) {
+            errorDialog.open(
+                title = if (missing) "Файл не найден" else "Формат не поддерживается",
+                sub = fileName(e.path) + " · " + sizeText(e.size),
+                note = if (missing) "Файл убран из памяти устройства или переименован. " +
+                    "Строку можно удалить — прогресс чтения тоже уйдёт."
+                else "Оболочка читает FB2, EPUB, MOBI, TXT, RTF и DjVu. " +
+                    "PDF и CBZ не открываются — нужна книга в другом формате.",
+                label = if (missing) "Что случилось" else "Формат",
+                code = if (missing) "Файла нет по пути из библиотеки"
+                else "${fmt.uppercase(Locale.ROOT)}: читалка не поддерживает этот формат",
+                canDelete = missing,
+            )
+            setError(true)
+            return
+        }
+        try {
+            act.db.markOpened(e.id)
+        } catch (t: Throwable) {
+            Trace.step("markOpened FAIL: ${t.javaClass.simpleName}: ${t.message}")
+        }
+        act.go(EinkActivity.SCR_READER)
+    }
+
+    private fun fileName(path: String): String = path.substringAfterLast('/')
+
+    private fun setError(on: Boolean) {
+        errorOpen = on
+        act.bigFrame("book error $on")
+        redraw()
+    }
+
+    private fun errorUp(x: Float, y: Float) {
+        when (errorDialog.hit(x, y)) {
+            ErrorDialog.ACT_DELETE -> {
+                // Файла нет — удаляем только строку базы (DEVLOG 9.4: файл не трогаем, его нет).
+                val e = entry ?: return
+                try {
+                    act.db.deleteBook(e.id)
+                } catch (t: Throwable) {
+                    Trace.step("book delete row FAIL: ${t.javaClass.simpleName}: ${t.message}")
+                }
+                setError(false)
+                act.pop()
             }
-            act.go(EinkActivity.SCR_READER)
+            ErrorDialog.ACT_CLOSE -> setError(false)
         }
     }
 
@@ -309,6 +368,7 @@ class BookScreen(act: EinkActivity) : Screen(act) {
         pickerOpen = false
         deleteOpen = false
         deleteError = false
+        errorOpen = false
         entry = try {
             act.db.get(act.bookId)
         } catch (t: Throwable) {

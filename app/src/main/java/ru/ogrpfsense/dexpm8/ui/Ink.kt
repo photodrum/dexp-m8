@@ -162,6 +162,49 @@ class Ink(ctx: Context) {
     }
 
     /**
+     * Абзац с переносом по словам, выровненный по центру полосы [x, x+w].
+     * Возвращает использованную высоту; шаг строки — fs·[lh].
+     * [Ink.paragraph] центрировать не умеет: там текст рисуется от левого края.
+     */
+    fun paragraphCenter(c: Canvas, s: String, x: Float, top: Float, maxW: Float, size: Float,
+                        weight: Int, color: Int, lh: Float,
+                        font: Typeface = T.manrope(res, weight)): Float {
+        text.typeface = font
+        text.textSize = size
+        text.color = color
+        text.textAlign = Paint.Align.CENTER
+        val cx = x + maxW / 2f
+        val step = size * lh
+        var y = T.base(top, size, lh)
+        var lineStart = 0
+        var lastSpace = -1
+        var i = 0
+        while (i < s.length) {
+            val ch = s[i]
+            if (ch == '\n') {
+                c.drawText(s, lineStart, i, cx, y, text)
+                y += step
+                lineStart = i + 1
+                lastSpace = -1
+            } else if (ch == ' ') {
+                if (text.measureText(s, lineStart, i) > maxW && lastSpace > lineStart) {
+                    c.drawText(s, lineStart, lastSpace, cx, y, text)
+                    y += step
+                    lineStart = lastSpace + 1
+                }
+                lastSpace = i
+            }
+            i++
+        }
+        if (lineStart < s.length) {
+            c.drawText(s, lineStart, s.length, cx, y, text)
+            y += step
+        }
+        text.textAlign = Paint.Align.LEFT
+        return y - T.base(top, size, lh)
+    }
+
+    /**
      * Абзац с переносом по словам. Возвращает использованную высоту.
      * Рисует в дизайн-px, [lineGap] добавляется к межстрочному.
      */

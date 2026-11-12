@@ -36,6 +36,7 @@ class SearchScreen(act: EinkActivity) : Screen(act) {
     private val db = act.db
     private val status = StatusBar(act, this, ink, icons)
     private val kb = Keyboard(ink)
+    private val empty = EmptyState(ink, icons)
     private val lit600: Typeface = T.literata(ink.res, 600)
 
     private var query = ""
@@ -259,12 +260,14 @@ class SearchScreen(act: EinkActivity) : Screen(act) {
     private fun panel(c: Canvas) {
         ink.convex(c, 41f, 516f, 1321f, 1146f, T.R_TILE)
         if (rows.isEmpty()) {
+            // B44 «Пустое / Ничего не найдено»: карточка 425×410 в панели, значок search.
+            // «Что ищем?» — та же карточка (состояния «пустой запрос» в B44 нет): пояснение
+            // вместо «проверьте написание» подсказывает, что вводить.
             val blank = query.isBlank()
-            val title = if (blank) "Что ищем?" else "Ничего не найдено"
             val hint = if (blank) "Введите часть названия, имя автора или серию"
                 else "Проверьте написание или ищите по автору"
-            ink.textCenter(c, title, 0f, W, T.base(760f, T.TS_LABEL, 1.25f), T.TS_LABEL, 700, T.G1)
-            ink.textCenter(c, hint, 0f, W, T.base(820f, T.TS_META, 1.3f), T.TS_META, 600, T.G4)
+            empty.card(c, 489f, 740f, EmptyState.ICON_SEARCH, 36.2f, 38.4f,
+                if (blank) "Что ищем?" else "Ничего не найдено", hint)
             return
         }
         for (i in curStart until curEnd) {

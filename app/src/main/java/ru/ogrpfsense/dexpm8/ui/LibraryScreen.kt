@@ -54,9 +54,10 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
     private var selectedId = -1L           // последняя открытая книга; -1 — не открывали
     private var subtitle = ""
     private var storageOk = act.hasStorage()
-    private var storageAsked = false
 
     private val cards = LibraryGrid(ink, icons)
+    private val empty = EmptyState(ink, icons)
+    private val noStorage = NoStorageHint(ink, icons)
 
     private val sortLabels = arrayOf("По автору", "По дате", "Новые", "Непрочитанные")
 
@@ -100,9 +101,17 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
     private fun dbFilter() =
         LibraryDb.Filter(act.prefs.libFormats, act.prefs.libStates, act.prefs.libHideRead)
 
+    /** Перерисовать после смены права: B46 уходит, на его месте — содержимое библиотеки. */
     private val storageListener: (Boolean) -> Unit = { ok ->
         storageOk = ok
-        if (ok) startScan(true) else redraw()
+        if (ok) {
+            startScan(true)      // скан сам перерисует по готовности
+            layout(W, H)         // зоны касания: B46 → обычный экран
+            redraw()
+        } else {
+            layout(W, H)
+            redraw()
+        }
     }
 
     private val litTitle = T.literata(ink.res, 600)
@@ -122,7 +131,6 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
         const val HIT_FILTER = 8
         const val HIT_SHELVES = 7
         const val HIT_BOOK = 9
-        const val HIT_EMPTY = -1       // пустое состояние: «разрешить» / «Настройки»
 
         const val ST_PROGRESS = 0
         const val ST_NEW = 1
@@ -155,26 +163,25 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
         super.layout(w, h)
         hits.clear()
         hits.add(Hit(HIT_BACK, 41.1f, 112.3f, 106.9f, 112.4f))
-        hits.add(Hit(HIT_PREV, 41.1f, 1708.3f, 121.6f, 127.1f))
-        hits.add(Hit(HIT_NEXT, 1240.4f, 1708.3f, 121.6f, 127.1f))
-        hits.add(Hit(HIT_FILTER, 1250f, 248.6f, 110f, 102.4f))
-        hits.add(Hit(HIT_SEARCH, 43.9f, 248.6f, 1316.2f, 102.4f))
-        hits.add(Hit(HIT_VIEW, 1155.4f, 122.3f, 204.8f, 87.7f))
-        hits.add(Hit(HIT_SHELVES, 1020f, 112.3f, 120f, 112.4f))
-        hits.add(Hit(HIT_SORT, SORT_X, 387.6f, 1316.2f, 87.7f))
-        if (rowIds.isEmpty()) {
-            // Пустое состояние: зона — вся область под сортировкой.
-            hits.add(Hit(HIT_EMPTY, 41.1f, 516.4f, 1320.8f, 1136.2f))
-        }
-        for (i in 0 until rowIds.size) {
-            if (viewMode == 1) {
-                // Сетка: зона карточки — её рамка в макете (414.1×558.5, зазор между рамками 39.3).
-                hits.add(Hit(HIT_BOOK + i + 1, cards.frameX(i), cards.frameY(i),
-                    LibraryGrid.FRAME_W, LibraryGrid.FRAME_H))
-            } else {
-                hits.add(Hit(HIT_BOOK + i + 1, 95.1f, ROW_Y0 + i * ROW_STEP, 1213.9f, ROW_H))
+        if (storageOk) {
+            hits.add(Hit(HIT_PREV, 41.1f, 1708.3f, 121.6f, 127.1f))
+            hits.add(Hit(HIT_NEXT, 1240.4f, 1708.3f, 121.6f, 127.1f))
+            hits.add(Hit(HIT_FILTER, 1250f, 248.6f, 110f, 102.4f))
+            hits.add(Hit(HIT_SEARCH, 43.9f, 248.6f, 1316.2f, 102.4f))
+            hits.add(Hit(HIT_VIEW, 1155.4f, 122.3f, 204.8f, 87.7f))
+            hits.add(Hit(HIT_SHELVES, 1020f, 112.3f, 120f, 112.4f))
+            hits.add(Hit(HIT_SORT, SORT_X, 387.6f, 1316.2f, 87.7f))
+            for (i in 0 until rowIds.size) {
+                if (viewMode == 1) {
+                    // Сетка: зона карточки — её рамка в макете (414.1×558.5, зазор между рамками 39.3).
+                    hits.add(Hit(HIT_BOOK + i + 1, cards.frameX(i), cards.frameY(i),
+                        LibraryGrid.FRAME_W, LibraryGrid.FRAME_H))
+                } else {
+                    hits.add(Hit(HIT_BOOK + i + 1, 95.1f, ROW_Y0 + i * ROW_STEP, 1213.9f, ROW_H))
+                }
             }
         }
+        // B46 (нет права): зоны кнопок — в [NoStorageHint.hit], в таблице их нет.
     }
 
     override fun render(c: Canvas) {
@@ -182,10 +189,15 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
         val dim = if (sheetOpen) dimBegin(c) else -1
         ink.rect(c, 0f, 0f, W, H, T.BG)
         header(c)
-        searchField(c)
-        sortBar(c)
-        if (rowIds.isEmpty()) emptyState(c) else if (viewMode == 1) grid(c) else list(c)
-        pager(c)
+        if (!storageOk) {
+            // B46: нет права на память — вместо содержимого библиотеки экран-подсказка.
+            noStorage.draw(c)
+        } else {
+            searchField(c)
+            sortBar(c)
+            if (rowIds.isEmpty()) emptyState(c) else if (viewMode == 1) grid(c) else list(c)
+            pager(c)
+        }
         if (dim >= 0) dimEnd(c, dim)
         status.draw(c)
         if (sheetOpen) sheet.draw(c, sheetCount)
@@ -270,24 +282,27 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
         redraw()
     }
 
-    /** Пустая панель: нет права на чтение памяти либо в `Books` нет книг. */
+    /**
+     * Пустая библиотека B44. Тексты — отступление от макета: B44 показывает только «нет книг»,
+     * а два других состояния (идёт поиск, пусто после фильтра) на нём не нарисованы.
+     * Кнопки «Загрузить по Wi-Fi» и «Сетевые каталоги» в макете есть, но появятся с 9.7 и п. 10;
+     * пока — без кнопок, о них говорит только пояснение.
+     */
     private fun emptyState(c: Canvas) {
-        ink.inset(c, 41.1f, 516.4f, 1320.8f, 1136.2f, T.R_TILE)
         val title: String
         val hint: String
-        if (!storageOk) {
-            title = "Нет доступа к памяти"
-            hint = if (storageAsked) "Нажмите, чтобы открыть «Настройки»" else "Нажмите, чтобы разрешить"
-        } else if (scanner.isRunning) {
+        if (scanner.isRunning) {
             title = "Идёт поиск книг…"
             hint = "Это займёт несколько секунд"
+        } else if (!dbFilter().isEmpty) {
+            title = "Ничего не найдено"
+            hint = "Проверьте фильтры — книг с такими условиями нет в библиотеке"
         } else {
-            title = "Книг пока нет"
-            hint = "Положите файлы в папку Books"
+            title = "В библиотеке пока нет книг"
+            hint = "Скопируйте файлы в папку Books по USB, загрузите их по Wi-Fi " +
+                "или найдите в сетевых каталогах."
         }
-        ink.textCenter(c, title, 0f, W, T.base(940f, TS_BOOK, 1.25f, true), TS_BOOK, 600, T.G1,
-            litTitle)
-        ink.textCenter(c, hint, 0f, W, T.base(1010f, T.TS_BODY_S, 1.3f), T.TS_BODY_S, 600, T.G4)
+        empty.library(c, title, hint, false)
     }
 
     private fun header(c: Canvas) {
@@ -455,7 +470,19 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
             sheetUp(x, y)
             return
         }
-
+        if (!storageOk) {
+            // B46: сначала кнопки подсказки; «Назад» — общая зона в таблице hits ниже.
+            when (NoStorageHint.hit(x, y)) {
+                NoStorageHint.ACT_SETTINGS -> {
+                    askStorage()
+                    return
+                }
+                NoStorageHint.ACT_LATER -> {
+                    act.pop()
+                    return
+                }
+            }
+        }
         for (h in hits) {
             if (x >= h.x && x <= h.x + h.w && y >= h.y && y <= h.y + h.h) {
                 when (h.id) {
@@ -481,7 +508,6 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
                         act.searchFresh = true
                         act.go(EinkActivity.SCR_SEARCH)
                     }
-                    HIT_EMPTY -> if (!storageOk) askStorage()
                     else -> if (h.id > HIT_BOOK) {
                         val i = h.id - HIT_BOOK - 1
                         // Нажатие на книгу — «О книге» (B12); в читалку — кнопкой оттуда.
@@ -496,14 +522,8 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
         }
     }
 
-    /** Нет права: первый раз — системный диалог, после отказа — «Настройки» приложения. */
+    /** B46 «Открыть настройки»: экран приложения в настройках Android, где включается «Память». */
     private fun askStorage() {
-        if (!storageAsked) {
-            storageAsked = true
-            // Выдача права придёт в storageListener (он и запустит скан); здесь — только отказ.
-            act.requestStorage { ok -> if (!ok) redraw() }
-            return
-        }
         try {
             act.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                 Uri.parse("package:" + act.packageName)))
@@ -521,8 +541,8 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
         // Выбранная строка и страница — по базе; сканер подтянет изменения в фоне.
         refresh()
         layout(W, H)
-        // Диалог права здесь не открываем: он только на холодном старте (EinkActivity)
-        // и по тапу на надпись (askStorage). Скан после выдачи права — через storageListener.
+        // Диалог права здесь не открываем: он только на холодном старте (EinkActivity).
+        // Не выдали — экран B46 с кнопкой «Открыть настройки» (проверка права — storageListener).
         if (storageOk) startScan()
     }
 

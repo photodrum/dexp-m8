@@ -60,6 +60,13 @@ PRIMARY = {
     "sunLow": (16.1, 18),
     "sunHigh": (41, 42.9),
     "lock": (27.5, 35.8),
+    # Размеры, которые уже рисует код по имени (проверено по экранам оболочки, 9.5).
+    "audio": (73.1, 76.2),        # плитка «Аудиокниги» на B1
+    "bookmark": (45.7, 47.6),     # «На полку» на B12
+    "close": (22.1, 24.3),        # B6, строка «Скрыть приложение»
+    "download": (35.3, 40.9),     # B42, «Очистить кэш»
+    "library": (73.1, 76.2),      # плитка B1 и строка автора на B21
+    "settings": (73.1, 76.2),     # плитка B1
 }
 # Цветовой вариант той же формы под своим именем: файл → имя в IconSpecs.kt.
 # search~fapjtl (G1, шапка B6/B36) отличается от search~hhvmhx (G5, B2) только цветом.
@@ -71,10 +78,41 @@ COLOR_ALIAS = {
 NUM_RE = re.compile(r"-?\d+(?:\.\d+)?")
 
 # Файлы снимка, которые пока не берём: иконки B4 (R3) остаются из icon_specs_extra.txt.
-# plus~oohzz2 снят неполным (только блик G15, без контура) — переснять с B4 в R3.
+# plus~oohzz2 снят неполным (только блик G15, без контура) — переснять с B4 в R3;
+# plus~1201ai8 и plus~ou9h7o — тоже варианты B4, размер 43.9 из icon_specs_extra.txt совпадает
+# с макетом B4/плитками, снимок этих бордов будет в R3.
 SKIP = {
     "plus~oohzz2.json",
+    "plus~1201ai8.json",
+    "plus~ou9h7o.json",
     "minus~kgoluh.json",
+}
+
+# Копии иконок, нарисованные «под листом» по старому правилу (светлее на 4–5 ступеней,
+# замечание 15): G15 → G13, G1/G4 → G8/G9, G10 → G11. В коде содержимое под листом затемняет
+# Screen.DIM, поэтому эти файлы не нужны — иначе генератор видит в них «вариант другой формы».
+# Список явный: новый такой файл в снимке снова уронит проверку, и это правильно.
+SKIP_DIM = {
+    "audio~1y6kbrh.json",
+    "back~1669nm4.json",
+    "back~185lzao.json",
+    "back~1nwoxff.json",
+    "back~ce9cq0.json",
+    "bookmark~1oi0ewj.json",
+    "check~aylj0v.json",
+    "check~jitolp.json",
+    "check~ze2z26.json",
+    "filter~1bkbv0.json",
+    "grid~qwycyx.json",
+    "library~11rzxmi.json",
+    "list~smglpz.json",
+    "more~mt365b.json",
+    "next~837lsk.json",
+    "next~bh2g0t.json",
+    "next~fawyjb.json",
+    "next~fkcejo.json",
+    "plus~lcbp9f.json",
+    "search~wgbvc3.json",
 }
 
 HEADER = '''package ru.ogrpfsense.dexpm8.ui
@@ -226,7 +264,7 @@ def load_snapshot(pal: dict) -> dict:
     """
     groups: dict = {}   # имя -> список [w, h, prims, файл]
     for path in sorted(ICONS_DIR.glob("*.json")):
-        if path.name in SKIP:
+        if path.name in SKIP or path.name in SKIP_DIM:
             continue
         data = json.loads(path.read_text(encoding="utf-8"))
         name = data["name"].split("/")[-1].strip()
