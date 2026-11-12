@@ -164,13 +164,16 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
         hits.clear()
         hits.add(Hit(HIT_BACK, 41.1f, 112.3f, 106.9f, 112.4f))
         if (storageOk) {
-            hits.add(Hit(HIT_PREV, 41.1f, 1708.3f, 121.6f, 127.1f))
-            hits.add(Hit(HIT_NEXT, 1240.4f, 1708.3f, 121.6f, 127.1f))
             hits.add(Hit(HIT_FILTER, 1250f, 248.6f, 110f, 102.4f))
             hits.add(Hit(HIT_SEARCH, 43.9f, 248.6f, 1316.2f, 102.4f))
             hits.add(Hit(HIT_VIEW, 1155.4f, 122.3f, 204.8f, 87.7f))
             hits.add(Hit(HIT_SHELVES, 1020f, 112.3f, 120f, 112.4f))
             hits.add(Hit(HIT_SORT, SORT_X, 387.6f, 1316.2f, 87.7f))
+            // Пустой список (B44): пагинации на экране нет, значит и зон у неё нет.
+            if (rowIds.isNotEmpty()) {
+                hits.add(Hit(HIT_PREV, 41.1f, 1708.3f, 121.6f, 127.1f))
+                hits.add(Hit(HIT_NEXT, 1240.4f, 1708.3f, 121.6f, 127.1f))
+            }
             for (i in 0 until rowIds.size) {
                 if (viewMode == 1) {
                     // Сетка: зона карточки — её рамка в макете (414.1×558.5, зазор между рамками 39.3).
@@ -195,8 +198,12 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
         } else {
             searchField(c)
             sortBar(c)
-            if (rowIds.isEmpty()) emptyState(c) else if (viewMode == 1) grid(c) else list(c)
-            pager(c)
+            if (rowIds.isEmpty()) {
+                emptyState(c)       // B44: пагинации при пустом списке нет
+            } else {
+                if (viewMode == 1) grid(c) else list(c)
+                pager(c)
+            }
         }
         if (dim >= 0) dimEnd(c, dim)
         status.draw(c)
@@ -310,8 +317,11 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
         icons.draw(c, "back", 72.2f, 144.3f, 45.7f, 47.6f)
 
         ink.text(c, "Библиотека", 175.5f, T.base(104f, T.TS_TITLE, 1.2f), T.TS_TITLE, 700, T.G1)
-        ink.text(c, subtitle, 175.5f, T.base(180f, T.TS_BODY_S, 1.3f),
-            T.TS_BODY_S, 600, T.G4)
+        // B46: подзаголовок «Нет доступа к памяти» (на макете библиотеки — число книг и размер).
+        ink.text(c, if (storageOk) subtitle else "Нет доступа к памяти", 175.5f,
+            T.base(180f, T.TS_BODY_S, 1.3f), T.TS_BODY_S, 600, T.G4)
+        // Без права нет ни данных, ни «Полок»: круглая клавиша и переключатель вида не рисуются.
+        if (!storageOk) return
 
         // «Полки»: круглая клавиша левее переключателя вида (в макете B2/B11 её нет, решение DEVLOG 9.3).
         ink.convex(c, 1030f, 112.3f, 106.9f, 112.4f, R_ROUND_BACK)
