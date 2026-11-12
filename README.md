@@ -15,6 +15,7 @@
 | [`docs/DEVLOG.md`](docs/DEVLOG.md) | журнал по датам: что сделано, какие баги найдены |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | как устроен рендер, дизайн-px, структура кода, слои объёма, правила E-Ink, память |
 | [`docs/DESIGN.md`](docs/DESIGN.md) | токены из Penpot: палитра, радиусы, кегли, геометрия B1/B2, факты Penpot |
+| [`docs/DESIGN_QUESTIONS.md`](docs/DESIGN_QUESTIONS.md) | открытые вопросы к чату дизайна (читать только при разговоре с ним) |
 | [`docs/DESIGN_USAGE.md`](docs/DESIGN_USAGE.md) | как пользоваться макетами «v5» и «v5 дизайн-система», карта экранов |
 | [`design/README.md`](design/README.md) | снимок макета в JSON: как снимать, формат, проверка |
 | [`docs/READER_SPEC.md`](docs/READER_SPEC.md) | ТЗ читалки: движки, `ReaderEngine`, этапы R0–R6, приёмка |

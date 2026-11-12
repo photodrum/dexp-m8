@@ -191,6 +191,9 @@ GIT_ASKPASS=$PWD/tools/git-askpass.sh GIT_TERMINAL_PROMPT=0 \
 |---|---|
 | `adb devices` → `offline`, потом книга пропадает; `logcat` сам завершается через 1–2 мин | обрыв USB. `adb kill-server` не помог, помогло выдернуть кабель, подождать 5 с и вставить в порт на задней панели ПК; на книге — «Передача файлов (MTP)» и «Разрешить отладку» |
 | `adb` не распознан в PowerShell | запускать как `.\adb` из `C:\platform-tools` |
+| `java: command not found` (`apksigner`, `d8`, `kotlinc` в `typecheck.sh`, фон) | в PATH нет JDK: `export JAVA_HOME=$HOME/.local/jdk PATH=$HOME/.local/jdk/bin:$PATH` |
+| `adb: command not found` в Linux | `export PATH=$HOME/.local/android-sdk/platform-tools:$PATH` |
+| Книга не видна в `adb devices` после переподключения или перезагрузки (LXC `tools`, VMID 113, USB проброшен: udev `51-android.rules`, vendor `2207`) | `pkill adb; adb start-server`, подождать 3 с. Нет `2207` в `/sys/bus/usb/devices` (`lsusb \| grep 2207`, `2207:0011`) — другой порт ПК |
 | `401` на `/api/v4/mcp` | legacy-токен вместо fine-grained, либо `PRIVATE-TOKEN` вместо `Authorization: Bearer` |
 | `403 insufficient_granular_scope` | у токена нет нужного ресурса — дописать в Edit PAT |
 | `403 [Code: Push]` | у токена нет `write_repository` |
@@ -201,24 +204,17 @@ GIT_ASKPASS=$PWD/tools/git-askpass.sh GIT_TERMINAL_PROMPT=0 \
 | antiword: `Exactly one of the DEBUG and NDEBUG flags MUST be set` | Gradle Debug не задаёт `NDEBUG`; в `engines/*.cmake` у библиотек движков `-DNDEBUG` всегда |
 | crengine `lvimg.cpp`: `undeclared identifier 'JCS_EXT_BGRX'` | нужен libjpeg-turbo, а не IJG. Решено в 7.1а: цель `cre_jpeg` (libjpeg-turbo 3.2.1); если ошибка вернулась — в `CRE_INC` перед `jpeglib.h` IJG стоит другой каталог |
 | ld: `undefined symbol: png_init_filter_functions_neon` | libpng 1.6 на ARM ждёт `arm/*.c`; задано `PNG_ARM_NEON_OPT=0` |
-| `apksigner` / `d8`: не найден `java` | `export PATH=$JAVA_HOME/bin:$PATH` |
 | Терминал Cline зависает на длинном heredoc | писать скрипт файлом (редактором), затем запускать |
-| `adb: command not found` в Linux | `export PATH=$HOME/.local/android-sdk/platform-tools:$PATH` |
 | В терминале Cline нет вывода долгих команд (`typecheck.sh`, Gradle) | `cmd > /tmp/x.log 2>&1`, затем читать файл |
-| В фоне нет `java` | `export JAVA_HOME=$HOME/.local/jdk PATH=$JAVA_HOME/bin:$PATH` |
-| Книга пропала с шины (в LXC нет `2207` в `/sys/bus/usb/devices`) | другой порт ПК; на хосте `lsusb \| grep 2207` (`2207:0011`), затем `pkill adb; adb start-server` |
-| `adb` не видит книгу после переподключения (LXC `tools`, VMID 113, USB проброшен: udev `51-android.rules`, vendor `2207`) | `pkill adb; adb start-server` |
 | `screencap` отдаёт чёрный кадр | экран погас по таймауту: `adb shell input keyevent KEYCODE_WAKEUP`; сразу после запуска E-Ink ещё не обновилась — снимать через 10–15 с |
 | В файле после записи через `sed`/`cat` из терминала VS Code появились `ESC]633…` | сборка падает на первой строке; писать файлы редактором, проверять `grep -c $'\x1b' файл` = 0 |
 | Скрипт с `while`/`grep -q` и `adb logcat -d` подвисает в терминале Cline | запускать по одному файлу в фоне, читать лог отдельно |
 | Проба листает 30 страниц и «тормозит» | на книге остался `/data/local/tmp/dexp-bench`: `adb shell rm /data/local/tmp/dexp-bench` |
-| `tools/typecheck.sh`: `kotlinc: java: command not found` | в PATH нет JDK; перед запуском `export JAVA_HOME=$HOME/.local/jdk PATH=$HOME/.local/jdk/bin:$PATH` |
 | `tools/typecheck.sh`: `unresolved reference: BuildConfig` | `BuildConfig` генерирует только Gradle; в `typecheck.sh` и `build.sh` есть заглушка (`DEBUG = true`) с 2026-11-12 |
 | «Быстрый» (B5/B37): шторка или новый экран рисуются кашей поверх старого | A2-режим на большой кадр с серым; такие кадры должны идти через `EinkActivity.bigFrame` / `fullOnSwitch` (п. 8.2) |
 | `NoClassDefFoundError: kotlin.jvm.internal.Lambda` | APK без Kotlin stdlib (старый `build.sh`); исправлено 2026-11-11 |
 | `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | другой ключ подписи; `build.sh` и Gradle используют один `~/.android/debug.keystore`. Иначе `adb uninstall` (данные пропадут) |
 | `run-as` не работает | APK не debuggable; значения проверять через `settings get`/`getprop` |
-| Книга не в `adb devices`, но `2207` в `/sys/bus/usb/devices` есть (после перезагрузки книги) | `adb kill-server; adb start-server`, подождать 3 с |
 | `git ls-remote` на `github.com/koreader/djvulibre` висит | брать с `gitlab.com/koreader/djvulibre` |
 | `penpot_dump.js` не запустить: в чате Cline нет инструментов MCP Penpot, хотя сервер включён | инструменты MCP подключаются при старте чата: включить сервер в Cline → MCP Servers, затем открыть **новый** чат |
 | Ответ `penpot_dump.js` в чате обрезан (`...[truncated N chars]...`) | целиком он лежит в `~/.cline/data/sessions/<id>/<id>.messages.json`: результат положить в `storage`, отдавать частями с меткой (`{MARK, files}`), достать из журнала по метке и сверить длину и djb2 (UTF-16) с Penpot до записи (DEVLOG 2026-11-12, 9.0) |
