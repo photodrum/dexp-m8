@@ -160,6 +160,18 @@ adb shell dumpsys accessibility | grep -o 'services:{[^}]*}'   # ожидаем 
 В скриптах с циклом `while read` по файлам каждому `adb shell`/`adb exec-out` давать `< /dev/null`:
 иначе adb съедает stdin, и цикл заканчивается после первого файла.
 
+**Проверка экранов, которым нужно или не нужно право на память (B46, B45, пустые состояния).**
+
+```bash
+adb shell pm revoke ru.ogrpfsense.dexpm8 android.permission.READ_EXTERNAL_STORAGE  # «права нет»
+adb shell pm grant  ru.ogrpfsense.dexpm8 android.permission.READ_EXTERNAL_STORAGE  # вернуть
+adb exec-out screencap -p > /tmp/shot.png     # пустой/нет файла — повторить, иногда не с первого раза
+```
+
+При холодном старте без права приложение само открывает системный диалог, и он перекрывает экран:
+сначала нажать «ОТКЛОНИТЬ», потом идти в библиотеку, иначе `pm revoke` бесполезен (право уже выдано).
+Чтобы увидеть B45 на PDF, положить `.pdf` в `Books` — скан подхватит его первым в «Новые».
+
 ## Git и доступы
 
 Remote — HTTPS: `https://git.ogrpfsense.ru/denisle/dexp-m8.git`.
@@ -211,6 +223,7 @@ GIT_ASKPASS=$PWD/tools/git-askpass.sh GIT_TERMINAL_PROMPT=0 \
 | Скрипт с `while`/`grep -q` и `adb logcat -d` подвисает в терминале Cline | запускать по одному файлу в фоне, читать лог отдельно |
 | Проба листает 30 страниц и «тормозит» | на книге остался `/data/local/tmp/dexp-bench`: `adb shell rm /data/local/tmp/dexp-bench` |
 | `tools/typecheck.sh`: `unresolved reference: BuildConfig` | `BuildConfig` генерирует только Gradle; в `typecheck.sh` и `build.sh` есть заглушка (`DEBUG = true`) с 2026-11-12 |
+| `tools/typecheck.sh`: `OutOfMemoryError` в psi2ir (падает на `ShelvesScreen.kt`) | у `kotlinc` мало памяти по умолчанию: `JAVA_OPTS=-Xmx1600m tools/typecheck.sh` (121 класс собирается; проверено 2026-11-12) |
 | «Быстрый» (B5/B37): шторка или новый экран рисуются кашей поверх старого | A2-режим на большой кадр с серым; такие кадры должны идти через `EinkActivity.bigFrame` / `fullOnSwitch` (п. 8.2) |
 | `NoClassDefFoundError: kotlin.jvm.internal.Lambda` | APK без Kotlin stdlib (старый `build.sh`); исправлено 2026-11-11 |
 | `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | другой ключ подписи; `build.sh` и Gradle используют один `~/.android/debug.keystore`. Иначе `adb uninstall` (данные пропадут) |
