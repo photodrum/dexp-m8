@@ -48,6 +48,19 @@ internal class EmptyState(private val ink: Ink, private val icons: Icons) {
             T.TS_LABEL_L, 700, T.G1)
     }
 
+    /**
+     * Касание кнопок пустой библиотеки ([library] с `buttons = true`):
+     * [ACT_WIFI] — «Загрузить по Wi-Fi» (B26), [ACT_CATALOG] — «Сетевые каталоги» (п. 10),
+     * иначе [ACT_NONE]. Зоны — рамки кнопок из B44 со сдвигом [DY].
+     */
+    fun libraryHit(x: Float, y: Float): Int {
+        if (x >= 202f && x <= 202f + 1005f) {
+            if (y >= 960f + DY && y <= 960f + DY + 142f) return ACT_WIFI
+            if (y >= 1130f + DY && y <= 1130f + DY + 120f) return ACT_CATALOG
+        }
+        return ACT_NONE
+    }
+
     /** Карточка пустого раздела B44 («Пустое / Ничего не найдено» и др.). */
     fun card(c: Canvas, x: Float, y: Float, icon: String, iw: Float, ih: Float,
              title: String, hint: String) {
@@ -63,6 +76,11 @@ internal class EmptyState(private val ink: Ink, private val icons: Icons) {
     companion object {
         const val CARD_W = 425f
         const val CARD_H = 410f
+
+        /** Ответы [libraryHit]. */
+        const val ACT_NONE = 0
+        const val ACT_WIFI = 1
+        const val ACT_CATALOG = 2
 
         /** Иконки карточек B44: имя спеки и размер рамки в макете. */
         const val ICON_SEARCH = "search@36.2x38.4"

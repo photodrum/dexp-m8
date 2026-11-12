@@ -42,6 +42,9 @@ class EinkActivity : Activity() {
         /** B25 «Файлы» — обзор папок памяти; открывается синтетической плиткой в B6. */
         const val SCR_FILES = 18
 
+        /** B26 «Загрузка по Wi-Fi» — свой HTTP-сервер; вход — кнопка на пустой библиотеке B44. */
+        const val SCR_WIFI = 19
+
         private const val REQ_STORAGE = 1
         private const val REQ_WRITE_SETTINGS = 2
         private const val REQ_ADMIN = 3
@@ -434,10 +437,20 @@ class EinkActivity : Activity() {
     /**
      * Только debug, R0 (шаг 7.2): `adb shell am start -n ru.ogrpfsense.dexpm8/.ui.EinkActivity
      * --es probe /sdcard/Books/x.pdf` открывает файл на отладочном экране движков без базы.
+     * `--es screen wifi` — экран B26 «Загрузка по Wi-Fi»: кнопка входа есть только на пустой
+     * библиотеке, а на книге база не пуста (шаг 9.7, проверка на железе).
      */
     private fun probeFromIntent(intent: android.content.Intent?) {
         if (!ru.ogrpfsense.dexpm8.BuildConfig.DEBUG) return
-        val p = intent?.getStringExtra("probe") ?: return
+        val p = intent?.getStringExtra("probe")
+        if (p == null) {
+            if (intent?.getStringExtra("screen") != "wifi") return
+            intent.removeExtra("screen")
+            Trace.step("debug: screen wifi")
+            if (stack.isNotEmpty() && stack[stack.size - 1] == SCR_WIFI) changeTo(SCR_WIFI)
+            else go(SCR_WIFI)
+            return
+        }
         intent.removeExtra("probe")
         Trace.step("probe: intent $p")
         ru.ogrpfsense.dexpm8.reader.ProbeScreen.debugPath = p
@@ -677,6 +690,7 @@ class EinkActivity : Activity() {
             SCR_SET_STORAGE -> SetStorageScreen(this)
             SCR_SET_ABOUT -> SetAboutScreen(this)
             SCR_FILES -> FilesScreen(this)
+            SCR_WIFI -> WifiUploadScreen(this)
             SCR_READER -> ru.ogrpfsense.dexpm8.reader.ProbeScreen(this)   // R0, шаг 7.2: отладка движков
             else -> HomeScreen(this)
         }

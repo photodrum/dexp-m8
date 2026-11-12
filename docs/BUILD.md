@@ -225,6 +225,7 @@ GIT_ASKPASS=$PWD/tools/git-askpass.sh GIT_TERMINAL_PROMPT=0 \
 | Проба листает 30 страниц и «тормозит» | на книге остался `/data/local/tmp/dexp-bench`: `adb shell rm /data/local/tmp/dexp-bench` |
 | `tools/typecheck.sh`: `unresolved reference: BuildConfig` | `BuildConfig` генерирует только Gradle; в `typecheck.sh` и `build.sh` есть заглушка (`DEBUG = true`) с 2026-11-12 |
 | `tools/typecheck.sh`: `OutOfMemoryError` в psi2ir (падает на `ShelvesScreen.kt`) | у `kotlinc` мало памяти по умолчанию: `JAVA_OPTS=-Xmx1600m tools/typecheck.sh` (121 класс собирается; проверено 2026-11-12) |
+| `tools/build.sh`: `OutOfMemoryError: Java heap space` на `ShelfScreen.kt` в шаге «Kotlin» | то же: `JAVA_OPTS=-Xmx1600m tools/build.sh` (проверено 2026-11-12); `JAVA_HOME` и PATH JDK тоже должны быть выставлены |
 | «Быстрый» (B5/B37): шторка или новый экран рисуются кашей поверх старого | A2-режим на большой кадр с серым; такие кадры должны идти через `EinkActivity.bigFrame` / `fullOnSwitch` (п. 8.2) |
 | `NoClassDefFoundError: kotlin.jvm.internal.Lambda` | APK без Kotlin stdlib (старый `build.sh`); исправлено 2026-11-11 |
 | `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | другой ключ подписи; `build.sh` и Gradle используют один `~/.android/debug.keystore`. Иначе `adb uninstall` (данные пропадут) |

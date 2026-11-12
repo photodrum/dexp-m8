@@ -309,8 +309,13 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
             hint = "Скопируйте файлы в папку Books по USB, загрузите их по Wi-Fi " +
                 "или найдите в сетевых каталогах."
         }
-        empty.library(c, title, hint, false)
+        // Кнопки — только в состоянии «книг нет совсем»: при поиске и пустом фильтре
+        // загружать нечего (решение 9.7). «Загрузить по Wi-Fi» ведёт на B26.
+        empty.library(c, title, hint, bookless())
     }
+
+    /** Библиотека пуста по-настоящему: не идёт поиск и фильтры ничего не отсекают. */
+    private fun bookless(): Boolean = !scanner.isRunning && dbFilter().isEmpty
 
     private fun header(c: Canvas) {
         ink.convex(c, 41.1f, 112.3f, 106.9f, 112.4f, R_ROUND_BACK)
@@ -491,6 +496,15 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
                     act.pop()
                     return
                 }
+            }
+        } else if (rowIds.isEmpty() && bookless()) {
+            // B44 с кнопками: «Загрузить по Wi-Fi» (B26) и «Сетевые каталоги» (п. 10, пока молчит).
+            when (empty.libraryHit(x, y)) {
+                EmptyState.ACT_WIFI -> {
+                    act.go(EinkActivity.SCR_WIFI)
+                    return
+                }
+                EmptyState.ACT_CATALOG -> return
             }
         }
         for (h in hits) {
