@@ -138,6 +138,8 @@ adb shell dumpsys meminfo ru.ogrpfsense.dexpm8   # PSS — главная мет
 # R0 (только debug): открыть файл на отладочном экране движков, минуя базу (EinkActivity.probeFromIntent)
 adb shell am start -W -n ru.ogrpfsense.dexpm8/.ui.EinkActivity --es probe "'/sdcard/Books/r0/r0-cover.fb2'"
 adb logcat -s DexpM8:V | grep probe     # «probe: <движок> rc=0 <мс>»
+# замеры crengine с листанием (30 стр.): строка «bench: …» в logcat; выключить — rm
+adb shell touch /data/local/tmp/dexp-bench   # adb shell rm /data/local/tmp/dexp-bench
 ```
 
 В скриптах с циклом `while read` по файлам каждому `adb shell`/`adb exec-out` давать `< /dev/null`:
