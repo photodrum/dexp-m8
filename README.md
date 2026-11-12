@@ -10,7 +10,7 @@
 
 | Файл | О чём |
 |---|---|
-| [`docs/CONTEXT.md`](docs/CONTEXT.md) | **начинать отсюда**: следующий шаг, карта документов, правила работы |
+| [`docs/CONTEXT.md`](docs/CONTEXT.md) | **начинать отсюда**: следующий шаг и краткое состояние проекта |
 | [`docs/ROADMAP.md`](docs/ROADMAP.md) | полный план (оболочка → читалка), подробности текущего пункта, что сделано |
 | [`docs/DEVLOG.md`](docs/DEVLOG.md) | журнал по датам: что сделано, какие баги найдены |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | как устроен рендер, дизайн-px, структура кода, слои объёма, правила E-Ink, память |
@@ -65,49 +65,20 @@ C-ядро — `app/src/main/cpp/`, утилиты — `tools/`. Подробн�
 ## Сборка
 
 Окружение развёрнуто в `~/.local` (JDK 17, cmdline-tools, kotlinc 1.9.24, Gradle 8.7, NDK r26d).
-
-### Основной способ — Gradle
+Все команды, флаги, установка на книгу и частые ошибки — `docs/BUILD.md`; ниже — только самое частое.
 
 ```bash
 export JAVA_HOME=$HOME/.local/jdk
 export ANDROID_HOME=$HOME/.local/android-sdk
 export PATH=$JAVA_HOME/bin:$PATH
 
-gradle -p ~/projects/dexp-m8 assembleDebug     # app/build/outputs/apk/debug/app-debug.apk
-gradle -p ~/projects/dexp-m8 assembleRelease   # с R8
+gradle -p ~/projects/dexp-m8 assembleDebug     # полная сборка: Kotlin + .so (нужна читалке)
+./tools/build.sh                               # только Kotlin и ресурсы, ~10 сек (без .so)
+./tools/typecheck.sh                           # только проверка типов
 ```
 
-`local.properties` уже указывает на SDK. Gradle сам собирает `.so` через CMake
-для `arm64-v8a` и `x86_64`.
-
-Установка на книгу:
-
-```bash
-$ANDROID_HOME/platform-tools/adb install -r -d \
-  app/build/outputs/apk/debug/app-debug.apk
-```
-
-### Быстрая сборка без Gradle
-
-`tools/build.sh` делает то же самое руками (aapt2 → javac → kotlinc → d8 →
-zipalign → apksigner) за ~10 секунд, но **не собирает `.so`** и не подхватывает
-`.so`/CMake — только Kotlin + ресурсы. Нужен, чтобы быстро проверить логику
-экранов, не дожидаясь Gradle.
-
-```bash
-./tools/build.sh              # build/app-debug.apk (без нативного ядра)
-./tools/build.sh --install
-./tools/typecheck.sh          # только проверка типов Kotlin, ~10 сек
-```
-
-Проверка C-ядра на хосте (без NDK и устройства):
-
-```bash
-cd app/src/main/cpp
-gcc -std=gnu99 -O1 -g -Wall -Wextra -Icore -fsanitize=address,undefined \
-    -o /tmp/test_core core/book.c test/test_core.c
-cd test && /tmp/test_core testdata/sample.fb2
-```
+`tools/build.sh` и `tools/typecheck.sh` сами ставят `JAVA_OPTS=-Xmx1600m` (без него `kotlinc`
+падает `OutOfMemoryError`). Собирается только `armeabi-v7a` — прошивка 32-битная.
 
 Состояние проекта, план и грабли — `docs/CONTEXT.md`, `docs/ROADMAP.md`, `docs/BUILD.md`.
 

@@ -9,6 +9,10 @@
 #
 set -euo pipefail
 
+# kotlinc падает OutOfMemoryError на shelf-экранах с умолчанием (~512 МБ);
+# ставим проверенное значение сами, чтобы не помнить про переменную.
+export JAVA_OPTS="${JAVA_OPTS:--Xmx1600m}"
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT="$ROOT/build"
 SDK="${ANDROID_HOME:-$HOME/.local/android-sdk}"
@@ -27,7 +31,7 @@ echo "    SDK:     $SDK"
 echo "    JDK:     $JDK"
 
 for f in "$BT/aapt2" "$AJ" "$KSTD"; do
-    [ -e "$f" ] || { echo "нет $f — запусти tools/setup_sdk.sh"; exit 1; }
+    [ -e "$f" ] || { echo "нет $f — окружение в ~/.local, см. docs/BUILD.md («Окружение»)"; exit 1; }
 done
 
 # Чистим только свои подпапки: в build/ лежат ещё ref/ (эталоны Penpot) и shots/ (снимки с книги).

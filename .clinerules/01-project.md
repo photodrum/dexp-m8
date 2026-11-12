@@ -6,11 +6,11 @@
 ## Старт каждой задачи
 
 1. Одной командой (в `main` коммитят и отсюда, и через GitLab из чата дизайна):
-   - Act: `git pull --ff-only; git status -sb; git config user.name; cat docs/CONTEXT.md; grep -n '^## ' docs/DEVLOG.md | head -3`
-   - Plan (изменения запрещены): то же, но `git fetch` вместо `git pull --ff-only` (`--ff-only` только у `pull`).
+   `git pull --ff-only; git status -sb; git config user.name; cat docs/CONTEXT.md; grep -n '^## ' docs/DEVLOG.md | head -3`
+   В Plan изменения запрещены — вместо `git pull --ff-only` взять `git fetch` (`--ff-only` только у `pull`).
    Не проходит, есть незакоммиченное или `user.name` не `denisle` — остановись, покажи вывод, сам не сливай.
-2. Из `docs/CONTEXT.md` — «СЛЕДУЮЩИЙ ШАГ». Из `docs/ROADMAP.md` — не целиком: шапка `awk '/^## /{exit} 1'`, затем нужные разделы (`awk '/^## ИМЯ/{f=1} f&&/^## /&&!/^## ИМЯ/{exit} f'`).
-3. Из `docs/DEVLOG.md` — только верхняя запись: `awk '/^## /{n++} n<2'`; больше — по списку; `docs/archive/` — только по ссылке.
+2. Из `docs/CONTEXT.md` — «СЛЕДУЮЩИЙ ШАГ». `docs/ROADMAP.md` — не целиком: `grep -n '^## '` → нужный раздел `sed -n 'A,Bp'` (в терминале Cline `awk` с русским шаблоном зависает).
+3. Из `docs/DEVLOG.md` — только верхняя запись так же (`head -2`, затем `sed`); `docs/archive/` — только по ссылке.
 4. Остальное — по теме: UI — `docs/DESIGN_USAGE.md`, `design/README.md` (числа — `tools/design_flat.py`, флаги там же; JSON целиком — если не хватило поля), `docs/DESIGN.md` — справочно; читалка — `docs/READER_SPEC.md`; сборка/установка/git/токены/ошибки — `docs/BUILD.md`; рендер, структура кода, E-Ink — `docs/ARCHITECTURE.md`; чат дизайна — `docs/DESIGN_QUESTIONS.md`; карта документов — `README.md`.
 
 Ответа нет в CONTEXT — `grep -rn 'слово' docs/*.md` (файлы короткие), затем спросить; не выдумывать.
@@ -22,7 +22,7 @@
 - После шага — коммит и push; перед `git push` показать `git diff --stat` и дождаться подтверждения.
 - Что куда писать (без дублей): `CONTEXT.md` — только «СЛЕДУЮЩИЙ ШАГ», номер пункта, ссылки, один экран; `ROADMAP.md` — статусы (✅) и открытые замечания (вопросы дизайну — `DESIGN_QUESTIONS.md`); `DEVLOG.md` — что сделано, решения и результаты проверок (запись ≤ ~6 пунктов, не более ~5 записей; в ROADMAP и CONTEXT — одна строка со ссылкой); грабли окружения — сразу в `BUILD.md`; пункт закрыт — его «подробно» и записи DEVLOG сразу в `docs/archive/`.
 - Код — строго по `docs/ARCHITECTURE.md`: палитра G0–G15, без прозрачности, размытия, анимаций, скролла; без AndroidX/Material/Compose; дизайн-px, не dp.
-- Даты — по `date` в терминале. Долгие команды (`typecheck.sh`, Gradle) — `> /tmp/x.log 2>&1`, затем читать файл.
+- Даты — по `date` в терминале. Долгие команды (`typecheck.sh`, Gradle) — `> /tmp/x.log 2>&1`, затем читать файл. `JAVA_OPTS` скрипты ставят сами.
 - Работаем под `denisle`, не под root. Токен git — `~/.config/dexp-m8/git-push-token`.
 
 ## Кто что делает

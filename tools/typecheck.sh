@@ -2,6 +2,10 @@
 # Проверка Kotlin-кода без Android: подсовываем android.jar как есть.
 # Ловит ошибки типов и опечатки до сборки на устройстве.
 set -euo pipefail
+
+# kotlinc падает OutOfMemoryError в psi2ir с умолчанием (~512 МБ);
+# ставим проверенное значение сами, чтобы не помнить про переменную.
+export JAVA_OPTS="${JAVA_OPTS:--Xmx1600m}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SDK="${ANDROID_HOME:-$HOME/.local/android-sdk}"
 JDK="${JAVA_HOME:-$HOME/.local/jdk}"
