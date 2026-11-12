@@ -193,7 +193,10 @@ GIT_ASKPASS=$PWD/tools/git-askpass.sh GIT_TERMINAL_PROMPT=0 \
 | В фоне нет `java` | `export JAVA_HOME=$HOME/.local/jdk PATH=$JAVA_HOME/bin:$PATH` |
 | Книга пропала с шины (в LXC нет `2207` в `/sys/bus/usb/devices`) | другой порт ПК; на хосте `lsusb \| grep 2207` (`2207:0011`), затем `pkill adb; adb start-server` |
 | `adb` не видит книгу после переподключения (LXC `tools`, VMID 113, USB проброшен: udev `51-android.rules`, vendor `2207`) | `pkill adb; adb start-server` |
-| `screencap` отдаёт чёрный кадр | экран погас по таймауту: `adb shell input keyevent KEYCODE_WAKEUP` |
+| `screencap` отдаёт чёрный кадр | экран погас по таймауту: `adb shell input keyevent KEYCODE_WAKEUP`; сразу после запуска E-Ink ещё не обновилась — снимать через 10–15 с |
+| В файле после записи через `sed`/`cat` из терминала VS Code появились `ESC]633…` | сборка падает на первой строке; писать файлы редактором, проверять `grep -c $'\x1b' файл` = 0 |
+| Скрипт с `while`/`grep -q` и `adb logcat -d` подвисает в терминале Cline | запускать по одному файлу в фоне, читать лог отдельно |
+| Проба листает 30 страниц и «тормозит» | на книге остался `/data/local/tmp/dexp-bench`: `adb shell rm /data/local/tmp/dexp-bench` |
 | `NoClassDefFoundError: kotlin.jvm.internal.Lambda` | APK без Kotlin stdlib (старый `build.sh`); исправлено 2026-11-11 |
 | `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | другой ключ подписи; `build.sh` и Gradle используют один `~/.android/debug.keystore`. Иначе `adb uninstall` (данные пропадут) |
 | `run-as` не работает | APK не debuggable; значения проверять через `settings get`/`getprop` |
