@@ -112,6 +112,8 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
     // (статус, прогресс и «добавлена» при этом не меняются: upsert обновляет только метаданные).
     // Версия 3: `series_sort` — ключ серии для поиска (B21); заполняем из `series`.
     // Версия 4: полки — таблицы `shelves` и `shelf_books` (B23, B24).
+    // Версия 5: `pdf` и `cbz` читалка не открывает (решение 2026-11-11) — строки убираем сами:
+    // файлы на диске остаются, сканер их больше не находит, значит удалить их из базы ему нечем.
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) db.execSQL("UPDATE books SET mtime = 0")
         if (oldVersion < 3) {
@@ -125,6 +127,10 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
             }
         }
         if (oldVersion < 4) createShelves(db)
+        if (oldVersion < 5) {
+            db.execSQL("DELETE FROM shelf_books WHERE book_id IN (SELECT _id FROM books WHERE format IN ('pdf', 'cbz'))")
+            db.execSQL("DELETE FROM books WHERE format IN ('pdf', 'cbz')")
+        }
     }
 
     /** `adb install -d` ставит старый APK поверх нового: схему не трогаем, а не падаем. */
@@ -491,7 +497,8 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
 
     companion object {
         const val NAME = "library.db"
-        const val VERSION = 4
+        /** Версия 5: `pdf`/`cbz` из библиотеки убраны (см. [onUpgrade]). */
+        const val VERSION = 5
 
         /** Автоматические полки: `_id` отрицательные, в таблице `shelves` их нет. */
         const val SHELF_READING = -1L

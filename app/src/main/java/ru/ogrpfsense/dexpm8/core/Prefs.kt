@@ -79,6 +79,11 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean("lib_hide_read", false)
         set(v) = sp.edit().putBoolean("lib_hide_read", v).apply()
 
+    // B25 «Файлы»: 0 — по имени, 1 — по дате (новые сверху). Клавиша «сортировка» переключает.
+    var filesSort: Int
+        get() = sp.getInt("files_sort", 0)
+        set(v) = sp.edit().putInt("files_sort", v).apply()
+
     // B6/B36 «Приложения»
     /** Пакеты, скрытые из списка («Скрыть из списка»); возврат — подзаголовок «скрыто N» на B6 или сброс настроек. */
     var hiddenApps: Set<String>

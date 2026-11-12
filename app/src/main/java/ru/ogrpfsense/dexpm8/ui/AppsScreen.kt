@@ -76,9 +76,9 @@ class AppsScreen(act: EinkActivity) : Screen(act) {
         var sub = if (hiddenMode) {
             "${apps.size} скрыто · нажмите, чтобы вернуть"
         } else if (sizeBytes > 0L) {
-            "${apps.size} установлено · ${SettingsData.gb1(sizeBytes)} ГБ"
+            "${installed()} установлено · ${SettingsData.gb1(sizeBytes)} ГБ"
         } else {
-            "${apps.size} установлено"
+            "${installed()} установлено"
         }
         if (!hiddenMode && hiddenCount > 0) sub += " · скрыто $hiddenCount"
         ink.text(c, sub, 175.5f, T.base(181f, T.TS_BODY_S, 1.25f), T.TS_BODY_S, 600, T.G4)
@@ -118,7 +118,7 @@ class AppsScreen(act: EinkActivity) : Screen(act) {
      ink.textCenter(c, "Открывается…", x, TILE_W, T.base(y + 261f, T.TS_META, 1.25f),
          T.TS_META, 600, T.G4)
         }
-        if (!hiddenMode) dots(c, x + TILE_W - 50f, y + 50f)
+        if (!hiddenMode && a.pkg.isNotEmpty()) dots(c, x + TILE_W - 50f, y + 50f)
     }
 
     /** Вертикальное «…»: горизонтальная иконка `more` против часовой на 90° вокруг центра. */
@@ -258,11 +258,33 @@ class AppsScreen(act: EinkActivity) : Screen(act) {
         val hidden = query(act, true)
         hiddenCount = hidden.size
         if (hiddenMode && hidden.isEmpty()) hiddenMode = false
-        apps = if (hiddenMode) hidden else query(act)
+        apps = if (hiddenMode) hidden else withFiles(query(act))
         var sum = 0L
         for (a in apps) sum += apkSize(a.pkg)
         sizeBytes = sum
- page = Math.min(page, pages() - 1)
+        page = Math.min(page, pages() - 1)
+    }
+
+    /** «N установлено» без синтетической плитки «Файлы»: она не приложение системы. */
+    private fun installed(): Int = apps.count { it.pkg.isNotEmpty() }
+
+    /**
+     * Добавляет синтетическую плитку «Файлы» (B25) по алфавиту. Своего файлового менеджера в
+     * системе может не быть — тогда без неё в «Файлы» не попасть (решение 9.6).
+     */
+    private fun withFiles(list: List<AppEntry>): List<AppEntry> {
+        val out = ArrayList<AppEntry>(list.size + 1)
+        val col = Collator.getInstance(Locale("ru"))
+        var placed = false
+        for (a in list) {
+            if (!placed && col.compare(FILES_LABEL, a.label) < 0) {
+                out.add(FILES_ENTRY)
+                placed = true
+            }
+            out.add(a)
+        }
+        if (!placed) out.add(FILES_ENTRY)
+        return out
     }
 
     private fun apkSize(pkg: String): Long = try {
@@ -323,6 +345,9 @@ class AppsScreen(act: EinkActivity) : Screen(act) {
       act.prefs.hiddenApps = act.prefs.hiddenApps - a.pkg
       reload()
       redraw()
+  } else if (apps[first + k].pkg.isEmpty()) {
+      // Синтетическая плитка «Файлы» (решение 9.6): открывает B25, листа B36 у неё нет.
+      act.go(EinkActivity.SCR_FILES)
   } else if (x >= tx + TILE_W - DOTS_HIT && y <= ty + DOTS_HIT) {
       openSheet(apps[first + k])
          } else {
@@ -450,6 +475,10 @@ class AppsScreen(act: EinkActivity) : Screen(act) {
         private const val DOTS_HIT = 100f
         private const val GENERIC = "apps"
         private val SMALL = setOf("apps", "settings", "library")
+
+        /** Синтетическая плитка «Файлы» (B25): пакета нет, листа B36 у неё нет. */
+        private const val FILES_LABEL = "Файлы"
+        private val FILES_ENTRY = AppEntry(FILES_LABEL, "", "", "files@98.7x102.8")
 
         // B36: верх листа и верхи пяти строк (шаг 150)
  private const val SHEET_TOP = 670f

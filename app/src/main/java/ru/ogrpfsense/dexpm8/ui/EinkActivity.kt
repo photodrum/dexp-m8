@@ -39,6 +39,9 @@ class EinkActivity : Activity() {
         const val SCR_SET_STORAGE = 16
         const val SCR_SET_ABOUT = 17
 
+        /** B25 «Файлы» — обзор папок памяти; открывается синтетической плиткой в B6. */
+        const val SCR_FILES = 18
+
         private const val REQ_STORAGE = 1
         private const val REQ_WRITE_SETTINGS = 2
         private const val REQ_ADMIN = 3
@@ -673,6 +676,7 @@ class EinkActivity : Activity() {
             SCR_SET_LANG -> SetLangScreen(this)
             SCR_SET_STORAGE -> SetStorageScreen(this)
             SCR_SET_ABOUT -> SetAboutScreen(this)
+            SCR_FILES -> FilesScreen(this)
             SCR_READER -> ru.ogrpfsense.dexpm8.reader.ProbeScreen(this)   // R0, шаг 7.2: отладка движков
             else -> HomeScreen(this)
         }

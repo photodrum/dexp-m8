@@ -268,14 +268,46 @@ class Scanner(private val ctx: Context, private val db: LibraryDb) {
 
     private fun clean(s: String?): String? = s?.trim()?.takeIf { it.isNotEmpty() }
 
-    /** Формат по имени или пути: `fb2`, `epub`, … или `fb2.zip`; null — не книга. */
-    private fun formatOf(name: String): String? {
+    /** Расширение по имени: `fb2`, `epub`, … или `fb2.zip`; null — расширения нет. */
+    private fun extOf(name: String): String? {
         val l = name.lowercase(Locale.ROOT)
         if (l.endsWith(".fb2.zip")) return "fb2.zip"
         val dot = l.lastIndexOf('.')
         if (dot < 0) return null
-        val e = l.substring(dot + 1)
-        return if (e in EXTS) e else null
+        return l.substring(dot + 1)
+    }
+
+    /** Формат по имени или пути: null — не книга из [EXTS] (в библиотеку не берём). */
+    private fun formatOf(name: String): String? = extOf(name)?.takeIf { it in EXTS }
+
+    /**
+     * Формат файла для «Файлов» (B25): книги ([EXTS]) и неподдерживаемые ([UNSUPPORTED]);
+     * null — такой файл в списке не показываем (картинки, архивы, apk).
+     */
+    fun fileFormat(name: String): String? {
+        val e = extOf(name) ?: return null
+        return if (e in EXTS || e in UNSUPPORTED) e else null
+    }
+
+    /** true — файл такого формата читалка не откроет (`pdf`, `cbz`): в библиотеке его нет. */
+    fun unsupported(format: String): Boolean = format in UNSUPPORTED
+
+    /**
+     * Добавить один файл в библиотеку — кнопка «+» в B25: тот же разбор, что в [scan], без полного
+     * прохода по памяти. false — не книга, файла нет или он пустой, база не приняла.
+     */
+    fun addFile(f: File): Boolean {
+        val format = formatOf(f.name) ?: return false
+        if (!f.isFile) return false
+        val size = f.length()
+        if (size <= 0L) return false
+        return try {
+            db.upsert(info(f, format, size, f.lastModified(), ByteArray(NativeBook.META_HEAD)))
+            true
+        } catch (e: Exception) {
+            Log.w(TAG, "не добавлен: ${f.path}", e)
+            false
+        }
     }
 
     companion object {
@@ -289,11 +321,14 @@ class Scanner(private val ctx: Context, private val db: LibraryDb) {
 
         /**
          * Форматы из `READER_SPEC`: CREngine, DjVuLibre. `pdf` и `cbz` читалка не открывает
-         * (решение 2026-11-11); что показывать для них в библиотеке — вопрос чату дизайна.
+         * (решение 2026-11-11), в библиотеку они не попадают (база v5 их удаляет); в «Файлах»
+         * (B25) видны как есть — [UNSUPPORTED].
          */
-        private val EXTS = setOf(
-            "fb2", "epub", "mobi", "txt", "rtf", "doc", "pdf", "cbz", "djvu", "djv",
-        )
+        private val EXTS = setOf("fb2", "epub", "mobi", "txt", "rtf", "doc", "djvu", "djv")
+
+        /** Показываются в B25, но читалка их не откроет: без «+», с пометкой «не поддерживается». */
+        private val UNSUPPORTED = setOf("pdf", "cbz")
+
 
         /** Вне `Books` не берём: слишком много посторонних файлов (логи, заметки). */
         private val WEAK = setOf("txt", "rtf", "doc")

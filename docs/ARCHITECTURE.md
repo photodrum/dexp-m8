@@ -104,6 +104,7 @@ app/src/main/java/ru/ogrpfsense/dexpm8/
         Ink, Tokens, D, Icons, IconSpecs   рисование, палитра G0..G15, дизайн-px, иконки (IconSpecs генерирует tools/icon_specs.py)
         StatusBar      время / батарея / Wi-Fi
         HomeScreen B1 · LibraryScreen, LibraryGrid B2/B11 · BookScreen B12 · AppsScreen B6/B36
+        FilesScreen B25 (обзор папок; плитка «Файлы» в B6 синтетическая — пакета нет)
         SettingsScreen B13 · SetScreenScreen B37 · SetNetScreen B38 · SetReadScreen B39
         SetSleepScreen B40 · SetLangScreen B41 · SetStorageScreen B42 · SetAboutScreen B43
         SettingsKit, SettingsData   общие элементы и данные настроек
