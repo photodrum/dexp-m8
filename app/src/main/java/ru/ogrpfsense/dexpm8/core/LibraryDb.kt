@@ -87,11 +87,31 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         db.execSQL("CREATE INDEX books_title ON books (title_sort)")
         db.execSQL("CREATE INDEX books_author ON books (author_sort, title_sort)")
         db.execSQL("CREATE INDEX books_opened ON books (opened)")
+        createShelves(db)
+    }
+
+    private fun createShelves(db: SQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE shelves (" +
+                "_id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                "name TEXT NOT NULL," +
+                "name_sort TEXT NOT NULL," +
+                "created INTEGER NOT NULL)"
+        )
+        db.execSQL(
+            "CREATE TABLE shelf_books (" +
+                "shelf_id INTEGER NOT NULL," +
+                "book_id INTEGER NOT NULL," +
+                "put_at INTEGER NOT NULL," +
+                "PRIMARY KEY (shelf_id, book_id))"
+        )
+        db.execSQL("CREATE INDEX shelf_books_book ON shelf_books (book_id)")
     }
 
     // Версия 2: автор и название из имени файла — сбрасываем mtime, и сканер переразберёт все файлы
     // (статус, прогресс и «добавлена» при этом не меняются: upsert обновляет только метаданные).
     // Версия 3: `series_sort` — ключ серии для поиска (B21); заполняем из `series`.
+    // Версия 4: полки — таблицы `shelves` и `shelf_books` (B23, B24).
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) db.execSQL("UPDATE books SET mtime = 0")
         if (oldVersion < 3) {
@@ -104,6 +124,7 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
                 }
             }
         }
+        if (oldVersion < 4) createShelves(db)
     }
 
     /** `adb install -d` ставит старый APK поверх нового: схему не трогаем, а не падаем. */
@@ -162,7 +183,122 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         val db = writableDatabase
         var n = 0
         for (p in paths) n += db.delete("books", "path = ?", arrayOf(p))
+        if (n > 0) db.execSQL("DELETE FROM shelf_books WHERE book_id NOT IN (SELECT _id FROM books)")
         n
+    }
+
+    // ------------------------------------------------------------------ полки (B23, B24)
+
+    /** Своя полка; [count] — книг на ней. */
+    class Shelf(val id: Long, val name: String, val count: Int)
+
+    private fun shelfRow(c: Cursor) = Shelf(c.getLong(0), c.getString(1), c.getInt(2))
+
+    private val shelfSelect = "SELECT s._id, s.name, (SELECT COUNT(*) FROM shelf_books sb " +
+        "JOIN books b ON b._id = sb.book_id WHERE sb.shelf_id = s._id) FROM shelves s"
+
+    /** Свои полки по названию. */
+    fun shelves(): ArrayList<Shelf> {
+        val out = ArrayList<Shelf>()
+        readableDatabase.rawQuery("$shelfSelect ORDER BY s.name_sort, s._id", null).use { c ->
+            while (c.moveToNext()) out.add(shelfRow(c))
+        }
+        return out
+    }
+
+    fun shelf(id: Long): Shelf? =
+        readableDatabase.rawQuery("$shelfSelect WHERE s._id = ?", arrayOf(id.toString())).use { c ->
+            if (c.moveToFirst()) shelfRow(c) else null
+        }
+
+    /** Есть ли своя полка с таким названием (без учёта регистра), кроме [exceptId]. */
+    fun shelfExists(name: String, exceptId: Long = 0L): Boolean {
+        if (AUTO_SHELF_NAMES.any { sortKey(it) == sortKey(name) }) return true
+        return readableDatabase.rawQuery(
+            "SELECT COUNT(*) FROM shelves WHERE name_sort = ? AND _id <> ?",
+            arrayOf(sortKey(name), exceptId.toString()),
+        ).use { c -> c.moveToFirst() && c.getInt(0) > 0 }
+    }
+
+    /** Новая полка; возвращает её `_id`. */
+    fun createShelf(name: String): Long {
+        val cv = ContentValues(3)
+        cv.put("name", name.trim())
+        cv.put("name_sort", sortKey(name))
+        cv.put("created", System.currentTimeMillis())
+        return writableDatabase.insertOrThrow("shelves", null, cv)
+    }
+
+    fun renameShelf(id: Long, name: String) {
+        val cv = ContentValues(2)
+        cv.put("name", name.trim())
+        cv.put("name_sort", sortKey(name))
+        writableDatabase.update("shelves", cv, "_id = ?", arrayOf(id.toString()))
+    }
+
+    /** Удалить полку; книги остаются в библиотеке. */
+    fun deleteShelf(id: Long) {
+        inTransaction {
+            val db = writableDatabase
+            db.delete("shelf_books", "shelf_id = ?", arrayOf(id.toString()))
+            db.delete("shelves", "_id = ?", arrayOf(id.toString()))
+        }
+    }
+
+    /** `_id` своих полок, на которых лежит книга [bookId]. */
+    fun shelvesOfBook(bookId: Long): HashSet<Long> {
+        val out = HashSet<Long>()
+        readableDatabase.rawQuery(
+            "SELECT shelf_id FROM shelf_books WHERE book_id = ?", arrayOf(bookId.toString()),
+        ).use { c -> while (c.moveToNext()) out.add(c.getLong(0)) }
+        return out
+    }
+
+    /** Положить книгу на полку или снять; true — теперь лежит. */
+    fun toggleOnShelf(shelfId: Long, bookId: Long): Boolean = inTransaction {
+        val db = writableDatabase
+        val args = arrayOf(shelfId.toString(), bookId.toString())
+        if (db.delete("shelf_books", "shelf_id = ? AND book_id = ?", args) > 0) {
+            false
+        } else {
+            val cv = ContentValues(3)
+            cv.put("shelf_id", shelfId)
+            cv.put("book_id", bookId)
+            cv.put("put_at", System.currentTimeMillis())
+            db.insertOrThrow("shelf_books", null, cv)
+            true
+        }
+    }
+
+    /** `FROM … WHERE …` для полки: свои — по `shelf_books`, автоматические — по статусу. */
+    private fun shelfFrom(id: Long): String = when (id) {
+        SHELF_READING -> "books WHERE status = $STATUS_READING"
+        SHELF_READ -> "books WHERE status = $STATUS_READ"
+        else -> "books JOIN shelf_books sb ON sb.book_id = books._id WHERE sb.shelf_id = $id"
+    }
+
+    /** Книг на полке [id] (своей или автоматической). */
+    fun shelfBookCount(id: Long): Int =
+        readableDatabase.rawQuery("SELECT COUNT(*) FROM " + shelfFrom(id), null).use { c ->
+            if (c.moveToFirst()) c.getInt(0) else 0
+        }
+
+    /**
+     * Страница книг полки [id]; [order] — `SHELF_ORDER_*`. «Порядок полки»: у своей — как клали
+     * (раньше положенные выше), у автоматических — недавно открытые выше.
+     */
+    fun shelfBooks(id: Long, order: Int, offset: Int, limit: Int): ArrayList<Entry> {
+        val by = when (order) {
+            SHELF_ORDER_AUTHOR -> "author_sort IS NULL, author_sort, title_sort, books._id"
+            SHELF_ORDER_PROGRESS -> "progress DESC, title_sort, books._id"
+            else -> if (id > 0) "sb.put_at, books._id" else "opened DESC, added DESC, books._id DESC"
+        }
+        val out = ArrayList<Entry>(limit)
+        readableDatabase.rawQuery(
+            "SELECT $COLUMNS FROM " + shelfFrom(id) + " ORDER BY $by LIMIT ? OFFSET ?",
+            arrayOf(limit.toString(), offset.toString()),
+        ).use { c -> while (c.moveToNext()) out.add(entry(c)) }
+        return out
     }
 
     /**
@@ -346,7 +482,20 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
 
     companion object {
         const val NAME = "library.db"
-        const val VERSION = 3
+        const val VERSION = 4
+
+        /** Автоматические полки: `_id` отрицательные, в таблице `shelves` их нет. */
+        const val SHELF_READING = -1L
+        const val SHELF_READ = -2L
+        const val NAME_READING = "Читаю сейчас"
+        const val NAME_READ = "Прочитанные"
+
+        /** Названия автоматических полок: свои полки так назвать нельзя. */
+        val AUTO_SHELF_NAMES = arrayOf(NAME_READING, NAME_READ)
+
+        const val SHELF_ORDER_SHELF = 0
+        const val SHELF_ORDER_AUTHOR = 1
+        const val SHELF_ORDER_PROGRESS = 2
 
         const val STATUS_NEW = 0
         const val STATUS_READING = 1

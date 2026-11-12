@@ -120,6 +120,7 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
         const val HIT_SORT = 5
         const val HIT_VIEW = 6
         const val HIT_FILTER = 8
+        const val HIT_SHELVES = 7
         const val HIT_BOOK = 9
         const val HIT_EMPTY = -1       // пустое состояние: «разрешить» / «Настройки»
 
@@ -159,6 +160,7 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
         hits.add(Hit(HIT_FILTER, 1250f, 248.6f, 110f, 102.4f))
         hits.add(Hit(HIT_SEARCH, 43.9f, 248.6f, 1316.2f, 102.4f))
         hits.add(Hit(HIT_VIEW, 1155.4f, 122.3f, 204.8f, 87.7f))
+        hits.add(Hit(HIT_SHELVES, 1020f, 112.3f, 120f, 112.4f))
         hits.add(Hit(HIT_SORT, SORT_X, 387.6f, 1316.2f, 87.7f))
         if (rowIds.isEmpty()) {
             // Пустое состояние: зона — вся область под сортировкой.
@@ -296,6 +298,9 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
         ink.text(c, subtitle, 175.5f, T.base(180f, T.TS_BODY_S, 1.3f),
             T.TS_BODY_S, 600, T.G4)
 
+        // «Полки»: круглая клавиша левее переключателя вида (в макете B2/B11 её нет, решение DEVLOG 9.3).
+        ink.convex(c, 1030f, 112.3f, 106.9f, 112.4f, R_ROUND_BACK)
+        icons.draw(c, "library", 1057f, 142f, 52f, 54.2f)
         // Переключатель вида: желоб 204.8×87.7, активный сегмент сдвигается на 95.1.
         ink.inset(c, 1155.4f, 122.3f, 204.8f, 87.7f, T.R_GROOVE)
         ink.convex(c, 1159.9f + viewMode * 95.1f, 126.9f, 99.6f, 83.2f, T.R_SEGMENT)
@@ -471,6 +476,7 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
                         }
                     }
                     HIT_FILTER -> openSheet()
+                    HIT_SHELVES -> act.go(EinkActivity.SCR_SHELVES)
                     HIT_SEARCH -> {
                         act.searchFresh = true
                         act.go(EinkActivity.SCR_SEARCH)

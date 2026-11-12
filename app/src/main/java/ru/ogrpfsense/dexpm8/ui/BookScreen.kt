@@ -13,7 +13,7 @@ import ru.ogrpfsense.dexpm8.core.LibraryDb
  * прогресс. Нет данных до читалки — не рисуются: «Страниц» (на его месте «Добавлена»), строка
  * «Глава N из M · до конца» (вместо неё — статус: «Не начата» / «Читается» / «Прочитана»)
  * и карточка «Аннотация». Нажимаются «Назад» и «Продолжить чтение» (в читалку);
- * «Оглавление», «На полку», «Удалить» и «…» нарисованы, пока не работают.
+ * «На полку» открывает [ShelfPicker]; «Оглавление», «Удалить» и «…» нарисованы, пока не работают.
  *
  *   обложка      гнездо 43.9,248.6 431.4×603.3; обложка 65.8,270.6 387.6×559.4 (G14), корешок 18.3 (G3);
  *                название Literata 44/600 в 117,321.8 (ширина 320, до 2 строк), автор 32/600 G4
@@ -30,6 +30,8 @@ class BookScreen(act: EinkActivity) : Screen(act) {
 
     private var entry: LibraryDb.Entry? = null
     private val lines = arrayOfNulls<String>(2)
+    private val picker = ShelfPicker(ink, icons)
+    private var pickerOpen = false
 
     private companion object {
         const val R_BTN = 51.1875f
@@ -42,13 +44,18 @@ class BookScreen(act: EinkActivity) : Screen(act) {
     }
 
     override fun render(c: Canvas) {
+        val dim = if (pickerOpen) dimBegin(c) else -1
         ink.rect(c, 0f, 0f, W, H, T.BG)
-        status.draw(c)
         header(c)
-        val e = entry ?: return
-        cover(c, e)
-        info(c, e)
-        buttons(c)
+        val e = entry
+        if (e != null) {
+            cover(c, e)
+            info(c, e)
+            buttons(c)
+        }
+        if (dim >= 0) dimEnd(c, dim)
+        status.draw(c)
+        if (pickerOpen) picker.draw(c)
     }
 
     private fun header(c: Canvas) {
@@ -170,8 +177,47 @@ class BookScreen(act: EinkActivity) : Screen(act) {
         return if (y == now) s else "$s $y"
     }
 
+    private fun openPicker() {
+        val e = entry ?: return
+        try {
+            picker.open(act.db.shelves(), act.db.shelvesOfBook(e.id))
+        } catch (t: Throwable) {
+            Trace.step("picker open FAIL: ${t.javaClass.simpleName}: ${t.message}")
+            return
+        }
+        pickerOpen = true
+        act.bigFrame("shelf picker open")
+        redraw()
+    }
+
+    private fun pickerUp(x: Float, y: Float) {
+        when (picker.hit(x, y)) {
+            ShelfPicker.ACT_TOGGLE -> {
+                val e = entry ?: return
+                val s = picker.shelfAt(picker.row)
+                try {
+                    picker.set(s.id, act.db.toggleOnShelf(s.id, e.id))
+                } catch (t: Throwable) {
+                    Trace.step("toggleOnShelf FAIL: ${t.javaClass.simpleName}: ${t.message}")
+                }
+                redraw()
+            }
+            ShelfPicker.ACT_CLOSE -> {
+                pickerOpen = false
+                act.bigFrame("shelf picker close")
+                redraw()
+            }
+        }
+    }
+
     override fun onUp(x: Float, y: Float) {
-        if (x >= 41.1f && x <= 148f && y >= 112.3f && y <= 224.7f) {
+        if (pickerOpen) {
+            pickerUp(x, y)
+            return
+        }
+        if (entry != null && x >= 490.9f && x <= 912.3f && y >= 1079.5f && y <= 1192f) {
+            openPicker()
+        } else if (x >= 41.1f && x <= 148f && y >= 112.3f && y <= 224.7f) {
             act.pop()
         } else if (entry != null && x >= 41.1f && x <= 1361.9f && y >= 904f && y <= 1045.7f) {
             val e = entry!!
@@ -187,6 +233,7 @@ class BookScreen(act: EinkActivity) : Screen(act) {
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         status.attach()
+        pickerOpen = false
         entry = try {
             act.db.get(act.bookId)
         } catch (t: Throwable) {

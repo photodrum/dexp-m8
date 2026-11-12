@@ -26,6 +26,8 @@ class EinkActivity : Activity() {
         const val SCR_READER = 5
         const val SCR_BOOK = 6
         const val SCR_SEARCH = 7
+        const val SCR_SHELVES = 8
+        const val SCR_SHELF = 9
 
         // Разделы B13 — экраны B37–B43.
         const val SCR_SET_SCREEN = 10
@@ -72,6 +74,9 @@ class EinkActivity : Activity() {
 
     /** Книга для экрана B12 «О книге» (`_id`); ставится перед `go(SCR_BOOK)`. */
     var bookId = -1L
+
+    /** Полка для экрана B24: `_id` своей или `LibraryDb.SHELF_*`; ставится перед `go(SCR_SHELF)`. */
+    var shelfId = 0L
 
     /** Поиск B21: true — открыть с пустым запросом и клавиатурой; при возврате с «О книге» запрос остаётся. */
     var searchFresh = true
@@ -659,6 +664,8 @@ class EinkActivity : Activity() {
             SCR_SETTINGS -> SettingsScreen(this)
             SCR_BOOK -> BookScreen(this)
             SCR_SEARCH -> SearchScreen(this)
+            SCR_SHELVES -> ShelvesScreen(this)
+            SCR_SHELF -> ShelfScreen(this)
             SCR_SET_SCREEN -> SetScreenScreen(this)
             SCR_SET_NET -> SetNetScreen(this)
             SCR_SET_READ, SCR_SET_KEYS -> SetReadScreen(this)
