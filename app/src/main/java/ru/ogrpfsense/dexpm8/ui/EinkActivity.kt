@@ -338,8 +338,6 @@ class EinkActivity : Activity() {
     override fun onResume() {
         super.onResume()
         applyImmersive()
-        // Временно (8.2): перечитать debug-ручку dexp_fast_mode после adb.
-        if (this::host.isInitialized && ru.ogrpfsense.dexpm8.BuildConfig.DEBUG) applyRefreshMode()
         // Право могли выдать в «Настройках», пока оболочка была в фоне.
         // Отзыв там же система делает убийством процесса, так что сюда придёт только выдача.
         // Пока открыт системный диалог — ответ придёт в onRequestPermissionsResult.
@@ -616,24 +614,9 @@ class EinkActivity : Activity() {
      */
     fun applyRefreshMode() {
         val was = fastEpd
-        fastEpd = if (prefs.refreshMode == 1 && Epd.ok) fastMode() else 0
+        fastEpd = if (prefs.refreshMode == 1 && Epd.ok) Epd.A2 else 0
         Trace.step("epd: refresh mode ${prefs.refreshMode} -> epd $fastEpd")
         if (was > 0 && fastEpd == 0) cleanScreen()
-    }
-
-    /**
-     * Какой A2-режим у «Быстрого»: `EPD_A2` (2) — проверен на книге 2026-11-12 по схеме варианта А.
-     * Только debug, для сравнения (8.2, шаг б): `adb shell settings put global dexp_fast_mode 12` —
-     * `EPD_DIRECT_A2`, перечитывается в `onResume`. Удалить после выбора.
-     */
-    private fun fastMode(): Int {
-        if (!ru.ogrpfsense.dexpm8.BuildConfig.DEBUG) return Epd.A2
-        val m = try {
-            android.provider.Settings.Global.getInt(contentResolver, "dexp_fast_mode", Epd.A2)
-        } catch (t: Throwable) {
-            Epd.A2
-        }
-        return if (m == Epd.A2 || m == Epd.DIRECT_A2) m else Epd.A2
     }
 
     /**
