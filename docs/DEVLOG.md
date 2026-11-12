@@ -2,6 +2,13 @@
 
 > Старые записи — `docs/archive/`: до 2026-11-10 — `DEVLOG-2026-11-07_09.md`, `DEVLOG-2026-11-10-p3.md`, `DEVLOG-2026-11-10-p3_9-p4_2.md`; п. 4 (4.3–4.7) и проверки 2026-11-10 — 11 — `DEVLOG-2026-11-10_11.md`; п. 5 (5.1–5.2), замечания 2026-11-11, полный п. 6.0 — `DEVLOG-2026-11-11-p5_6_0.md`; хвосты п. 5, автор из имени файла, п. 6.0–6.1 — `DEVLOG-2026-11-11-p5tail_6_1.md`. П. 6.2 и оптимизация документов 2026-11-11 — `DEVLOG-2026-11-11-p6_2_docs.md`.
 
+## 2026-11-12 — п. 7, шаг 7.3в: LICENSE и список лицензий (Sonnet)
+
+- **`LICENSE`** в корне — текст GPL-2.0 из `/usr/share/common-licenses/GPL-2` (339 строк), побайтно совпадает с `third_party/djvulibre/COPYING`. В `README.md` убрана пометка «ещё не создан».
+- **`grep -ri agpl`** (без `third_party/` и `docs/archive/`): остались только верные места — пояснение в `CMakeLists.txt` (почему снят MuPDF), `ARCHITECTURE`, `READER_SPEC`, `COMPARISON` (лицензия KOReader и сравнение), исторические записи DEVLOG. Исправлена только опечатка в ROADMAP (дубль «DjVuLibre для DjVu»).
+- **`docs/LICENSES.md`** (новый) — список для B75: crengine, antiword и libpng (из `crengine/thirdparty`), DjVuLibre, FreeType (берём GPL-2.0), HarfBuzz, FriBidi, libjpeg-turbo, libunibreak, utf8proc, xxHash, zlib (NDK), шрифты Manrope/Literata (OFL). Версии сверены с `git submodule status`; AndroidX и Kotlin stdlib в APK нет (`dependencies` пусто). Ссылка добавлена в `CONTEXT.md`.
+- **Для сведения:** antiword (DOC) — GPL, в `Docs/COPYING` текст GPL-2.0, «or later» не проверял; для GPL-2.0-only проекта совместим. Код и сборка не менялись, на книге не проверялось.
+
 ## 2026-11-12 — п. 7, шаг 7.3б: MuPDF удалён (Opus)
 
 - **Код:** удалены `engines/mupdf.cmake`, `engines/mupdf_probe.c`, `include(engines/mupdf.cmake)` в `CMakeLists.txt`, `dexp_mupdf_probe` в `probe.h`; в `EngineProbe.kt` — `MUPDF`, `mupdfNative`, ветка `"pdf", "cbz"` (теперь `engineFor` → `null`, `ProbeScreen` пишет «<формат>: движка нет»). `Scanner.EXTS` **не тронут**: `pdf`/`cbz` по-прежнему попадают в базу — что показывать в библиотеке, ждёт чат дизайна (ROADMAP, «Открытые вопросы»). `-keep class …EngineProbe` в `proguard-rules.pro` оставлен — класс нужен cre/djvu.

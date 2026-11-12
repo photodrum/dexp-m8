@@ -112,6 +112,6 @@ cd test && /tmp/test_core testdata/sample.fb2
 
 ## Лицензия
 
-GNU General Public License v2.0 (GPL-2.0-only; файл `LICENSE` — шаг 7.3в, ещё не создан).
+GNU General Public License v2.0 (GPL-2.0-only; текст — файл `LICENSE`, библиотеки — `docs/LICENSES.md`).
 Причина: CREngine распространяется под GPL-2.0 без «or later». Шрифты Manrope и Literata — SIL OFL 1.1
 (`tools/fonts/OFL-*.txt`).
