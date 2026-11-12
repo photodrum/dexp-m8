@@ -77,7 +77,7 @@ class FilesScreen(act: EinkActivity) : Screen(act) {
         const val PER_PAGE = 7
         const val DIVIDER_DY = 152f
         const val TEXT_X = 237f
-        const val TEXT_W = 1040f      // до «+» и «В библиотеке»
+        const val TEXT_W = 730f        // до статуса «В библиотеке» (984.8) и «+» (1225)
         const val STATUS_RIGHT = 1264.8f
         const val RIGHT = 1316f
         const val TS_BOOK = 42f
@@ -176,7 +176,7 @@ class FilesScreen(act: EinkActivity) : Screen(act) {
         ink.text(c, "Файлы", 176f, T.base(105f, T.TS_TITLE, 1.25f), T.TS_TITLE, 700, T.G1)
         ink.text(c, freeText(), 176f, T.base(181f, T.TS_BODY_S, 1.25f), T.TS_BODY_S, 600, T.G4)
         ink.convex(c, 1255f, 113.5f, 107f, 112f, ROUND)
-        icons.draw(c, "sort@36.8x30.6", 1290.6f, 153.2f, 36.8f, 30.6f)
+        icons.draw(c, "sort", 1290.6f, 153.2f, 36.8f, 30.6f)
     }
 
     /** «Свободно 6,9 из 16 ГБ» — как на B42: свободно из заявленного объёма накопителя. */
@@ -188,7 +188,7 @@ class FilesScreen(act: EinkActivity) : Screen(act) {
     private fun crumb(c: Canvas) {
         ink.inset(c, 44f, 249f, 1316f, 102f, 44f)
         ink.convex(c, 51f, 255f, 89f, 94f, R_UP)
-        icons.draw(c, "up@20x11.7", 86f, 295f, 20f, 11.7f)
+        icons.draw(c, "up", 86f, 295f, 20f, 11.7f)
 
         crumbHits.clear()
         val segs = segments()
@@ -236,7 +236,7 @@ class FilesScreen(act: EinkActivity) : Screen(act) {
             // Состояния пустой папки на B25 нет — карточка B44 (решение 9.6). Панель 389…1669,
             // карточка 425×410 по центру: верх 824, левый край 41 + (1321 − 425) / 2 = 489.5.
             empty.card(c, 489.5f, 824f, "files", 53f, 55.2f, "В папке нет книг",
-                "Скопируйте файлы в эту папку по USB — они появятся в списке и в библиотеке")
+                "Скопируйте сюда файлы по USB")
             return
         }
         val first = page * PER_PAGE
@@ -282,7 +282,7 @@ class FilesScreen(act: EinkActivity) : Screen(act) {
             icons.draw(c, "check@24.5x18.4", 1291.5f, y + 45.2f, 24.5f, 18.4f)
         } else {
             ink.convex(c, 1225f, y + 6.5f, 93f, 98f, R_PLUS)
-            icons.draw(c, "plus@23.3x25", 1260.3f, y + 41.8f, 23.3f, 25f)
+            icons.draw(c, "plus", 1260.3f, y + 41.8f, 23.3f, 25f)
         }
     }
 
