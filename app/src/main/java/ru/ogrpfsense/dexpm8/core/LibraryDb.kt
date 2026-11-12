@@ -88,6 +88,7 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         db.execSQL("CREATE INDEX books_author ON books (author_sort, title_sort)")
         db.execSQL("CREATE INDEX books_opened ON books (opened)")
         createShelves(db)
+        createCatalogs(db)
     }
 
     private fun createShelves(db: SQLiteDatabase) {
@@ -106,6 +107,28 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
                 "PRIMARY KEY (shelf_id, book_id))"
         )
         db.execSQL("CREATE INDEX shelf_books_book ON shelf_books (book_id)")
+    }
+
+    /**
+     * Версия 6: сетевые каталоги (п. 10, B14). Хранится только то, что человек ввёл сам:
+     * адрес, название и логин с паролем. Последний фид и его `ETag` — в кэше на диске
+     * ([Opds]), в базе их нет: кэш можно стереть в любой момент без потери настроек.
+     *
+     * `title` пустой — название ещё не получено (каталог добавлен до первой проверки);
+     * `seen` — когда последний раз каталог открывали (`System.currentTimeMillis`), 0 — никогда.
+     */
+    private fun createCatalogs(db: SQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE catalogs (" +
+                "_id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                "url TEXT NOT NULL UNIQUE," +
+                "title TEXT NOT NULL DEFAULT ''," +
+                "user TEXT NOT NULL DEFAULT ''," +
+                "pass TEXT NOT NULL DEFAULT ''," +
+                "added INTEGER NOT NULL," +
+                "seen INTEGER NOT NULL DEFAULT 0)"
+        )
+        db.execSQL("CREATE INDEX catalogs_seen ON catalogs (seen)")
     }
 
     // Версия 2: автор и название из имени файла — сбрасываем mtime, и сканер переразберёт все файлы
@@ -131,10 +154,114 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
             db.execSQL("DELETE FROM shelf_books WHERE book_id IN (SELECT _id FROM books WHERE format IN ('pdf', 'cbz'))")
             db.execSQL("DELETE FROM books WHERE format IN ('pdf', 'cbz')")
         }
+        if (oldVersion < 6) createCatalogs(db)
     }
 
     /** `adb install -d` ставит старый APK поверх нового: схему не трогаем, а не падаем. */
     override fun onDowngrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+    }
+
+    // ------------------------------------------------------- сетевые каталоги
+
+    /** Каталог B14: адрес, название, вход и когда открывали. */
+    class Catalog(
+        val id: Long,
+        val url: String,
+        val title: String,
+        val user: String,
+        val pass: String,
+        val added: Long,
+        val seen: Long,
+    ) {
+        /** Заголовок для строки B14: пустое название — адрес без схемы. */
+        fun label(): String = title.ifEmpty {
+            url.removePrefix("http://").removePrefix("https://").trimEnd('/')
+        }
+
+        fun auth(): Opds.Auth = Opds.Auth(user, pass)
+    }
+
+    /** Каталоги по «последнему открытому» вперёд, затем по имени (B14). */
+    fun catalogs(): ArrayList<Catalog> {
+        val out = ArrayList<Catalog>(4)
+        readableDatabase.rawQuery(
+            "SELECT _id, url, title, user, pass, added, seen FROM catalogs " +
+                "ORDER BY seen DESC, title COLLATE NOCASE", null).use { c ->
+            while (c.moveToNext()) {
+                out.add(Catalog(c.getLong(0), c.getString(1), c.getString(2),
+                    c.getString(3), c.getString(4), c.getLong(5), c.getLong(6)))
+            }
+        }
+        return out
+    }
+
+    fun catalog(id: Long): Catalog? =
+        readableDatabase.rawQuery(
+            "SELECT _id, url, title, user, pass, added, seen FROM catalogs WHERE _id = ?",
+            arrayOf(id.toString())).use { c ->
+            if (c.moveToNext()) Catalog(c.getLong(0), c.getString(1), c.getString(2),
+                c.getString(3), c.getString(4), c.getLong(5), c.getLong(6)) else null
+        }
+
+    /** Каталог уже есть с таким адресом (адрес уникален). */
+    fun catalogExists(url: String): Boolean =
+        readableDatabase.rawQuery("SELECT 1 FROM catalogs WHERE url = ?", arrayOf(url)).use { it.moveToNext() }
+
+    /**
+     * Добавить каталог (B15). Адрес нормализуется: без пробелов по краям, со схемой `http://`,
+     * если её забыли. Возвращает `_id` или -1, если адрес уже есть.
+     */
+    fun addCatalog(url: String, title: String, user: String, pass: String): Long {
+        val u = normalizeUrl(url)
+        if (u.isEmpty() || catalogExists(u)) return -1L
+        val cv = ContentValues(6)
+        cv.put("url", u)
+        cv.put("title", title.trim())
+        cv.put("user", user)
+        cv.put("pass", pass)
+        cv.put("added", System.currentTimeMillis())
+        return writableDatabase.insert("catalogs", null, cv)
+    }
+
+    /** Запомнить название, полученное из фида, если человек своё не ввёл. */
+    fun catalogTitle(id: Long, title: String) {
+        writableDatabase.execSQL(
+            "UPDATE catalogs SET title = ? WHERE _id = ? AND title = ''",
+            arrayOf(title, id.toString()))
+    }
+
+    fun renameCatalog(id: Long, title: String) {
+        writableDatabase.execSQL("UPDATE catalogs SET title = ? WHERE _id = ?",
+            arrayOf(title.trim(), id.toString()))
+    }
+
+    fun catalogAuth(id: Long, user: String, pass: String) {
+        writableDatabase.execSQL("UPDATE catalogs SET user = ?, pass = ? WHERE _id = ?",
+            arrayOf(user, pass, id.toString()))
+    }
+
+    fun deleteCatalog(id: Long) {
+        writableDatabase.delete("catalogs", "_id = ?", arrayOf(id.toString()))
+    }
+
+    /** Отметка «открывали сейчас» — по ней B14 сортирует список. */
+    fun touchCatalog(id: Long) {
+        writableDatabase.execSQL("UPDATE catalogs SET seen = ? WHERE _id = ?",
+            arrayOf(System.currentTimeMillis(), id.toString()))
+    }
+
+    /** Есть ли хоть один каталог: B14 показывает пустое состояние B44, если нет. */
+    fun catalogCount(): Int =
+        readableDatabase.rawQuery("SELECT COUNT(*) FROM catalogs", null).use { if (it.moveToNext()) it.getInt(0) else 0 }
+
+    /**
+     * Открыть каталог «наполовину» — по нажатию на строку B14 без выбора страницы:
+     * ставит `act.catalogId` и отметку открытия.
+     */
+    fun openCatalog(id: Long): Catalog? {
+        val c = catalog(id) ?: return null
+        touchCatalog(id)
+        return c
     }
 
     /** Выполнить [block] одной транзакцией; вложенные [upsert]/[remove] присоединяются к ней. */
@@ -497,8 +624,8 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
 
     companion object {
         const val NAME = "library.db"
-        /** Версия 5: `pdf`/`cbz` из библиотеки убраны (см. [onUpgrade]). */
-        const val VERSION = 5
+        /** Версия 6: сетевые каталоги (п. 10, таблица `catalogs`). */
+        const val VERSION = 6
 
         /** Автоматические полки: `_id` отрицательные, в таблице `shelves` их нет. */
         const val SHELF_READING = -1L
@@ -536,5 +663,24 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         /** Ключ сортировки: нижний регистр, «ё» как «е», без пробелов по краям. */
         fun sortKey(s: String): String =
             s.trim().lowercase(Locale.ROOT).replace('ё', 'е')
+
+        /**
+         * Адрес каталога в том виде, в каком он лежит в базе: без пробелов по краям,
+         * со схемой (человек часто пишет «gutenberg.org/feeds»), без хвостового «/».
+         * Схема `https://` сохраняется — часть каталогов живёт только по ней.
+         */
+        fun normalizeUrl(raw: String): String {
+            val s = raw.trim()
+            if (s.isEmpty()) return ""
+            val withScheme = when {
+                s.startsWith("http://", true) || s.startsWith("https://", true) -> s
+                s.startsWith("//") -> "http:$s"
+                else -> "http://$s"
+            }
+            // Хвостовой «/» без пути ничего не меняет, а в базе даёт два разных адреса.
+            val cut = withScheme.indexOf("://") + 3
+            val tail = withScheme.substring(cut)
+            return if (tail.endsWith("/") && tail.isNotEmpty()) withScheme.dropLast(1) else withScheme
+        }
     }
 }
