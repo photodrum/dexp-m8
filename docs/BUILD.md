@@ -219,4 +219,5 @@ GIT_ASKPASS=$PWD/tools/git-askpass.sh GIT_TERMINAL_PROMPT=0 \
 | `run-as` не работает | APK не debuggable; значения проверять через `settings get`/`getprop` |
 | Книга не в `adb devices`, но `2207` в `/sys/bus/usb/devices` есть (после перезагрузки книги) | `adb kill-server; adb start-server`, подождать 3 с |
 | `git ls-remote` на `github.com/koreader/djvulibre` висит | брать с `gitlab.com/koreader/djvulibre` |
+| `penpot_dump.js` не запустить: в чате Cline нет инструментов MCP Penpot, хотя сервер включён | инструменты MCP подключаются при старте чата: включить сервер в Cline → MCP Servers, затем открыть **новый** чат |
 | Проба пишет «fb2': движка нет», в пути видны `'…'` | кавычки двух уровней: путь передавать как `--es probe "'$f'"` (один уровень одинарных внутри двойных) |
