@@ -75,6 +75,7 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
                 "author TEXT," +
                 "author_sort TEXT," +
                 "series TEXT," +
+                "series_sort TEXT," +
                 "series_num INTEGER NOT NULL DEFAULT 0," +
                 "lang TEXT," +
                 "cover_id TEXT," +
@@ -90,8 +91,19 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
 
     // Версия 2: автор и название из имени файла — сбрасываем mtime, и сканер переразберёт все файлы
     // (статус, прогресс и «добавлена» при этом не меняются: upsert обновляет только метаданные).
+    // Версия 3: `series_sort` — ключ серии для поиска (B21); заполняем из `series`.
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) db.execSQL("UPDATE books SET mtime = 0")
+        if (oldVersion < 3) {
+            db.execSQL("ALTER TABLE books ADD COLUMN series_sort TEXT")
+            db.rawQuery("SELECT _id, series FROM books WHERE series IS NOT NULL", null).use { c ->
+                while (c.moveToNext()) {
+                    val cv = ContentValues(1)
+                    cv.put("series_sort", sortKey(c.getString(1)))
+                    db.update("books", cv, "_id = ?", arrayOf(c.getLong(0).toString()))
+                }
+            }
+        }
     }
 
     /** `adb install -d` ставит старый APK поверх нового: схему не трогаем, а не падаем. */
@@ -122,7 +134,7 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
 
     /** Новая книга: статус «новая», добавлена сейчас. Известная — только метаданные и stamp. */
     fun upsert(i: Info) {
-        val cv = ContentValues(11)
+        val cv = ContentValues(12)
         cv.put("size", i.size)
         cv.put("mtime", i.mtime)
         cv.put("format", i.format)
@@ -131,6 +143,7 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         cv.put("author", i.author)
         cv.put("author_sort", i.authorSort?.let { sortKey(it) })
         cv.put("series", i.series)
+        cv.put("series_sort", i.series?.let { sortKey(it) })
         cv.put("series_num", i.seriesNum)
         cv.put("lang", i.lang)
         cv.put("cover_id", i.coverId)
@@ -185,6 +198,76 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         return out
     }
 
+    /** Автор в результатах поиска: [books] — его книг в библиотеке, [started] — из них начатых. */
+    class AuthorHit(val name: String, val books: Int, val started: Int)
+
+    /** Серия в результатах поиска. */
+    class SeriesHit(val name: String, val books: Int)
+
+    /**
+     * Книги по запросу [q] (B21): слова через пробел, каждое должно встретиться в названии,
+     * авторе или серии (подстрока по ключам [sortKey], регистр и «ё» не важны). Порядок —
+     * по названию. Пустой запрос — пустой список.
+     */
+    fun searchBooks(q: String, limit: Int): ArrayList<Entry> {
+        val out = ArrayList<Entry>()
+        val args = ArrayList<String>()
+        val where = where(q, arrayOf("title_sort", "author_sort", "series_sort"), args) ?: return out
+        args.add(limit.toString())
+        readableDatabase.rawQuery(
+            "SELECT $COLUMNS FROM books WHERE $where ORDER BY title_sort, _id LIMIT ?",
+            args.toTypedArray(),
+        ).use { c -> while (c.moveToNext()) out.add(entry(c)) }
+        return out
+    }
+
+    /** Авторы, чьё имя подходит под [q]; «начатые» — любой статус, кроме «новая». */
+    fun searchAuthors(q: String, limit: Int): ArrayList<AuthorHit> {
+        val out = ArrayList<AuthorHit>()
+        val args = ArrayList<String>()
+        val where = where(q, arrayOf("author_sort"), args) ?: return out
+        args.add(limit.toString())
+        readableDatabase.rawQuery(
+            "SELECT MIN(author), COUNT(*), SUM(CASE WHEN status <> $STATUS_NEW THEN 1 ELSE 0 END) " +
+                "FROM books WHERE author_sort IS NOT NULL AND $where " +
+                "GROUP BY author_sort ORDER BY author_sort LIMIT ?",
+            args.toTypedArray(),
+        ).use { c -> while (c.moveToNext()) out.add(AuthorHit(c.getString(0), c.getInt(1), c.getInt(2))) }
+        return out
+    }
+
+    /** Серии, чьё название подходит под [q]. */
+    fun searchSeries(q: String, limit: Int): ArrayList<SeriesHit> {
+        val out = ArrayList<SeriesHit>()
+        val args = ArrayList<String>()
+        val where = where(q, arrayOf("series_sort"), args) ?: return out
+        args.add(limit.toString())
+        readableDatabase.rawQuery(
+            "SELECT MIN(series), COUNT(*) FROM books WHERE series_sort IS NOT NULL AND $where " +
+                "GROUP BY series_sort ORDER BY series_sort LIMIT ?",
+            args.toTypedArray(),
+        ).use { c -> while (c.moveToNext()) out.add(SeriesHit(c.getString(0), c.getInt(1))) }
+        return out
+    }
+
+    /** `WHERE` по словам [q]; [args] получает параметры. null — в запросе нет слов. */
+    private fun where(q: String, cols: Array<String>, args: ArrayList<String>): String? {
+        val words = sortKey(q).split(' ').filter { it.isNotEmpty() }
+        if (words.isEmpty()) return null
+        val sb = StringBuilder()
+        for ((n, w) in words.withIndex()) {
+            if (n > 0) sb.append(" AND ")
+            sb.append('(')
+            for ((k, col) in cols.withIndex()) {
+                if (k > 0) sb.append(" OR ")
+                sb.append(col).append(" LIKE ? ESCAPE '\\'")
+                args.add("%" + w.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%")
+            }
+            sb.append(')')
+        }
+        return sb.toString()
+    }
+
     fun find(path: String): Entry? =
         readableDatabase.rawQuery("SELECT $COLUMNS FROM books WHERE path = ?", arrayOf(path)).use { c ->
             if (c.moveToFirst()) entry(c) else null
@@ -233,7 +316,7 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
 
     companion object {
         const val NAME = "library.db"
-        const val VERSION = 2
+        const val VERSION = 3
 
         const val STATUS_NEW = 0
         const val STATUS_READING = 1

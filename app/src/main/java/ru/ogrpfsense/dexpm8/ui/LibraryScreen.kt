@@ -397,7 +397,10 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
                         val i = ((x - SORT_X) / SORT_STEP).toInt().coerceIn(0, sortLabels.size - 1)
                         if (i != sortMode) { sortMode = i; page = 0; reload() }
                     }
-                    HIT_SEARCH -> { /* экран ввода — следующий этап */ }
+                    HIT_SEARCH -> {
+                        act.searchFresh = true
+                        act.go(EinkActivity.SCR_SEARCH)
+                    }
                     HIT_EMPTY -> if (!storageOk) askStorage()
                     else -> if (h.id > HIT_BOOK) {
                         val i = h.id - HIT_BOOK - 1
