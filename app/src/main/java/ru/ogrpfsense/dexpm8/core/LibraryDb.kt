@@ -187,6 +187,15 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         n
     }
 
+    /** Удалить книгу из базы (B53): строку `books` и её места на полках. Файл удаляет вызывающий. */
+    fun deleteBook(id: Long) {
+        inTransaction {
+     val db = writableDatabase
+     db.delete("shelf_books", "book_id = ?", arrayOf(id.toString()))
+     db.delete("books", "_id = ?", arrayOf(id.toString()))
+ }
+    }
+
     // ------------------------------------------------------------------ полки (B23, B24)
 
     /** Своя полка; [count] — книг на ней. */

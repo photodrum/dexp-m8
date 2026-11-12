@@ -13,7 +13,7 @@ import ru.ogrpfsense.dexpm8.core.LibraryDb
  * прогресс. Нет данных до читалки — не рисуются: «Страниц» (на его месте «Добавлена»), строка
  * «Глава N из M · до конца» (вместо неё — статус: «Не начата» / «Читается» / «Прочитана»)
  * и карточка «Аннотация». Нажимаются «Назад» и «Продолжить чтение» (в читалку);
- * «На полку» открывает [ShelfPicker]; «Оглавление», «Удалить» и «…» нарисованы, пока не работают.
+ * «На полку» открывает [ShelfPicker]; «Удалить» даёт диалог B53; «Оглавление» и «…» нарисованы, пока не работают.
  *
  *   обложка      гнездо 43.9,248.6 431.4×603.3; обложка 65.8,270.6 387.6×559.4 (G14), корешок 18.3 (G3);
  *                название Literata 44/600 в 117,321.8 (ширина 320, до 2 строк), автор 32/600 G4
@@ -32,6 +32,8 @@ class BookScreen(act: EinkActivity) : Screen(act) {
     private val lines = arrayOfNulls<String>(2)
     private val picker = ShelfPicker(ink, icons)
     private var pickerOpen = false
+    private var deleteOpen = false
+    private var deleteError = false
 
     private companion object {
         const val R_BTN = 51.1875f
@@ -44,7 +46,7 @@ class BookScreen(act: EinkActivity) : Screen(act) {
     }
 
     override fun render(c: Canvas) {
-        val dim = if (pickerOpen) dimBegin(c) else -1
+        val dim = if (pickerOpen || deleteOpen) dimBegin(c) else -1
         ink.rect(c, 0f, 0f, W, H, T.BG)
         header(c)
         val e = entry
@@ -56,6 +58,8 @@ class BookScreen(act: EinkActivity) : Screen(act) {
         if (dim >= 0) dimEnd(c, dim)
         status.draw(c)
         if (pickerOpen) picker.draw(c)
+        val del = entry
+        if (deleteOpen && del != null) deleteDialog(c, del)
     }
 
     private fun header(c: Canvas) {
@@ -177,6 +181,67 @@ class BookScreen(act: EinkActivity) : Screen(act) {
         return if (y == now) s else "$s $y"
     }
 
+    /**
+     * B53: диалог 92,543 1225×617 (в макете 795 со строкой «Сохранить заметки и цитаты» — заметок
+     * в проекте нет, строки нет, кнопки сдвинуты на 178 вверх). Гнездо 152,607 140×140 + «trash»
+     * 197,651; заголовок 60/700 в 332,613; подзаголовок 32/600 G4 в 332,695; пояснение 38/500 в
+     * 152,813; «Отмена» 152,959 425×112; «Удалить» 612,944 645×142 (тёмная).
+     */
+    private fun deleteDialog(c: Canvas, e: LibraryDb.Entry) {
+        ink.convex(c, 92f, 543f, 1225f, 617f, 56f)
+        ink.inset(c, 152f, 607f, 140f, 140f, 70f, T.G12)
+        icons.draw(c, "trash", 197f, 651f, 49.9f, 52f)
+        ink.text(c, "Удалить книгу?", 332f, T.base(613f, T.TS_TITLE, 1.25f), T.TS_TITLE, 700, T.G1)
+        val sub = e.title + (e.author?.let { " · $it" } ?: "") + " · " + e.format.uppercase()
+        ink.text(c, ink.ellipsize(sub, 880f, T.TS_BODY_S, 600), 332f,
+            T.base(695f, T.TS_BODY_S, 1.25f), T.TS_BODY_S, 600, T.G4)
+        val note = if (deleteError) "Не удалось удалить файл. Проверьте доступ к памяти."
+        else "Файл будет удалён из памяти устройства вместе с прогрессом чтения."
+        ink.paragraph(c, note, 152f, 813f, 1100f, 38f, 500, T.G1, 6f)
+        ink.convex(c, 152f, 959f, 425f, 112f, 51f)
+        ink.textCenter(c, "Отмена", 155f, 420f, T.base(989.2f, 38f, 1.26f), 38f, 700, T.G1)
+        ink.convexDark(c, 612f, 944f, 645f, 142f, T.R_BUTTON)
+        ink.textCenter(c, "Удалить", 615f, 640f, T.base(986.7f, T.TS_ACTION, 1.24f), T.TS_ACTION, 700, T.G15)
+    }
+
+    private fun setDelete(on: Boolean) {
+        deleteOpen = on
+        deleteError = false
+        act.bigFrame("book delete $on")
+        redraw()
+    }
+
+    /** Файл, затем строка базы. Файл не удалился — базу не трогаем, диалог остаётся с ошибкой. */
+    private fun deleteBook() {
+        val e = entry ?: return
+        try {
+            val f = java.io.File(e.path)
+            if (f.exists() && !f.delete()) {
+                deleteError = true
+                redraw()
+                return
+            }
+            act.db.deleteBook(e.id)
+        } catch (t: Throwable) {
+            Trace.step("book delete FAIL: ${t.javaClass.simpleName}: ${t.message}")
+            deleteError = true
+            redraw()
+            return
+        }
+        deleteOpen = false
+        act.pop()
+    }
+
+    private fun deleteUp(x: Float, y: Float) {
+        if (x >= 152f && x <= 577f && y >= 959f && y <= 1071f) {
+            setDelete(false)
+        } else if (x >= 612f && x <= 1257f && y >= 944f && y <= 1086f) {
+            deleteBook()
+        } else if (y < 543f || y > 1160f) {
+            setDelete(false)
+        }
+    }
+
     private fun openPicker() {
         val e = entry ?: return
         try {
@@ -215,6 +280,14 @@ class BookScreen(act: EinkActivity) : Screen(act) {
             pickerUp(x, y)
             return
         }
+        if (deleteOpen) {
+            deleteUp(x, y)
+            return
+        }
+        if (entry != null && x >= 940.6f && x <= 1362f && y >= 1079.5f && y <= 1192f) {
+            setDelete(true)
+            return
+        }
         if (entry != null && x >= 490.9f && x <= 912.3f && y >= 1079.5f && y <= 1192f) {
             openPicker()
         } else if (x >= 41.1f && x <= 148f && y >= 112.3f && y <= 224.7f) {
@@ -234,6 +307,8 @@ class BookScreen(act: EinkActivity) : Screen(act) {
         super.onAttachedToWindow()
         status.attach()
         pickerOpen = false
+        deleteOpen = false
+        deleteError = false
         entry = try {
             act.db.get(act.bookId)
         } catch (t: Throwable) {
