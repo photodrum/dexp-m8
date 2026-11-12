@@ -220,4 +220,5 @@ GIT_ASKPASS=$PWD/tools/git-askpass.sh GIT_TERMINAL_PROMPT=0 \
 | Книга не в `adb devices`, но `2207` в `/sys/bus/usb/devices` есть (после перезагрузки книги) | `adb kill-server; adb start-server`, подождать 3 с |
 | `git ls-remote` на `github.com/koreader/djvulibre` висит | брать с `gitlab.com/koreader/djvulibre` |
 | `penpot_dump.js` не запустить: в чате Cline нет инструментов MCP Penpot, хотя сервер включён | инструменты MCP подключаются при старте чата: включить сервер в Cline → MCP Servers, затем открыть **новый** чат |
+| Ответ `penpot_dump.js` в чате обрезан (`...[truncated N chars]...`) | целиком он лежит в `~/.cline/data/sessions/<id>/<id>.messages.json`: результат положить в `storage`, отдавать частями с меткой (`{MARK, files}`), достать из журнала по метке и сверить длину и djb2 (UTF-16) с Penpot до записи (DEVLOG 2026-11-12, 9.0) |
 | Проба пишет «fb2': движка нет», в пути видны `'…'` | кавычки двух уровней: путь передавать как `--es probe "'$f'"` (один уровень одинарных внутри двойных) |
