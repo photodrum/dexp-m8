@@ -225,6 +225,10 @@ GIT_ASKPASS=$PWD/tools/git-askpass.sh GIT_TERMINAL_PROMPT=0 \
 | Проба листает 30 страниц и «тормозит» | на книге остался `/data/local/tmp/dexp-bench`: `adb shell rm /data/local/tmp/dexp-bench` |
 | `tools/typecheck.sh`: `unresolved reference: BuildConfig` | `BuildConfig` генерирует только Gradle; в `typecheck.sh` и `build.sh` есть заглушка (`DEBUG = true`) с 2026-11-12 |
 | `tools/typecheck.sh` / `tools/build.sh`: `OutOfMemoryError` в psi2ir или на `ShelfScreen.kt` | **решено 2026-11-13:** оба скрипта сами ставят `JAVA_OPTS=-Xmx1600m` (если переменная не задана); нужен только `JAVA_HOME` и PATH JDK. Раньше требовалось передавать вручную |
+| `tools/typecheck.sh` без JDK в PATH: пишет «классов собрано: 0» и **выходит с кодом 0** | `kotlinc` не нашёл `java` и умер молча — без ошибки в логе. Всегда `export JAVA_HOME=$HOME/.local/jdk PATH=$HOME/.local/jdk/bin:$PATH`; признак успеха — «классов собрано: 135» и выше |
+| Gradle, запущенный фоном (`nohup … &`), падает с `Bad file descriptor` / зависает с пустым логом | терминал Cline закрывает stdin фонового процесса: `setsid ./gradlew assembleDebug --offline </dev/null > /tmp/build.log 2>&1 &`, затем читать `/tmp/build.log` |
+| `assembleDebug` пишет `UP-TO-DATE`, а APK старый в глазах «ничего не собралось» | APK мог быть собран раньше той же сессией: сверить `stat -c '%y %n'` у `app-debug.apk` и правленого `.kt` — APK должен быть новее |
+
 | «Быстрый» (B5/B37): шторка или новый экран рисуются кашей поверх старого | A2-режим на большой кадр с серым; такие кадры должны идти через `EinkActivity.bigFrame` / `fullOnSwitch` (п. 8.2) |
 | `NoClassDefFoundError: kotlin.jvm.internal.Lambda` | APK без Kotlin stdlib (старый `build.sh`); исправлено 2026-11-11 |
 | `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | другой ключ подписи; `build.sh` и Gradle используют один `~/.android/debug.keystore`. Иначе `adb uninstall` (данные пропадут) |

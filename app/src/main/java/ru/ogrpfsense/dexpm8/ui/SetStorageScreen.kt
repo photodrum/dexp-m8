@@ -6,12 +6,15 @@ import java.util.Locale
 /**
  * B42 · Настройки · Память. Числа — из design/v5/B42.json.
  *
- * Читается: объём и свободное место — `StatFs` общего хранилища; «Книги» — сумма размеров файлов
- * из `LibraryDb`; «Приложения» — APK и каталог данных; «Кэш» — внутренний и внешний кэш;
- * «Система» — остаток. «Аудиокниги» — всегда 0 (аудио в оболочке пока нет).
+ * Читается: свободное место — `StatFs` общего хранилища; объём — заявленный объём накопителя
+ * (`capacityGb`, 16 ГБ), потому что `StatFs` не видит системный резерв ≈3,3 ГБ (замечание 7):
+ * «занято» = объём − свободно (резерв внутри «занято»), «Система» = занято − всё измеренное.
+ * «Книги» — сумма размеров файлов из `LibraryDb`; «Приложения» — APK и каталог данных;
+ * «Кэш» — внутренний и внешний кэш. «Аудиокниги» — всегда 0 (аудио в оболочке пока нет).
  * Не рисуется (данных нет): «Страницы PDF и DjVu» — описание, движков ещё нет.
  * Нажимается (шаг 4.6): «Очистить» у «Кэша обложек» — `act.sys.clearCache` (кэш оболочки целиком,
- * отдельного кэша обложек пока нет); «Очистить» у страниц PDF/DjVu — нечего чистить до движков;
+ * отдельного кэша обложек пока нет), после нажатия на [CLEARED_MS] вместо размера — «Очищено»
+ * (замечание 10); «Очистить» у страниц PDF/DjVu — нечего чистить до движков;
  * «Файлы загрузок» — тумблер в `act.prefs`.
  */
 class SetStorageScreen(act: EinkActivity) : Screen(act) {
@@ -19,15 +22,21 @@ class SetStorageScreen(act: EinkActivity) : Screen(act) {
     private val status = StatusBar(act, this, ink, icons)
     private val kit = SettingsKit(ink, icons)
 
+    /** Объём из `StatFs` и заявленный объём накопителя в байтах (16 ГБ, а не 12,4 — замечание 7). */
     private var total = 0L
+    private var capacity = 0L
     private var free = 0L
     private var books = 0L
     private var apps = 0L
     private var cache = 0L
     private var avgBook = 0L
 
+    /** «Очищено» вместо размера кэша до [clearNote] (замечание 10). */
+    private var cleared = false
+    private val clearNote = Runnable { cleared = false; redraw() }
+
     override fun render(c: Canvas) {
-        val used = (total - free).coerceAtLeast(0L)
+        val used = (capacity - free).coerceAtLeast(0L)
         val audio = 0L
         val system = (used - books - apps - cache - audio).coerceAtLeast(0L)
 
@@ -39,7 +48,7 @@ class SetStorageScreen(act: EinkActivity) : Screen(act) {
         val big = SettingsData.gb1(used)
         ink.text(c, big, 88f, T.base(280f, 120f, 1.1f), 120f, 700, T.G1)
         val bigW = ink.measure(big, 120f, 700)
-        ink.text(c, "из ${SettingsData.capacityGb(total)} ГБ занято", 88f + bigW + 20f,
+        ink.text(c, "из ${SettingsData.capacityGb(capacity)} ГБ занято", 88f + bigW + 20f,
             T.base(349.2f, T.TS_ACTION, 1.25f), T.TS_ACTION, 700, T.G1)
         var left = "Свободно ${SettingsData.size(free)}"
         if (avgBook > 0L) left += " — примерно ${thousands(free / avgBook)} книг в FB2"
@@ -60,7 +69,7 @@ class SetStorageScreen(act: EinkActivity) : Screen(act) {
         kit.key(c, 88f, 1026f)
         icons.draw(c, "gallery", 126.1f, 1067.4f, 39.8f, 35.4f)
         kit.title(c, "Кэш обложек", 1035.5f, 237f)
-        kit.desc(c, SettingsData.size(cache), 1088.5f, 237f)
+        kit.desc(c, if (cleared) "Очищено" else SettingsData.size(cache), 1088.5f, 237f)
         kit.divider(c, 1160f, 237f, 1076f)
         clearButton(c, 1034.5f, 1059.8f)
 
@@ -77,11 +86,11 @@ class SetStorageScreen(act: EinkActivity) : Screen(act) {
         kit.toggle(c, 1362f, act.prefs.deleteArchives, 1174f)
     }
 
-    /** Шкала: сегменты по долям [parts] от занятого, ширина дорожки 1213 при заполнении `used / total`. */
+    /** Шкала: сегменты по долям [parts] от занятого, дорожка 1213 при заполнении `used / capacity` (с резервом). */
     private fun bar(c: Canvas, used: Long, parts: LongArray) {
-        if (total <= 0L || used <= 0L) return
+        if (capacity <= 0L || used <= 0L) return
         val colors = intArrayOf(T.G3, T.G6, T.G8, T.G9, T.G10)
-        val full = 1213f * used / total
+        val full = 1213f * used / capacity
         var x = 92f
         var first = true
         for (i in parts.indices) {
@@ -113,6 +122,8 @@ class SetStorageScreen(act: EinkActivity) : Screen(act) {
 
     private fun refresh() {
         SettingsData.storage()?.let { total = it.first; free = it.second }
+        // Заявленный объём накопителя: StatFs не видит системный резерв, поэтому занято считаем от него.
+        capacity = if (total > 0L) SettingsData.capacityGb(total).toLong() * 1_000_000_000L else 0L
         books = act.db.totalSize()
         val n = act.db.count()
         avgBook = if (n > 0) books / n else 0L
@@ -126,6 +137,9 @@ class SetStorageScreen(act: EinkActivity) : Screen(act) {
         if (x >= 1040f && x <= 1334f && y >= 1024.5f && y <= 1146.5f) {
             act.sys.clearCache()
             refresh()
+            cleared = true
+            removeCallbacks(clearNote)
+            postDelayed(clearNote, CLEARED_MS)
             redraw()
             return
         }
@@ -138,11 +152,18 @@ class SetStorageScreen(act: EinkActivity) : Screen(act) {
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         status.attach()
+        cleared = false
         refresh()
     }
 
     override fun onDetachedFromWindow() {
+        removeCallbacks(clearNote)
         status.detach()
         super.onDetachedFromWindow()
+    }
+
+    private companion object {
+        /** Сколько «Очищено» держится вместо размера кэша — как «Снимок сохранён» в шторке B5. */
+        const val CLEARED_MS = 2500L
     }
 }
