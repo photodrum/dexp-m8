@@ -57,8 +57,12 @@ class ProbeScreen(act: EinkActivity) : Screen(act) {
     }
 
     override fun onUp(x: Float, y: Float) {
+        // Центр полосы (x 468…936) открывает шторку B5 (Screen.onTouchEvent), «Назад» — по бокам.
         if (y <= TOP) act.pop()
     }
+
+    /** Отладочный экран стоит на месте читалки: зона шторки — как у страницы книги. */
+    override val shadeZone: Float get() = ru.ogrpfsense.dexpm8.ui.ShadeScreen.ZONE_READER
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()

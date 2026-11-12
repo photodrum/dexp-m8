@@ -26,6 +26,24 @@ abstract class Screen(protected val act: EinkActivity) : View(act) {
     protected var W = 1404f
     protected var H = 1872f
 
+    /**
+     * Нижняя граница зоны открытия шторки B5 в центральной трети экрана (x 468…936), дизайн-px.
+     * Оболочка — полоса статус-бара (там ничего не нажимается), читалка — верх ≈27% страницы;
+     * 0 — экран шторку не открывает. Решение 2026-11-12, ROADMAP «Жесты шторок».
+     */
+    protected open val shadeZone: Float get() = ShadeScreen.ZONE_SHELL
+
+    /**
+     * Экран под открытой шторкой: рисуется темнее (G15 → G10, фон G12 → ≈G8, текст G1 остаётся;
+     * замечание 15, вариант Б, 2026-11-12). Не прозрачность: цвета пересчитываются одним фильтром.
+     */
+    var dimmed = false
+        set(v) {
+            if (field == v) return
+            field = v
+            invalidate()
+        }
+
     private var downX = 0f
     private var downY = 0f
     private var pressed = false
@@ -51,6 +69,8 @@ abstract class Screen(protected val act: EinkActivity) : View(act) {
     }
 
     override fun onDraw(canvas: android.graphics.Canvas) {
+        // Слой с фильтром живёт только на время кадра: отдельного буфера под экран не держим.
+        val layer = if (dimmed) canvas.saveLayer(0f, 0f, width.toFloat(), height.toFloat(), DIM) else -1
         val saved = D.enter(canvas)
         try {
             render(canvas)
@@ -65,6 +85,17 @@ abstract class Screen(protected val act: EinkActivity) : View(act) {
             throw t
         } finally {
             D.leave(canvas, saved)
+            if (layer >= 0) canvas.restoreToCount(layer)
+        }
+    }
+
+    /** Кадр экрана без затемнения — для «Снимка» (B5). [c] — в реальных px. */
+    fun capture(c: android.graphics.Canvas) {
+        val saved = D.enter(c)
+        try {
+            render(c)
+        } finally {
+            D.leave(c, saved)
         }
     }
 
@@ -87,7 +118,13 @@ abstract class Screen(protected val act: EinkActivity) : View(act) {
             MotionEvent.ACTION_UP -> {
                 val ok = pressed
                 pressed = false
-                if (ok) onUp(downX, downY)
+                if (!ok) return true
+                // Шторка B5 — раньше элементов экрана: в зоне шторки у экранов ничего не нажимается.
+                if (downY < shadeZone && downX >= ShadeScreen.ZONE_X0 && downX <= ShadeScreen.ZONE_X1) {
+                    act.openShade()
+                    return true
+                }
+                onUp(downX, downY)
                 return true
             }
             MotionEvent.ACTION_CANCEL -> { pressed = false; return true }
@@ -100,4 +137,29 @@ abstract class Screen(protected val act: EinkActivity) : View(act) {
 
     /** Полная перерисовка экрана — единственный «анимационный» приём, который допустим. */
     fun redraw() = invalidate()
+
+    /**
+     * Затемнить часть кадра под своим листом (B36 и др.): всё, что нарисовано между [dimBegin] и
+     * [dimEnd], проходит через тот же фильтр, что и экран под шторкой. [c] — в дизайн-px.
+     */
+    protected fun dimBegin(c: android.graphics.Canvas): Int = c.saveLayer(0f, 0f, W, H, DIM)
+
+    protected fun dimEnd(c: android.graphics.Canvas, layer: Int) = c.restoreToCount(layer)
+
+    private companion object {
+        /**
+         * Затемнение под шторкой и листами (замечание 15, вариант Б): out = a·in + b, a = 153/238,
+         * b = 17·(1 − a). G15 (255) → 170 = G10, G12 (204) → 137 ≈ G8, G1 (17) → 17. Альфа не трогается.
+         */
+        val DIM = android.graphics.Paint().apply {
+            val a = 153f / 238f
+            val b = 17f * (1f - a)
+            colorFilter = android.graphics.ColorMatrixColorFilter(floatArrayOf(
+                a, 0f, 0f, 0f, b,
+                0f, a, 0f, 0f, b,
+                0f, 0f, a, 0f, b,
+                0f, 0f, 0f, 1f, 0f,
+            ))
+        }
+    }
 }

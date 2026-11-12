@@ -78,4 +78,7 @@ class CrashScreen(act: EinkActivity, private val error: Throwable) : Screen(act)
         // Тап в нижней полосе — выйти, чтобы не зацикливаться на сбое.
         if (y > H - 200f) act.finish()
     }
+
+    /** На экране сбоя шторки нет. */
+    override val shadeZone: Float get() = 0f
 }

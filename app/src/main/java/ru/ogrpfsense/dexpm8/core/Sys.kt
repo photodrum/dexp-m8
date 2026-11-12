@@ -170,7 +170,19 @@ class Sys(ctx: Context) {
     private fun fail(what: String, t: Throwable) =
         Trace.step("sys $what FAIL: ${t.javaClass.simpleName}: ${t.message}")
 
-    private companion object {
-        const val GAMMA = "sys.gray.gammalevel"
+    companion object {
+        private const val GAMMA = "sys.gray.gammalevel"
+
+        /** 16 делений контраста (`sys.gray.gammalevel`), найдены на книге 2026-11-11. */
+        val GAMMA_STEPS = intArrayOf(0, 6, 11, 16, 21, 26, 31, 36, 41, 46, 51, 56, 61, 66, 71, 80)
+
+        /** Номер ближайшего деления к значению свойства [v]. */
+        fun gammaIndex(v: Int): Int {
+            var best = 0
+            for (i in GAMMA_STEPS.indices) {
+                if (Math.abs(GAMMA_STEPS[i] - v) < Math.abs(GAMMA_STEPS[best] - v)) best = i
+            }
+            return best
+        }
     }
 }

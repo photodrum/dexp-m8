@@ -108,10 +108,12 @@ app/src/main/java/ru/ogrpfsense/dexpm8/
         SetSleepScreen B40 · SetLangScreen B41 · SetStorageScreen B42 · SetAboutScreen B43
         SettingsKit, SettingsData   общие элементы и данные настроек
         SimpleScreen, CrashScreen, Trace   заглушка, экран сбоя, трассировка
+        ShadeScreen    B5: шторка поверх экрана (зона открытия — Screen.shadeZone, приглушение — Screen.dimmed)
   core/ Sys            яркость, сон, 12/24 ч, Wi-Fi, Bluetooth, lockNow, кэш
         Prefs          настройки оболочки (SharedPreferences)
         LibraryDb, Scanner   база на SQLiteDatabase, сканер книг
-        AdminReceiver  device admin (блокировка)
+        AdminReceiver  device admin (сон по кнопке B5)
+        PowerService   служба спецвозможностей: меню питания («Выключение» B5), включается через adb
         NativeBook     JNI-мост к C-ядру, грузится лениво
   reader/ EngineProbe, ProbeScreen   R0 (7.2): JNI к движкам и временный отладочный экран на SCR_READER
 app/src/main/cpp/
@@ -124,8 +126,9 @@ app/src/main/cpp/
 ## Правила E-Ink
 
 - Запрещено: анимации, переходы, градиенты, полупрозрачность, размытие, скролл.
-- Диалоги и листы — без затемнения фона: всё под ними перекрашивается на 4–5 ступеней
-  светлее (текст G1 → G8, поверхность → G13), статус-бар не трогается.
+- Диалоги, листы и шторки — без прозрачности: экран под ними **затемняется** цветовым фильтром в пределах
+  палитры (G15 → G10, фон G12 → ≈G8, текст G1 остаётся; `Screen.dimmed` / `dimBegin`). Статус-бар не трогается.
+  Было «на 4–5 ступеней светлее» — заменено по замечанию 15 (2026-11-12).
 - Смена экрана — полная перерисовка панели одним кадром: `Epd.request(host, EPD_FULL_GL16, false)` до
   кадра нового экрана (`EinkActivity.fullOnSwitch`). «Очищать при смене экрана» (B37) выключено — каждый
   `screen_sync_time`-й переход. Внутри экрана — только частичный `EPD_PART` (по умолчанию прошивки),

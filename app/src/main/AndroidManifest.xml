@@ -74,6 +74,21 @@
             </intent-filter>
         </receiver>
 
+        <!-- Служба спецвозможностей только для меню питания (core/PowerService.kt, «Выключение» на B5).
+             Включается пользователем в «Спец. возможностях»; система подключается по BIND_ACCESSIBILITY_SERVICE. -->
+        <service
+            android:name=".core.PowerService"
+            android:exported="true"
+            android:label="@string/power_service"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/power_service" />
+        </service>
+
     </application>
 
 </manifest>

@@ -431,6 +431,10 @@ class EinkActivity : Activity() {
     }
 
     override fun onBackPressed() {
+        if (shadeOpen) {
+            closeShade()
+            return
+        }
         if (stack.size > 1) {
             pop()
         } else {
@@ -460,9 +464,107 @@ class EinkActivity : Activity() {
     }
 
     private fun changeTo(screenId: Int, switch: Boolean = true) {
+        // Шторка уходит вместе с экраном; затемнение с прежнего экрана снимаем (он в кэше).
+        for (i in 0 until host.childCount) (host.getChildAt(i) as? Screen)?.dimmed = false
         host.removeAllViews()
         host.addView(obtain(screenId))
         if (switch) fullOnSwitch()
+    }
+
+    // ------------------------------------------------------------ B5: шторка (п. 8.1)
+
+    private var shade: ShadeScreen? = null
+
+    val shadeOpen: Boolean get() = shade?.parent != null
+
+    /** Экран наверху стека (под шторкой). */
+    private fun current(): Screen? = if (stack.isEmpty()) null else screens[stack[stack.size - 1]]
+
+    /**
+     * Открыть шторку B5 поверх текущего экрана: экран затемняется ([Screen.dimmed]), шторка —
+     * второй View в `host`. Касания под шторкой экрану не доходят: шторка на весь экран.
+     */
+    fun openShade() {
+        if (!this::host.isInitialized || shadeOpen) return
+        val s = shade ?: ShadeScreen(this).also { shade = it }
+        current()?.dimmed = true
+        host.addView(s, android.widget.FrameLayout.LayoutParams(
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT
+        ))
+        Trace.step("shade: open")
+    }
+
+    fun closeShade() {
+        val s = shade ?: return
+        if (s.parent == null) return
+        host.removeView(s)
+        current()?.dimmed = false
+        Trace.step("shade: close")
+    }
+
+    /**
+     * «Выключение» (B5): системное меню питания через свою службу спецвозможностей
+     * ([ru.ogrpfsense.dexpm8.core.PowerService]). Экрана «Спец. возможности» в прошивке книги нет
+     * (проверено 2026-11-12), службу включают один раз через adb — команда в docs/BUILD.md.
+     * false — служба не включена или система отказала; шторка тогда пишет «Нужна настройка».
+     * После меню питания — очистка E-Ink, как после диалога права.
+     */
+    fun powerDialog(): Boolean {
+        val svc = ru.ogrpfsense.dexpm8.core.PowerService.instance
+        if (svc == null) {
+            Trace.step("power: service off")
+            return false
+        }
+        val ok = svc.performGlobalAction(
+            android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_POWER_DIALOG)
+        Trace.step("power: dialog -> $ok")
+        if (ok) cleanOnFocus = true
+        return ok
+    }
+
+    /**
+     * «Снимок» (B5): текущий экран оболочки без шторки и без затемнения → PNG в
+     * `Pictures/Screenshots`. Кадр рисуется в UI-потоке, сжатие и запись — в фоне.
+     * [done] — в UI-потоке, true — файл записан.
+     */
+    fun screenshot(done: (Boolean) -> Unit) {
+        val s = current()
+        if (s == null || s.width <= 0 || s.height <= 0) { done(false); return }
+        requestStorage { granted ->
+            if (!granted) { Trace.step("shot: no storage"); done(false); return@requestStorage }
+            val bmp = try {
+                android.graphics.Bitmap.createBitmap(s.width, s.height, android.graphics.Bitmap.Config.ARGB_8888)
+            } catch (t: Throwable) {
+                Trace.step("shot: bitmap FAIL ${t.javaClass.simpleName}"); done(false); return@requestStorage
+            }
+            val c = android.graphics.Canvas(bmp)
+            c.drawColor(T.BG)
+            try {
+                s.capture(c)
+            } catch (t: Throwable) {
+                Trace.step("shot: render FAIL ${t.javaClass.simpleName}: ${t.message}")
+                bmp.recycle(); done(false); return@requestStorage
+            }
+            val dir = java.io.File(android.os.Environment.getExternalStoragePublicDirectory(
+                android.os.Environment.DIRECTORY_PICTURES), "Screenshots")
+            val name = "DexpM8_" + java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.ROOT)
+                .format(java.util.Date()) + ".png"
+            val f = java.io.File(dir, name)
+            Thread {
+                val ok = try {
+                    dir.mkdirs()
+                    java.io.FileOutputStream(f).use { bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+                } catch (t: Throwable) {
+                    Trace.step("shot: write FAIL ${t.javaClass.simpleName}: ${t.message}"); false
+                }
+                bmp.recycle()
+                Trace.step("shot: ${f.path} -> $ok")
+                if (ok) android.media.MediaScannerConnection.scanFile(applicationContext,
+                    arrayOf(f.path), arrayOf("image/png"), null)
+                ui.post { if (!isDestroyed) done(ok) }
+            }.start()
+        }
     }
 
     // ------------------------------------------------------------ E-Ink: полная перерисовка (п. 6.1)
@@ -524,6 +626,7 @@ class EinkActivity : Activity() {
         writeWaiter = null
         adminWaiter = null
         screens.clear()
+        shade = null
         if (lastInstance === this) lastInstance = null
         super.onDestroy()
     }

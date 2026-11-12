@@ -142,6 +142,21 @@ adb logcat -s DexpM8:V | grep probe     # «probe: <движок> rc=0 <мс>»
 adb shell touch /data/local/tmp/dexp-bench   # adb shell rm /data/local/tmp/dexp-bench
 ```
 
+**Служба «DEXP M8 — выключение» (клавиша «Выключение» на шторке B5, п. 8.1).** Экрана «Спец. возможности»
+в прошивке книги нет (`cmd package resolve-activity -a android.settings.ACCESSIBILITY_SETTINGS` → `No activity found`),
+поэтому службу включают один раз через adb. Переживает перезагрузку; слетает при сбросе книги и при удалении оболочки
+(переустановка `install -r` её не снимает). Без службы клавиша пишет «Нужна настройка».
+
+```bash
+adb shell settings put secure enabled_accessibility_services ru.ogrpfsense.dexpm8/ru.ogrpfsense.dexpm8.core.PowerService
+adb shell settings put secure accessibility_enabled 1
+adb shell dumpsys accessibility | grep -o 'services:{[^}]*}'   # ожидаем «DEXP M8 — выключение»
+# выключить: adb shell settings delete secure enabled_accessibility_services; adb shell settings put secure accessibility_enabled 0
+```
+
+Команда затирает список включённых служб: если на книге есть другие (по умолчанию нет, `settings get` → `null`) —
+дописать через `:`.
+
 В скриптах с циклом `while read` по файлам каждому `adb shell`/`adb exec-out` давать `< /dev/null`:
 иначе adb съедает stdin, и цикл заканчивается после первого файла.
 
@@ -200,5 +215,6 @@ GIT_ASKPASS=$PWD/tools/git-askpass.sh GIT_TERMINAL_PROMPT=0 \
 | `NoClassDefFoundError: kotlin.jvm.internal.Lambda` | APK без Kotlin stdlib (старый `build.sh`); исправлено 2026-11-11 |
 | `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | другой ключ подписи; `build.sh` и Gradle используют один `~/.android/debug.keystore`. Иначе `adb uninstall` (данные пропадут) |
 | `run-as` не работает | APK не debuggable; значения проверять через `settings get`/`getprop` |
+| Книга не в `adb devices`, но `2207` в `/sys/bus/usb/devices` есть (после перезагрузки книги) | `adb kill-server; adb start-server`, подождать 3 с |
 | `git ls-remote` на `github.com/koreader/djvulibre` висит | брать с `gitlab.com/koreader/djvulibre` |
 | Проба пишет «fb2': движка нет», в пути видны `'…'` | кавычки двух уровней: путь передавать как `--es probe "'$f'"` (один уровень одинарных внутри двойных) |

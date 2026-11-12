@@ -57,11 +57,14 @@ class AppsScreen(act: EinkActivity) : Screen(act) {
     private fun pages() = Math.max(1, (apps.size + PER_PAGE - 1) / PER_PAGE)
 
     override fun render(c: Canvas) {
+        // Под листом B36 экран затемнён (замечание 15), статус-бар и сам лист — нет.
+        val dim = if (sheet != null) dimBegin(c) else -1
         ink.rect(c, 0f, 0f, W, H, T.BG)
- status.draw(c)
         header(c)
         grid(c)
         pager(c)
+        if (dim >= 0) dimEnd(c, dim)
+        status.draw(c)
         if (sheet != null) drawSheet(c)
     }
 

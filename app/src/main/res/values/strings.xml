@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">DEXP M8</string>
+    <string name="power_service">DEXP M8 — выключение</string>
+    <string name="power_service_desc">Нужно только для клавиши «Выключение» на панели управления: открывает системное меню питания. Ничего не читает и не отслеживает.</string>
 </resources>

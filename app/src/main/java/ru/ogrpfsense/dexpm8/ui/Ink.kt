@@ -100,6 +100,15 @@ class Ink(ctx: Context) {
         c.drawRoundRect(r, rad, rad, stroke)
     }
 
+    /** Отрезок толщиной [width] с круглыми концами (деления шкалы контраста B5). */
+    fun line(c: Canvas, x1: Float, y1: Float, x2: Float, y2: Float, width: Float, color: Int) {
+        stroke.color = color
+        stroke.strokeWidth = width
+        stroke.strokeCap = Paint.Cap.ROUND
+        c.drawLine(x1, y1, x2, y2, stroke)
+        stroke.strokeCap = Paint.Cap.BUTT
+    }
+
     // ---------------------------------------------------------------- текст
 
     /** Текст по базовой линии, выравнивание слева. */

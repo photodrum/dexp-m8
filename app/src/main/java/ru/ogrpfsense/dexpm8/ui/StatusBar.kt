@@ -33,7 +33,9 @@ class StatusBar(
     private var timeFmt = SimpleDateFormat("HH:mm", Locale.getDefault())
     private var clock = timeFmt.format(Date())
     private var battery = 78
-    private var wifi = true
+    /** Wi-Fi включён (по последнему событию системы); читает и шторка B5 для клавиши «Сеть». */
+    var wifi = true
+        private set
     private var attached = false
 
     private val receiver = object : BroadcastReceiver() {
@@ -86,7 +88,11 @@ class StatusBar(
         }
     }
 
-    fun draw(c: Canvas) {
+    /**
+     * [batDy], [batBottom] — батарея в шторке B5 (B05.json): на 2.5 ниже, дно G12 вместо G11;
+     * время и Wi-Fi там же, где на B1.
+     */
+    fun draw(c: Canvas, batDy: Float = 0f, batBottom: Int = T.G11) {
         // Время: рамка 51.2,26.9, 36/700, lh 1.25 → baseline 63.2.
         ink.text(c, clock, X_CLOCK, BASE_CLOCK, T.TS_LABEL, 700, T.G1)
 
@@ -94,12 +100,12 @@ class StatusBar(
         if (wifi) icons.draw(c, "wifi", 1165.4f, 29.2f, 38.4f, 40.2f)
 
         // Корпус: нижний блик 124.3×43.9, внутренняя тень 121.6×41.1, дно 118.8×35.6 (G11).
-        ink.inset(c, BAT_X, BAT_Y, BAT_W, BAT_H, T.R_BATTERY)
+        ink.inset(c, BAT_X, BAT_Y + batDy, BAT_W, BAT_H, T.R_BATTERY, batBottom)
 
         // Заряд: 118.8·% × 32.9, r 16.45, G3.
         val pct = battery.coerceIn(0, 100)
         val fillW = FILL_W * pct / 100f
-        ink.roundRect(c, FILL_X, FILL_Y, fillW, FILL_H, R_FILL, T.G3)
+        ink.roundRect(c, FILL_X, FILL_Y + batDy, fillW, FILL_H, R_FILL, T.G3)
 
         // Процент: 28/800, по центру заливки, baseline 57.3. Белый — по тёмной заливке; если
         // заливка уже текста, цифры уходят на дно G11 тёмным (в макете этот случай не нарисован,
@@ -107,9 +113,9 @@ class StatusBar(
         val label = pct.toString()
         val tw = ink.measure(label, T.TS_CAPTION, 800)
         if (fillW >= tw + 2f * PAD) {
-            ink.textCenter(c, label, FILL_X, fillW, BASE_PERCENT, T.TS_CAPTION, 800, T.G15)
+            ink.textCenter(c, label, FILL_X, fillW, BASE_PERCENT + batDy, T.TS_CAPTION, 800, T.G15)
         } else {
-            ink.textCenter(c, label, FILL_X + fillW, FILL_W - fillW, BASE_PERCENT,
+            ink.textCenter(c, label, FILL_X + fillW, FILL_W - fillW, BASE_PERCENT + batDy,
                 T.TS_CAPTION, 800, T.G1)
         }
     }

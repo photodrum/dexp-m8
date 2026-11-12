@@ -57,13 +57,25 @@ PRIMARY = {
     "dict": (98.7, 102.8),
     "gallery": (39.8, 35.4),
     "trash": (45.7, 47.6),
+    "sunLow": (16.1, 18),
+    "sunHigh": (41, 42.9),
+    "lock": (27.5, 35.8),
 }
 # Цветовой вариант той же формы под своим именем: файл → имя в IconSpecs.kt.
 # search~fapjtl (G1, шапка B6/B36) отличается от search~hhvmhx (G5, B2) только цветом.
 COLOR_ALIAS = {
     "search~fapjtl.json": "searchDark",
+    # wifi~vtqgbs (G1, «Сеть» включена на B5) — та же форма, что wifi~1qmu6za (G4, B13).
+    "wifi~vtqgbs.json": "wifiDark",
 }
 NUM_RE = re.compile(r"-?\d+(?:\.\d+)?")
+
+# Файлы снимка, которые пока не берём: иконки B4 (R3) остаются из icon_specs_extra.txt.
+# plus~oohzz2 снят неполным (только блик G15, без контура) — переснять с B4 в R3.
+SKIP = {
+    "plus~oohzz2.json",
+    "minus~kgoluh.json",
+}
 
 HEADER = '''package ru.ogrpfsense.dexpm8.ui
 
@@ -214,6 +226,8 @@ def load_snapshot(pal: dict) -> dict:
     """
     groups: dict = {}   # имя -> список [w, h, prims, файл]
     for path in sorted(ICONS_DIR.glob("*.json")):
+        if path.name in SKIP:
+            continue
         data = json.loads(path.read_text(encoding="utf-8"))
         name = data["name"].split("/")[-1].strip()
         file_name = path.name.split("~")[0]
