@@ -165,11 +165,39 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         n
     }
 
-    /** Число книг; [onlyNew] — только «новые» (`STATUS_NEW`). */
-    fun count(onlyNew: Boolean = false): Int =
-        readableDatabase.rawQuery(
-            "SELECT COUNT(*) FROM books" + if (onlyNew) " WHERE status = $STATUS_NEW" else "", null,
-        ).use { c -> if (c.moveToFirst()) c.getInt(0) else 0 }
+    /**
+     * Фильтр списка (B22): [formats] — маска по [FORMATS] (0 — любые), [states] — маска
+     * `1 shl STATUS_*` (0 — любые), [hideRead] — без «прочитанных».
+     */
+    class Filter(val formats: Int = 0, val states: Int = 0, val hideRead: Boolean = false) {
+        val isEmpty: Boolean get() = formats == 0 && states == 0 && !hideRead
+    }
+
+    /** `WHERE ...` (с пробелом впереди) или пустая строка. */
+    private fun filterSql(f: Filter?): String {
+        if (f == null || f.isEmpty) return ""
+        val parts = ArrayList<String>(3)
+        if (f.formats != 0) {
+            val names = ArrayList<String>()
+            for (i in FORMATS.indices) {
+                if (f.formats and (1 shl i) != 0) for (n in FORMATS[i]) names.add("'$n'")
+            }
+            parts.add("format IN (" + names.joinToString(",") + ")")
+        }
+        if (f.states != 0) {
+            val st = ArrayList<Int>(3)
+            for (i in 0..2) if (f.states and (1 shl i) != 0) st.add(i)
+            parts.add("status IN (" + st.joinToString(",") + ")")
+        }
+        if (f.hideRead) parts.add("status <> $STATUS_READ")
+        return " WHERE " + parts.joinToString(" AND ")
+    }
+
+    /** Число книг под фильтром [f]. */
+    fun count(f: Filter? = null): Int =
+        readableDatabase.rawQuery("SELECT COUNT(*) FROM books" + filterSql(f), null).use { c ->
+            if (c.moveToFirst()) c.getInt(0) else 0
+        }
 
     /** Суммарный размер файлов всех книг, байт. */
     fun totalSize(): Long =
@@ -178,21 +206,23 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         }
 
     /**
-     * Страница списка: [offset] с нуля, [limit] строк; [sort] — `SORT_*`;
-     * [onlyNew] — только «новые» (`STATUS_NEW`).
+     * Страница списка: [offset] с нуля, [limit] строк; [sort] — `SORT_*`; [reverse] — обратный
+     * порядок («Сначала старые»); [f] — фильтр.
      */
-    fun list(sort: Int, offset: Int, limit: Int, onlyNew: Boolean = false): ArrayList<Entry> {
+    fun list(sort: Int, reverse: Boolean, offset: Int, limit: Int, f: Filter? = null): ArrayList<Entry> {
         val order = when (sort) {
-            SORT_AUTHOR -> "author_sort IS NULL, author_sort, title_sort, _id"
-            SORT_RECENT -> "opened DESC, added DESC, _id DESC"
-            SORT_ADDED -> "added DESC, _id DESC"
-            else -> "title_sort, _id"
+            SORT_AUTHOR ->
+                if (reverse) "author_sort IS NULL, author_sort DESC, title_sort DESC, _id DESC"
+                else "author_sort IS NULL, author_sort, title_sort, _id"
+            SORT_RECENT -> if (reverse) "opened, added, _id" else "opened DESC, added DESC, _id DESC"
+            SORT_ADDED -> if (reverse) "added, _id" else "added DESC, _id DESC"
+            SORT_PROGRESS ->
+                if (reverse) "progress, title_sort, _id" else "progress DESC, title_sort, _id"
+            else -> if (reverse) "title_sort DESC, _id DESC" else "title_sort, _id"
         }
         val out = ArrayList<Entry>(limit)
         readableDatabase.rawQuery(
-            "SELECT $COLUMNS FROM books" +
-                (if (onlyNew) " WHERE status = $STATUS_NEW" else "") +
-                " ORDER BY $order LIMIT ? OFFSET ?",
+            "SELECT $COLUMNS FROM books" + filterSql(f) + " ORDER BY $order LIMIT ? OFFSET ?",
             arrayOf(limit.toString(), offset.toString()),
         ).use { c -> while (c.moveToNext()) out.add(entry(c)) }
         return out
@@ -326,6 +356,14 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         const val SORT_AUTHOR = 1
         const val SORT_RECENT = 2
         const val SORT_ADDED = 3
+        const val SORT_PROGRESS = 4
+
+        /** Маски форматов фильтра B22: бит → имена в колонке `format`. */
+        val FORMATS = arrayOf(
+            arrayOf("fb2", "fb2.zip"), arrayOf("epub"), arrayOf("djvu", "djv"),
+            arrayOf("mobi"), arrayOf("txt"),
+        )
+        val FORMAT_LABELS = arrayOf("FB2", "EPUB", "DjVu", "MOBI", "TXT")
 
         private const val COLUMNS = "_id, path, size, mtime, format, title, author, series, " +
             "series_num, lang, cover_id, progress, status, added, opened"

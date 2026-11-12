@@ -58,6 +58,27 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean("delete_archives", true)
         set(v) = sp.edit().putBoolean("delete_archives", v).apply()
 
+    // B2/B22 «Библиотека»: сортировка и фильтры
+    /** Поле сортировки — `LibraryDb.SORT_*`. */
+    var libSort: Int
+        get() = sp.getInt("lib_sort", 1)
+        set(v) = sp.edit().putInt("lib_sort", v).apply()
+    /** Обратный порядок («Сначала старые»). */
+    var libReverse: Boolean
+        get() = sp.getBoolean("lib_reverse", false)
+        set(v) = sp.edit().putBoolean("lib_reverse", v).apply()
+    /** Маска форматов (`LibraryDb.FORMATS`), 0 — любые. */
+    var libFormats: Int
+        get() = sp.getInt("lib_formats", 0)
+        set(v) = sp.edit().putInt("lib_formats", v).apply()
+    /** Маска состояний (`1 shl STATUS_*`), 0 — любые. */
+    var libStates: Int
+        get() = sp.getInt("lib_states", 0)
+        set(v) = sp.edit().putInt("lib_states", v).apply()
+    var libHideRead: Boolean
+        get() = sp.getBoolean("lib_hide_read", false)
+        set(v) = sp.edit().putBoolean("lib_hide_read", v).apply()
+
     // B6/B36 «Приложения»
     /** Пакеты, скрытые из списка («Скрыть из списка»); возврат — подзаголовок «скрыто N» на B6 или сброс настроек. */
     var hiddenApps: Set<String>

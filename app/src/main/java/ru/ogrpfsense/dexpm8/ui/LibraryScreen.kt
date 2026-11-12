@@ -62,8 +62,43 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
 
     private var page = 0
     private val perPage = 6
-    private var sortMode = 0
     private var viewMode = 0     // 0 = список, 1 = сетка
+
+    // B22: сортировка и фильтры живут в Prefs; полоса B2 — четыре быстрых набора тех же значений.
+    private val sheet = FilterSheet(ink, icons)
+    private var sheetOpen = false
+    private var sheetCount = 0
+
+    /** Номер набора полосы, который совпадает с текущими значениями, или −1 (набор из листа). */
+    private fun sortMode(): Int {
+        val p = act.prefs
+        if (p.libReverse) return -1
+        val none = p.libStates == 0
+        val onlyNew = p.libStates == 1 shl LibraryDb.STATUS_NEW
+        return when {
+            p.libSort == LibraryDb.SORT_AUTHOR && none -> 0
+            p.libSort == LibraryDb.SORT_RECENT && none -> 1
+            p.libSort == LibraryDb.SORT_ADDED && none -> 2
+            p.libSort == LibraryDb.SORT_TITLE && onlyNew -> 3
+            else -> -1
+        }
+    }
+
+    /** Нажатие на полосу: набор [i] меняет сортировку и состояние, формат и «скрывать» остаются. */
+    private fun applyPreset(i: Int) {
+        val p = act.prefs
+        p.libReverse = false
+        p.libStates = if (i == 3) 1 shl LibraryDb.STATUS_NEW else 0
+        p.libSort = when (i) {
+            0 -> LibraryDb.SORT_AUTHOR
+            1 -> LibraryDb.SORT_RECENT
+            2 -> LibraryDb.SORT_ADDED
+            else -> LibraryDb.SORT_TITLE
+        }
+    }
+
+    private fun dbFilter() =
+        LibraryDb.Filter(act.prefs.libFormats, act.prefs.libStates, act.prefs.libHideRead)
 
     private val storageListener: (Boolean) -> Unit = { ok ->
         storageOk = ok
@@ -84,11 +119,9 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
         const val HIT_SEARCH = 4
         const val HIT_SORT = 5
         const val HIT_VIEW = 6
-        const val HIT_BOOK = 7
+        const val HIT_FILTER = 8
+        const val HIT_BOOK = 9
         const val HIT_EMPTY = -1       // пустое состояние: «разрешить» / «Настройки»
-
-        /** Индекс «Непрочитанные» в [sortLabels]: фильтр по статусу «новая». */
-        const val SORT_NEW_IDX = 3
 
         const val ST_PROGRESS = 0
         const val ST_NEW = 1
@@ -123,6 +156,7 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
         hits.add(Hit(HIT_BACK, 41.1f, 112.3f, 106.9f, 112.4f))
         hits.add(Hit(HIT_PREV, 41.1f, 1708.3f, 121.6f, 127.1f))
         hits.add(Hit(HIT_NEXT, 1240.4f, 1708.3f, 121.6f, 127.1f))
+        hits.add(Hit(HIT_FILTER, 1250f, 248.6f, 110f, 102.4f))
         hits.add(Hit(HIT_SEARCH, 43.9f, 248.6f, 1316.2f, 102.4f))
         hits.add(Hit(HIT_VIEW, 1155.4f, 122.3f, 204.8f, 87.7f))
         hits.add(Hit(HIT_SORT, SORT_X, 387.6f, 1316.2f, 87.7f))
@@ -142,13 +176,17 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
     }
 
     override fun render(c: Canvas) {
+        // Под листом B22 экран затемнён (замечание 15), статус-бар и сам лист — нет.
+        val dim = if (sheetOpen) dimBegin(c) else -1
         ink.rect(c, 0f, 0f, W, H, T.BG)
-        status.draw(c)
         header(c)
         searchField(c)
         sortBar(c)
         if (rowIds.isEmpty()) emptyState(c) else if (viewMode == 1) grid(c) else list(c)
         pager(c)
+        if (dim >= 0) dimEnd(c, dim)
+        status.draw(c)
+        if (sheetOpen) sheet.draw(c, sheetCount)
     }
 
     private fun count() = total
@@ -158,10 +196,11 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
     /** Перечитать страницу, число книг и «последнюю открытую» из базы. UI-поток, 6 строк. */
     private fun refresh() {
         try {
-            total = db.count(sortMode == SORT_NEW_IDX)
+            val f = dbFilter()
+            total = db.count(f)
             val pages = Math.max(1, (total + perPage - 1) / perPage)
             if (page >= pages) page = pages - 1
-            val rows = db.list(dbSort(), page * perPage, perPage, sortMode == SORT_NEW_IDX)
+            val rows = db.list(act.prefs.libSort, act.prefs.libReverse, page * perPage, perPage, f)
             rowIds.clear()
             books.clear()
             gridBooks.clear()
@@ -179,19 +218,11 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
                 gridBooks.add(GridCard(e.title, author, kind, pct))
             }
             selectedId = db.lastOpened()?.id ?: -1L
-            val all = if (sortMode == SORT_NEW_IDX) db.count() else total
+            val all = db.count()
             subtitle = if (all == 0) "пусто" else "${booksWord(all)} · ${sizeText(db.totalSize())}"
         } catch (t: Throwable) {
             Trace.step("library refresh FAIL: ${t.javaClass.simpleName}: ${t.message}")
         }
-    }
-
-    /** Режим сортировки экрана → порядок базы; «Непрочитанные» — фильтр, порядок по названию. */
-    private fun dbSort() = when (sortMode) {
-        0 -> LibraryDb.SORT_AUTHOR
-        1 -> LibraryDb.SORT_RECENT
-        2 -> LibraryDb.SORT_ADDED
-        else -> LibraryDb.SORT_TITLE
     }
 
     private fun booksWord(n: Int): String {
@@ -292,10 +323,11 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
 
     private fun sortBar(c: Canvas) {
         ink.inset(c, SORT_X, 387.6f, 1316.2f, 87.7f, T.R_GROOVE)
-        ink.convex(c, 48.4f + sortMode * SORT_STEP, 392.1f, 330f, 83.2f, T.R_SEGMENT)
+        val mode = sortMode()
+        if (mode >= 0) ink.convex(c, 48.4f + mode * SORT_STEP, 392.1f, 330f, 83.2f, T.R_SEGMENT)
         val base = T.base(409.5f, T.TS_BODY, 1.3f)
         for (i in sortLabels.indices) {
-            val active = i == sortMode
+            val active = i == mode
             ink.textCenter(c, sortLabels[i], 51.2f + i * SORT_STEP, SORT_STEP, base, T.TS_BODY,
                 if (active) 700 else 600, if (active) T.G1 else T.G5)
         }
@@ -381,7 +413,44 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
 
     // --------------------------------------------------------------- ввод
 
+    /** Лист B22 открыт: все касания — ему; изменение пересчитывает «Показать N книг». */
+    private fun sheetUp(x: Float, y: Float) {
+        when (sheet.hit(x, y)) {
+            FilterSheet.ACT_CHANGED -> {
+                sheetCount = db.count(sheet.filter())
+                redraw()
+            }
+            FilterSheet.ACT_CANCEL -> closeSheet(false)
+            FilterSheet.ACT_APPLY -> closeSheet(true)
+        }
+    }
+
+    private fun openSheet() {
+        sheet.load(act.prefs)
+        sheetCount = db.count(sheet.filter())
+        sheetOpen = true
+        act.bigFrame("filter sheet open")    // «Быстрый»: большой кадр — полной перерисовкой
+        redraw()
+    }
+
+    private fun closeSheet(apply: Boolean) {
+        sheetOpen = false
+        if (apply) {
+            sheet.save(act.prefs)
+            page = 0
+            refresh()
+            layout(W, H)
+        }
+        act.bigFrame("filter sheet close")
+        redraw()
+    }
+
     override fun onUp(x: Float, y: Float) {
+        if (sheetOpen) {
+            sheetUp(x, y)
+            return
+        }
+
         for (h in hits) {
             if (x >= h.x && x <= h.x + h.w && y >= h.y && y <= h.y + h.h) {
                 when (h.id) {
@@ -395,8 +464,13 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
                     }
                     HIT_SORT -> {
                         val i = ((x - SORT_X) / SORT_STEP).toInt().coerceIn(0, sortLabels.size - 1)
-                        if (i != sortMode) { sortMode = i; page = 0; reload() }
+                        if (i != sortMode()) {
+                            applyPreset(i)
+                            page = 0
+                            reload()
+                        }
                     }
+                    HIT_FILTER -> openSheet()
                     HIT_SEARCH -> {
                         act.searchFresh = true
                         act.go(EinkActivity.SCR_SEARCH)
