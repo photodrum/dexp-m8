@@ -385,6 +385,13 @@ class EinkActivity : Activity() {
         }
     }
 
+    override fun onPause() {
+        // Читалка уходит в фон (кнопка «Домой», выключение экрана): сохраняем место чтения
+        // сейчас, не дожидаясь закрытия экрана — процесс могут убить в фоне (R1.4).
+        (current() as? ru.ogrpfsense.dexpm8.reader.ReaderScreen)?.saveNow()
+        super.onPause()
+    }
+
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (!hasFocus) {

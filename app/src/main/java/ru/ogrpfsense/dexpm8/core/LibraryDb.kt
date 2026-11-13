@@ -15,7 +15,8 @@ import ru.ogrpfsense.dexpm8.ui.Trace
  * метаданные (прогресс, статус, даты не трогает), [remove] — убрать пропавшие файлы,
  * [inTransaction] — обернуть весь проход одной транзакцией (иначе fsync на каждую книгу).
  * Для экранов (3.7): [list] страницами, [count], [find], [lastOpened], [setProgress],
- * [markOpened]. Все методы — на любом потоке; чтение не ждёт запись (WAL).
+ * [markOpened], [setPlace] — место чтения и прогресс (R1.4).
+ * Все методы — на любом потоке; чтение не ждёт запись (WAL).
  *
  * Сортировка: `title_sort` и `author_sort` — ключи [sortKey] (нижний регистр, ё как е),
  * так как `ORDER BY` в SQLite сравнивает байты и кириллицу с заглавными не упорядочит.
@@ -38,7 +39,10 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         val coverId: String?,
     )
 
-    /** Строка таблицы. [progress] 0..100, [status] — `STATUS_*`, [added]/[opened] — мс, 0 — не открывалась. */
+    /**
+     * Строка таблицы. [progress] 0..100, [status] — `STATUS_*`, [added]/[opened] — мс, 0 — не открывалась.
+     * [pos] — место чтения (позиция движка, версия 8): xpointer для CREngine; null — не читали.
+     */
     class Entry(
         val id: Long,
         val path: String,
@@ -55,6 +59,7 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         val status: Int,
         val added: Long,
         val opened: Long,
+        val pos: String? = null,
     )
 
     class Stamp(val size: Long, val mtime: Long)
@@ -83,7 +88,8 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
                 "progress INTEGER NOT NULL DEFAULT 0," +
                 "status INTEGER NOT NULL DEFAULT 0," +
                 "added INTEGER NOT NULL," +
-                "opened INTEGER NOT NULL DEFAULT 0)"
+                "opened INTEGER NOT NULL DEFAULT 0," +
+                "pos TEXT)"
         )
         db.execSQL("CREATE INDEX books_title ON books (title_sort)")
         db.execSQL("CREATE INDEX books_author ON books (author_sort, title_sort)")
@@ -157,6 +163,9 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         }
         if (oldVersion < 6) createCatalogs(db)
         if (oldVersion < 7) nSealed = sealCatalogPasswords(db)
+        // Версия 8: место чтения (R1.4). Пустая колонка = «начинать с начала»;
+        // прогресс у уже читанных книг остаётся, экран откроет первую страницу.
+        if (oldVersion < 8) db.execSQL("ALTER TABLE books ADD COLUMN pos TEXT")
     }
 
     /**
@@ -684,6 +693,23 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         writableDatabase.update("books", cv, "_id = ?", arrayOf(id.toString()))
     }
 
+    /**
+     * Место чтения (R1.4): позиция движка [pos] и прогресс [pct] 0..100 одним `UPDATE`.
+     * [pos] null — позицию взять не удалось, тогда сохраняется только прогресс (старая позиция
+     * остаётся: она лучше, чем «с начала»). Статус — как у [setProgress].
+     *
+     * Пишется и при выходе из книги, и раз в несколько страниц: если книгу выключить
+     * на середине, место не потеряется.
+     */
+    fun setPlace(id: Long, pos: String?, pct: Int) {
+        val p = pct.coerceIn(0, 100)
+        val cv = ContentValues(3)
+        if (!pos.isNullOrEmpty()) cv.put("pos", pos)
+        cv.put("progress", p)
+        cv.put("status", if (p >= 100) STATUS_READ else if (p > 0) STATUS_READING else STATUS_NEW)
+        writableDatabase.update("books", cv, "_id = ?", arrayOf(id.toString()))
+    }
+
     private fun entry(c: Cursor) = Entry(
         id = c.getLong(0), path = c.getString(1), size = c.getLong(2), mtime = c.getLong(3),
         format = c.getString(4), title = c.getString(5),
@@ -693,15 +719,17 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         lang = if (c.isNull(9)) null else c.getString(9),
         coverId = if (c.isNull(10)) null else c.getString(10),
         progress = c.getInt(11), status = c.getInt(12), added = c.getLong(13), opened = c.getLong(14),
+        pos = if (c.isNull(15)) null else c.getString(15),
     )
 
     companion object {
         const val NAME = "library.db"
         /**
+         * Версия 8 (R1.4): место чтения — колонка `pos` (позиция движка, xpointer).
          * Версия 7: пароль каталога в базе шифруется ключом из `AndroidKeyStore`
          * ([Pass], п. 10.12). Старые открытые пароли перешифровываются при обновлении.
          */
-        const val VERSION = 7
+        const val VERSION = 8
 
         /** Автоматические полки: `_id` отрицательные, в таблице `shelves` их нет. */
         const val SHELF_READING = -1L
@@ -734,7 +762,7 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         val FORMAT_LABELS = arrayOf("FB2", "EPUB", "DjVu", "MOBI", "TXT")
 
         private const val COLUMNS = "_id, path, size, mtime, format, title, author, series, " +
-            "series_num, lang, cover_id, progress, status, added, opened"
+            "series_num, lang, cover_id, progress, status, added, opened, pos"
 
         /** Ключ сортировки: нижний регистр, «ё» как «е», без пробелов по краям. */
         fun sortKey(s: String): String =

@@ -262,7 +262,14 @@ class HomeScreen(act: EinkActivity) : Screen(act) {
       return
   }
                 // Нечего продолжать — кнопка ведёт в библиотеку.
-                act.go(if (h.id == EinkActivity.SCR_READER && book == null) EinkActivity.SCR_LIBRARY else h.id)
+                if (h.id == EinkActivity.SCR_READER && book == null) {
+                    act.go(EinkActivity.SCR_LIBRARY)
+                    return
+                }
+                // В читалку с главного: книгу задаём здесь. Иначе экран возьмёт `bookId`
+                // от прошлого захода в B12 и откроет не ту книгу (R1.4).
+                if (h.id == EinkActivity.SCR_READER) act.bookId = book!!.id
+                act.go(h.id)
                 return
             }
         }

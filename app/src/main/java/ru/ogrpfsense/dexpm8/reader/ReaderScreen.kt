@@ -41,6 +41,11 @@ import java.nio.ByteBuffer
  * Состояние страниц (`cur`, `pages`, буферы) меняется только в `Engine.worker` — движок
  * не потокобезопасен. UI-поток читает готовые поля в [render]; [show] и [key] с UI-потока
  * только ставят задачу в очередь движка.
+ *
+ * Место чтения (R1.4): в базе лежит позиция движка (xpointer, колонка `pos`), а не номер
+ * страницы — она переживает смену кегля и повторную разметку. При открытии [Engine.gotoPos]
+ * ставит движок на сохранённую строку; при листании, уходе в фон и закрытии экрана позиция
+ * пишется обратно вместе с прогрессом ([LibraryDb.setPlace]).
  */
 class ReaderScreen(act: EinkActivity) : Screen(act) {
 
@@ -53,6 +58,8 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
 
     // --- Данные книги (меняются в worker)
     private var title = ""
+    /** Строка базы открытой книги: из неё берётся место чтения и в неё оно пишется. */
+    @Volatile private var entry: LibraryDb.Entry? = null
     @Volatile private var pages = 0
     @Volatile private var cur = 0
 
@@ -152,8 +159,12 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
     override fun onDetachedFromWindow() {
         attached = false
         gen++                 // результат уже идущей отрисовки выбрасываем
-        // Документ закрываем: он держит DOM и разметку (PSS). Место чтения сохранит R1.4.
-        Engine.worker.execute { Engine.close() }
+        // Очередь движка: сначала сохранить место чтения (позиция берётся у движка),
+        // потом закрыть документ — он держит DOM и разметку (PSS).
+        Engine.worker.execute {
+            savePlace()
+            Engine.close()
+        }
         super.onDetachedFromWindow()
     }
 
@@ -162,17 +173,18 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         val dbg = ProbeScreen.debugPath
         ProbeScreen.debugPath = null
         if (dbg != null) {
-            title = dbg.substringAfterLast('/')
             open(ru.ogrpfsense.dexpm8.core.LibraryDb.Entry(
                 id = -1L, path = dbg, size = 0L, mtime = 0L,
                 format = dbg.substringAfterLast('.', "?").lowercase(java.util.Locale.ROOT),
-                title = title, author = null, series = null, seriesNum = 0, lang = null,
+                title = dbg.substringAfterLast('/'), author = null, series = null, seriesNum = 0, lang = null,
                 coverId = null, progress = 0, status = 0, added = 0L, opened = 0L,
             ))
             return
         }
         val e = try {
-            act.db.get(act.bookId) ?: act.db.lastOpened()
+            // Книга задана явно (B12, B1, отладка) — берём её; не нашли строку — ошибка, а не
+            // «последняя прочитанная»: иначе откроется не та книга (R1.4).
+            if (act.bookId > 0) act.db.get(act.bookId) else act.db.lastOpened()
         } catch (t: Throwable) {
             Trace.step("b3: db FAIL ${t.javaClass.simpleName}: ${t.message}")
             null
@@ -180,6 +192,13 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         if (e == null) {
             fail(Engine.EOPEN, "Книга не найдена")
             return
+        }
+        // Книга открыта сейчас: B1 «Сейчас читаю» берёт последнюю по `opened`. Пишем здесь,
+        // а не на кнопке «Читать» — вход в читалку есть и с главного экрана.
+        try {
+            act.db.markOpened(e.id)
+        } catch (t: Throwable) {
+            Trace.step("b3: markOpened FAIL ${t.javaClass.simpleName}: ${t.message}")
         }
         title = e.title
         open(e)
@@ -189,6 +208,11 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         val w = D.px(TW)
         val h = D.px(TH)
         if (w <= 0 || h <= 0) return
+        // Экран один на всё приложение и живёт в кэше: при новой книге старые поля
+        // (номер страницы, буферы, глава) не должны попасть в кадр до первой отрисовки.
+        reset()
+        title = e.title
+        entry = e
         pw = w
         ph = h
         bmpA = Engine.newPageBitmap(w, h)
@@ -205,14 +229,60 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
             }
             pages = Engine.pageCount()
             toc = Engine.toc()
+            // Место чтения — позицией движка, а не номером страницы (READER_SPEC, раздел 4).
+            // Не нашлась (книга переверстана, файл заменён) — начинаем с начала.
+            val saved = Engine.gotoPos(e.pos)
+            cur = if (saved in 0 until pages) saved else 0
             val ms = SystemClock.uptimeMillis() - t0
-            Trace.step("b3: open ok ${ms}ms pages=$pages toc=${toc.size}")
+            Trace.step("b3: open ok ${ms}ms pages=$pages toc=${toc.size} " +
+                "pos=${if (e.pos.isNullOrEmpty()) "нет" else "есть -> $saved"}")
             post {
                 if (!attached || my != gen) return@post
                 chapter(cur)
                 show(cur, 0)
             }
         }
+    }
+
+    /** Забыть прошлую книгу: номер страницы, глава, готовые буферы и открытый диалог. */
+    private fun reset() {
+        title = ""
+        pages = 0
+        cur = 0
+        chapterTitle = ""
+        chapterEnd = -1
+        shownB = false
+        nextPage = -1
+        shownPage = -1
+        flips = 0
+        toc = emptyList()
+        dialogOpen = false
+    }
+
+    /**
+     * Сохранить место чтения: позиция текущей страницы и прогресс. Только в `Engine.worker` —
+     * берёт `cur` и сам движок. Книга без строки в базе (отладочный `--es probe`) не пишется.
+     */
+    private fun savePlace() {
+        val e = entry ?: return
+        if (e.id <= 0 || pages <= 0) return
+        val pos = Engine.pos(cur)
+        val pct = (cur + 1).toLong().times(100).div(pages).toInt().coerceIn(0, 100)
+        try {
+            act.db.setPlace(e.id, pos, pct)
+            Trace.step("b3: save page=${cur + 1}/$pages $pct% pos=${if (pos == null) "нет" else "ok"}")
+        } catch (t: Throwable) {
+            Trace.step("b3: save FAIL ${t.javaClass.simpleName}: ${t.message}")
+        }
+    }
+
+    /**
+     * Сохранить место сейчас же — вызов с UI-потока (уход приложения в фон, [EinkActivity.onPause]).
+     * Задача ставится в очередь движка: `Engine.pos` требует его потока.
+     */
+    fun saveNow() {
+        if (!attached) return
+        Engine.worker.execute { savePlace() }
     }
 
     /** Ошибка открытия: диалог B45 поверх пустой страницы. */
@@ -256,6 +326,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
             cur = page
             chapter(page)
             flips++
+            if (flips % SAVE_EVERY == 0) savePlace()
             val full = flips % FULL_EVERY == 0
             post {
                 if (!attached) return@post
@@ -283,6 +354,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         cur = page
         chapter(page)
         flips++
+        if (flips % SAVE_EVERY == 0) savePlace()
         val full = flips % FULL_EVERY == 0
         Trace.step("b3: page $page ${ms}ms")
         post {
@@ -410,6 +482,12 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
 
         /** Полная перерисовка каждые N страниц (READER_SPEC, раздел 6; в B37 пока нет). */
         private const val FULL_EVERY = 6
+
+        /**
+         * Место чтения в базу каждые N перевёрнутых страниц: если книгу выключить на середине,
+         * позиция всё равно останется (выход из читалки сохраняет её отдельно).
+         */
+        private const val SAVE_EVERY = 10
 
         private const val KEY_PAGEUP = android.view.KeyEvent.KEYCODE_PAGE_UP
         private const val KEY_PAGEDOWN = android.view.KeyEvent.KEYCODE_PAGE_DOWN
