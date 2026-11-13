@@ -111,7 +111,9 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
             // Лист B48 поверх панели: y 1385 в B21, здесь то же — панель 516.4…1652.6.
             ink.convex(c, -3f, SHEET_Y, 1409f, 520f, 66f)
             kb.draw(c)
-        } else {
+        } else if (rows.isNotEmpty()) {
+            // Пустой список (в том числе «ничего не найдено») — пагинации нет: в B44 её нет,
+            // а «1 / 0» листать нечего.
             paging(c)
         }
     }
@@ -537,15 +539,15 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
             }
             return
         }
-        // Пагинация внизу.
-        if (inRect(x, y, 41.1f, 1708.3f, 121.6f, 127.1f)) {
+        // Пагинация внизу (на пустом списке её нет — как и в разметке).
+        if (rows.isNotEmpty() && inRect(x, y, 41.1f, 1708.3f, 121.6f, 127.1f)) {
             if (page > 0) {
                 page--
                 redraw()
             }
             return
         }
-        if (inRect(x, y, 1240.4f, 1708.3f, 121.6f, 127.1f)) {
+        if (rows.isNotEmpty() && inRect(x, y, 1240.4f, 1708.3f, 121.6f, 127.1f)) {
             val f = feed
             if (page < pages() - 1) {
                 page++
