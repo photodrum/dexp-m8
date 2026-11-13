@@ -77,6 +77,9 @@ COLOR_ALIAS = {
     "search~fapjtl.json": "searchDark",
     # wifi~vtqgbs (G1, «Сеть» включена на B5) — та же форма, что wifi~1qmu6za (G4, B13).
     "wifi~vtqgbs.json": "wifiDark",
+    # next~g4mq3l (G15, B02) — белая стрелка на тёмной клавише пагинации; `next` (G6)
+    # на ней сливается с поверхностью (замечание 16). Размер тот же, 43.9×43.9.
+    "next~g4mq3l.json": "nextLight",
 }
 NUM_RE = re.compile(r"-?\d+(?:\.\d+)?")
 
@@ -124,8 +127,9 @@ SKIP_DIM = {
     "check~1lsr44q.json",
     "download~gcxxg8.json",
     "next~1mi8kyq.json",
-    "next~g4mq3l.json",
     "search~1ow5j29.json",
+    # НЕ копия «под листом»: next~g4mq3l — белая (G15) стрелка на тёмной клавише B02,
+    # подключена как `nextLight` через COLOR_ALIAS (замечание 16).
 }
 
 HEADER = '''package ru.ogrpfsense.dexpm8.ui

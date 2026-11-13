@@ -443,12 +443,13 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
         ink.convex(c, 41.1f, 1708.3f, 121.6f, 127.1f, R_ROUND_PAGE)
         ink.convexDark(c, 1240.4f, 1708.3f, 121.6f, 127.1f, R_ROUND_PAGE)
         if (viewMode == 1) {
-            // B11: back 75,1743.2 54.8×57.1; next 1275.1,1743 53×53.
+            // B11: back 75,1743.2 54.8×57.1; next 1275.1,1743 53×53 — стрелка белая (G15):
+            // на тёмной клавише G6-стрелка сливалась с поверхностью G3 (замечание 16).
             icons.draw(c, "back", 75f, 1743.2f, 54.8f, 57.1f)
-            icons.draw(c, "next", 1275.1f, 1743f, 53f, 53f)
+            icons.draw(c, "next@53x53", 1275.1f, 1743f, 53f, 53f)
         } else {
             icons.draw(c, "back", 79.5f, 1747.6f, 45.7f, 47.6f)
-            icons.draw(c, "next", 1279.7f, 1747.6f, 43.9f, 43.9f)
+            icons.draw(c, "nextLight", 1279.7f, 1747.6f, 43.9f, 43.9f)
         }
         ink.textCenter(c, "${page + 1} / ${totalPages()}", 0f, W,
             T.base(1745.3f, T.TS_PAGE, 1.2f), T.TS_PAGE, 600, T.G1)

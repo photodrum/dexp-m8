@@ -151,7 +151,7 @@ class DownloadsScreen(act: EinkActivity) : Screen(act) {
         ink.textCenter(c, "${page + 1} / ${pages()}", 0f, W, T.base(1738.3f, T.TS_PAGE, 1.25f),
             T.TS_PAGE, 600, T.G1)
         ink.convexDark(c, 1240.4f, 1708.3f, 121.6f, 127.1f, T.R_BUTTON)
-        icons.draw(c, "next", 1275.1f, 1743f, 53f, 53f)
+        icons.draw(c, "next@53x53", 1275.1f, 1743f, 53f, 53f)
     }
 
     private fun pages(): Int = (items.size + PER_PAGE - 1) / PER_PAGE
