@@ -183,6 +183,52 @@ object Engine {
         }
     }
 
+    /**
+     * Лежит ли позиция [pos] на странице, где сейчас стоит движок: 1 — да, 0 — нет,
+     * `< 0` — нет документа или позиция не нашлась. Только в [worker].
+     *
+     * Этим проверяется приёмка «та же фраза» после смены кегля. Сравнивать первые
+     * символы страницы нельзя: страница начинается раньше середины абзаца, откуда
+     * обычно снята позиция (разбор — DEVLOG, R1.2).
+     */
+    fun posOnPage(pos: String?): Int {
+        if (!open || pos.isNullOrEmpty()) return -1
+        return try {
+            posOnPageNative(pos)
+        } catch (t: Throwable) {
+            -1
+        }
+    }
+
+    /**
+     * Оглавление книги плоско, в порядке текста (B10 «Оглавление», R3 — здесь только
+     * данные). Пустой список — в книге нет оглавления или документ не открыт.
+     * Копия строится один раз на разметку: после [setFont] номера страниц пересчитываются.
+     * Только в [worker].
+     */
+    fun toc(): List<TocItem> {
+        if (!open) return emptyList()
+        return try {
+            val n = tocCountNative()
+            if (n <= 0) return emptyList()
+            ArrayList<TocItem>(n).apply {
+                for (i in 0 until n) {
+                    val title = tocStringNative(i, 0)
+                    if (title == null) continue
+                    add(TocItem(
+                        title = title,
+                        level = tocLevelNative(i),
+                        page = tocPageNative(i),
+                        pos = tocStringNative(i, 1),
+                    ))
+                }
+            }
+        } catch (t: Throwable) {
+            Trace.step("reader: toc FAIL ${t.javaClass.simpleName}: ${t.message}")
+            emptyList()
+        }
+    }
+
     /** Текст кода ошибки по-русски — для трассы и экранов B45/B58. */
     fun codeText(rc: Int): String = when (rc) {
         OK -> "ok"
@@ -210,4 +256,9 @@ object Engine {
     @JvmStatic private external fun pageOfNative(pos: String): Int
     @JvmStatic private external fun gotoPosNative(pos: String): Int
     @JvmStatic private external fun pageTextNative(): String?
+    @JvmStatic private external fun tocCountNative(): Int
+    @JvmStatic private external fun tocLevelNative(index: Int): Int
+    @JvmStatic private external fun tocPageNative(index: Int): Int
+    @JvmStatic private external fun tocStringNative(index: Int, which: Int): String?
+    @JvmStatic private external fun posOnPageNative(pos: String): Int
 }

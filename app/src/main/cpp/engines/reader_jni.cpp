@@ -82,6 +82,11 @@ DEXP_PROBE_API int dexp_reader_pos(int page, char *out, int outLen);
 DEXP_PROBE_API int dexp_reader_goto_pos(const char *pos);
 DEXP_PROBE_API int dexp_reader_page_of(const char *pos);
 DEXP_PROBE_API int dexp_reader_page_text(char *out, int outLen);
+DEXP_PROBE_API int dexp_reader_toc_count();
+DEXP_PROBE_API int dexp_reader_toc_level(int index);
+DEXP_PROBE_API int dexp_reader_toc_page(int index);
+DEXP_PROBE_API int dexp_reader_toc_string(int index, int which, char *out, int outLen);
+DEXP_PROBE_API int dexp_reader_pos_on_page(const char *pos);
 
 JNIEXPORT jint JNICALL
 Java_ru_ogrpfsense_dexpm8_reader_Engine_openNative(JNIEnv *env, jclass cls,
@@ -213,6 +218,60 @@ Java_ru_ogrpfsense_dexpm8_reader_Engine_pageTextNative(JNIEnv *env, jclass cls)
     /* `NewStringUTF` ждёт Modified UTF-8, а текст книги — обычный UTF-8: любой
        суррогат или 4-байтный символ роняет процесс. Переводим посимвольно. */
     return utf8ToJString(env, buf, rc);
+}
+
+JNIEXPORT jint JNICALL
+Java_ru_ogrpfsense_dexpm8_reader_Engine_tocCountNative(JNIEnv *env, jclass cls)
+{
+    (void)env;
+    (void)cls;
+    return dexp_reader_toc_count();
+}
+
+JNIEXPORT jint JNICALL
+Java_ru_ogrpfsense_dexpm8_reader_Engine_tocLevelNative(JNIEnv *env, jclass cls, jint index)
+{
+    (void)env;
+    (void)cls;
+    return dexp_reader_toc_level(index);
+}
+
+JNIEXPORT jint JNICALL
+Java_ru_ogrpfsense_dexpm8_reader_Engine_tocPageNative(JNIEnv *env, jclass cls, jint index)
+{
+    (void)env;
+    (void)cls;
+    return dexp_reader_toc_page(index);
+}
+
+/**
+ * Заголовок или позиция пункта. Буфер 256 байт: заголовок главы в книге длиннее
+ * не встречается, а обрезка идёт по границе символа UTF-8.
+ */
+JNIEXPORT jstring JNICALL
+Java_ru_ogrpfsense_dexpm8_reader_Engine_tocStringNative(JNIEnv *env, jclass cls,
+        jint index, jint which)
+{
+    (void)cls;
+    char buf[256];
+    int rc = dexp_reader_toc_string(index, which, buf, (int)sizeof(buf));
+    if (rc < 0)
+        return NULL;
+    return utf8ToJString(env, buf, rc);
+}
+
+JNIEXPORT jint JNICALL
+Java_ru_ogrpfsense_dexpm8_reader_Engine_posOnPageNative(JNIEnv *env, jclass cls, jstring pos)
+{
+    (void)cls;
+    if (!pos)
+        return -1;
+    const char *p = env->GetStringUTFChars(pos, NULL);
+    if (!p)
+        return -1;
+    int r = dexp_reader_pos_on_page(p);
+    env->ReleaseStringUTFChars(pos, p);
+    return r;
 }
 
 } // extern "C"

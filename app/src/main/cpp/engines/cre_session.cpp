@@ -17,6 +17,8 @@
 #include <string.h>
 #include <time.h>
 
+#include <vector>
+
 #include "crengine.h"
 #include "cre_fonts.h"
 #include "cre_gray.h"
@@ -41,6 +43,27 @@ LVDocView *g_view = NULL;
 bool g_fontsOk = false;
 bool g_cacheOk = false;
 int g_pages = 0;
+
+/**
+ * Пункт оглавления в том виде, в каком его отдаёт JNI: уже строкой UTF-8.
+ * Копия делается один раз на разметку — `LVTocItem` живёт в DOM и меняется
+ * при перевёрстке, а номера страниц после `setFont` пересчитываются.
+ */
+struct TocEntry {
+    int level;
+    int page;
+    lString8 title;
+    lString8 pos;
+};
+
+std::vector<TocEntry> g_toc;
+bool g_tocValid = false;
+
+void drop_toc()
+{
+    g_toc.clear();
+    g_tocValid = false;
+}
 
 long now_ms()
 {
@@ -80,6 +103,46 @@ void drop_document()
         g_view = NULL;
     }
     g_pages = 0;
+    drop_toc();
+}
+
+/**
+ * Обойти дерево оглавления и сложить пункты плоско, в порядке документа.
+ * Уровень берём у движка (`getLevel`, корень — 0), корневой пункт не выводим:
+ * у него нет ни заголовка, ни страницы.
+ */
+void collect_toc(LVTocItem *item)
+{
+    for (int i = 0; i < item->getChildCount(); i++) {
+        LVTocItem *child = item->getChild(i);
+        if (child->getLevel() > 0) {
+            TocEntry e;
+            e.level = child->getLevel();
+            e.page = child->getPage();
+            e.title = UnicodeToUtf8(child->getName());
+            e.pos = UnicodeToUtf8(child->getPath());
+            g_toc.push_back(e);
+        }
+        collect_toc(child);
+    }
+}
+
+/**
+ * Перестроить копию оглавления. `getToc` при загрузке из кэша сам пересчитает
+ * номера страниц, если разметка с тех пор менялась (вертикальный scroll, кегль).
+ */
+void build_toc()
+{
+    drop_toc();
+    if (!g_view)
+        return;
+    LVTocItem *root = g_view->getToc();
+    if (!root)
+        return;
+    g_toc.reserve(256);
+    collect_toc(root);
+    g_tocValid = true;
+    DEXP_LOG("reader: toc %d items", (int)g_toc.size());
 }
 
 } // namespace
@@ -176,10 +239,12 @@ DEXP_PROBE_API int dexp_reader_set_font(int size, const char *keepPos)
     g_view->setFontSize(size);
     g_view->checkRender();
     g_pages = g_view->getPageCount();
+    drop_toc();   // номера страниц пунктов посчитает build_toc на новой разметке
     /* Позицию ищем строкой ПОСЛЕ перевёрстки: xpointer, созданный на старом DOM,
        после новой разметки указывает в другое место (проверено на книге 2026-11-13 —
-       место чтения уезжало с 50 % на 61 %). FB2 при этом держит фразу, а EPUB с
-       `DocFragment` — нет: разбор см. в DEVLOG (R1.1, «грабли 3»). */
+       место чтения уезжало с 50 % на 61 %). Условие приёмки — «та же фраза на
+       странице», а не её первый символ: страница начинается раньше позиции
+       (R1.2, замер на EPUB 2026-11-13: фраза y=618338 внутри страницы 618272..619856). */
     if (keepPos && keepPos[0]) {
         ldomXPointer pos = g_view->getDocument()->createXPointer(Utf8ToUnicode(keepPos));
         if (!pos.isNull()) {
@@ -275,6 +340,97 @@ DEXP_PROBE_API int dexp_reader_page_text(char *out, int outLen)
     memcpy(out, s.c_str(), (size_t)n);
     out[n] = 0;
     return n;
+}
+
+/**
+ * Число пунктов оглавления; `< 0` — документ не открыт. Первый вызов после открытия
+ * или смены кегля строит копию (`build_toc`), дальше отдаётся готовая.
+ */
+DEXP_PROBE_API int dexp_reader_toc_count()
+{
+    if (!g_view)
+        return DEXP_READER_ENOSESSION;
+    if (!g_tocValid)
+        build_toc();
+    return (int)g_toc.size();
+}
+
+/** Уровень пункта [index] (1 — верхний); `< 0` — нет такого пункта. */
+DEXP_PROBE_API int dexp_reader_toc_level(int index)
+{
+    if (!g_view)
+        return DEXP_READER_ENOSESSION;
+    if (!g_tocValid)
+        build_toc();
+    if (index < 0 || index >= (int)g_toc.size())
+        return DEXP_PROBE_EARG;
+    return g_toc[(size_t)index].level;
+}
+
+/** Номер страницы пункта [index] (0-based); `-1` — движок её не нашёл. */
+DEXP_PROBE_API int dexp_reader_toc_page(int index)
+{
+    if (!g_view)
+        return DEXP_READER_ENOSESSION;
+    if (!g_tocValid)
+        build_toc();
+    if (index < 0 || index >= (int)g_toc.size())
+        return DEXP_PROBE_EARG;
+    return g_toc[(size_t)index].page;
+}
+
+/**
+ * Строка пункта [index] в [out]: `which` 0 — заголовок, 1 — позиция (xpointer).
+ * Длина строки или код < 0.
+ */
+DEXP_PROBE_API int dexp_reader_toc_string(int index, int which, char *out, int outLen)
+{
+    if (!g_view)
+        return DEXP_READER_ENOSESSION;
+    if (!out || outLen <= 1)
+        return DEXP_PROBE_EARG;
+    if (!g_tocValid)
+        build_toc();
+    if (index < 0 || index >= (int)g_toc.size())
+        return DEXP_PROBE_EARG;
+    const lString8 &s = which == 0 ? g_toc[(size_t)index].title : g_toc[(size_t)index].pos;
+    int n = (int)s.length();
+    if (n + 1 > outLen) {
+        n = outLen - 1;
+        /* Не разрывать символ UTF-8 — см. `dexp_reader_page_text`. */
+        while (n > 0 && ((unsigned char)s[n] & 0xC0) == 0x80)
+            n--;
+    }
+    memcpy(out, s.c_str(), (size_t)n);
+    out[n] = 0;
+    return n;
+}
+
+/**
+ * Лежит ли позиция [pos] на странице, на которой сейчас стоит движок. 1 — да,
+ * 0 — нет, `< 0` — нет документа или позиция не нашлась.
+ *
+ * Зачем: критерий приёмки — «та же фраза на странице», а не «страница начинается
+ * с фразы». Страница почти всегда начинается раньше середины абзаца, поэтому
+ * сравнение первого символа даёт ложное «место уехало» (разбор — DEVLOG, R1.2).
+ */
+DEXP_PROBE_API int dexp_reader_pos_on_page(const char *pos)
+{
+    if (!g_view)
+        return DEXP_READER_ENOSESSION;
+    if (!pos || !pos[0])
+        return DEXP_PROBE_EARG;
+    ldomXPointer ptr = g_view->getDocument()->createXPointer(Utf8ToUnicode(pos));
+    if (ptr.isNull())
+        return DEXP_READER_EPOS;
+    int page = g_view->getCurPage();
+    if (page < 0 || page >= g_pages)
+        return DEXP_PROBE_EPAGE;
+    int y = ptr.toPoint().y;
+    int start = g_view->getPageStartY(page);
+    int h = g_view->getPageHeight(page);
+    DEXP_LOG("reader: posOnPage page %d y=%d pageY=%d..%d", page, y, start, start + h);
+    return (y >= start && y < start + h) ? 1 : 0;
 }
 
 } // extern "C"
