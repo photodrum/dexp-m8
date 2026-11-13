@@ -6,6 +6,7 @@ import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import java.util.Locale
+import ru.ogrpfsense.dexpm8.ui.Trace
 
 /**
  * База библиотеки: одна таблица `books`, `SQLiteOpenHelper` без Room.
@@ -155,6 +156,77 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
             db.execSQL("DELETE FROM books WHERE format IN ('pdf', 'cbz')")
         }
         if (oldVersion < 6) createCatalogs(db)
+        if (oldVersion < 7) nSealed = sealCatalogPasswords(db)
+    }
+
+    /**
+     * Открыть базу и, если при этом шло обновление до версии 7, убрать из файла следы
+     * открытых паролей ([scrub]). Чтение схемы и есть открытие: `SQLiteOpenHelper`
+     * вызывает `onUpgrade` лениво, при первом обращении к `getWritableDatabase`, поэтому
+     * уборка не может произойти раньше — только здесь.
+     */
+    fun open() {
+        val db = writableDatabase
+        if (nSealed > 0) {
+            nSealed = 0
+            // Один раз за жизнь базы: после обновления схемы.
+            Trace.step("db v7: открыта, версия ${db.version}")
+            scrub()
+        }
+    }
+
+    /** Сколько паролей перешифровано при обновлении до v7: по нему [scrub] решает, нужен ли VACUUM. */
+    private var nSealed = 0
+
+    /**
+     * Версия 7 (п. 10.12): пароли каталогов, лежавшие открытым текстом, — в шифртекст
+     * ([Pass]). Работает внутри транзакции `onUpgrade`, поэтому ни `VACUUM`, ни `checkpoint`
+     * здесь нельзя (`cannot VACUUM from within a transaction`) — уборку делает [scrub]
+     * после открытия базы.
+     *
+     * Ошибки глушим: не собрался ключ — база должна открыться, пароль человек введёт заново.
+     */
+    private fun sealCatalogPasswords(db: SQLiteDatabase): Int {
+        val rows = ArrayList<Pair<Long, String>>(4)
+        try {
+            db.rawQuery("SELECT _id, pass FROM catalogs WHERE pass <> ''", null).use { c ->
+                while (c.moveToNext()) rows.add(c.getLong(0) to c.getString(1))
+            }
+            return Pass.migrate({ rows }) { id, sealed ->
+                val cv = ContentValues(1)
+                cv.put("pass", sealed)
+                db.update("catalogs", cv, "_id = ?", arrayOf(id.toString()))
+            }
+        } catch (t: Throwable) {
+            Trace.step("db v7: перешифрование FAIL: ${t.javaClass.simpleName}: ${t.message}")
+            return 0
+        }
+    }
+
+    /**
+     * Убрать следы старых значений из файла базы после перешифрования паролей (п. 10.12).
+     *
+     * Зачем: `UPDATE` не стирает прежнее значение — оно остаётся в освободившемся месте
+     * страницы, и открытый пароль по-прежнему находится `grep`'ом по `library.db`.
+     * `VACUUM` пересобирает файл заново, старые страницы не переносятся. Затем `checkpoint`
+     * переносит содержимое `-wal` в основной файл и усекает журнал: в нём тоже лежат копии
+     * старых страниц.
+     *
+     * Вызывается один раз — сразу после обновления схемы, вне транзакции. Сбой не мешает
+     * работе (пароль всё равно уже зашифрован), поэтому только в трассу.
+     */
+    private fun scrub() {
+        try {
+            writableDatabase.execSQL("VACUUM")
+        } catch (t: Throwable) {
+            Trace.step("db v7: VACUUM FAIL: ${t.javaClass.simpleName}: ${t.message}")
+        }
+        try {
+            writableDatabase.rawQuery("PRAGMA wal_checkpoint(TRUNCATE)", null).use { it.moveToFirst() }
+        } catch (t: Throwable) {
+            Trace.step("db v7: checkpoint FAIL: ${t.javaClass.simpleName}: ${t.message}")
+        }
+        Trace.step("db v7: уборка после перешифрования готова")
     }
 
     /** `adb install -d` ставит старый APK поверх нового: схему не трогаем, а не падаем. */
@@ -163,7 +235,7 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
 
     // ------------------------------------------------------- сетевые каталоги
 
-    /** Каталог B14: адрес, название, вход и когда открывали. */
+    /** Каталог B14: адрес, название, вход и когда открывали. [pass] — уже расшифрованный. */
     class Catalog(
         val id: Long,
         val url: String,
@@ -189,10 +261,7 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         readableDatabase.rawQuery(
             "SELECT _id, url, title, user, pass, added, seen FROM catalogs " +
                 "ORDER BY seen DESC, title COLLATE NOCASE", null).use { c ->
-            while (c.moveToNext()) {
-                out.add(Catalog(c.getLong(0), c.getString(1), c.getString(2),
-                    c.getString(3), c.getString(4), c.getLong(5), c.getLong(6)))
-            }
+            while (c.moveToNext()) out.add(row(c))
         }
         return out
     }
@@ -200,10 +269,12 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
     fun catalog(id: Long): Catalog? =
         readableDatabase.rawQuery(
             "SELECT _id, url, title, user, pass, added, seen FROM catalogs WHERE _id = ?",
-            arrayOf(id.toString())).use { c ->
-            if (c.moveToNext()) Catalog(c.getLong(0), c.getString(1), c.getString(2),
-                c.getString(3), c.getString(4), c.getLong(5), c.getLong(6)) else null
-        }
+            arrayOf(id.toString())).use { c -> if (c.moveToNext()) row(c) else null }
+
+    /** Строка `catalogs` → [Catalog]. Пароль в базе — шифртекст ([Pass]), наружу отдаём открытый. */
+    private fun row(c: Cursor) = Catalog(
+        c.getLong(0), c.getString(1), c.getString(2), c.getString(3),
+        Pass.open(c.getString(4)), c.getLong(5), c.getLong(6))
 
     /** Каталог уже есть с таким адресом (адрес уникален). */
     fun catalogExists(url: String): Boolean =
@@ -220,7 +291,7 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         cv.put("url", u)
         cv.put("title", title.trim())
         cv.put("user", user)
-        cv.put("pass", pass)
+        cv.put("pass", Pass.seal(pass))
         cv.put("added", System.currentTimeMillis())
         return writableDatabase.insert("catalogs", null, cv)
     }
@@ -239,7 +310,7 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
 
     fun catalogAuth(id: Long, user: String, pass: String) {
         writableDatabase.execSQL("UPDATE catalogs SET user = ?, pass = ? WHERE _id = ?",
-            arrayOf(user, pass, id.toString()))
+            arrayOf(user, Pass.seal(pass), id.toString()))
     }
 
     fun deleteCatalog(id: Long) {
@@ -626,8 +697,11 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
 
     companion object {
         const val NAME = "library.db"
-        /** Версия 6: сетевые каталоги (п. 10, таблица `catalogs`). */
-        const val VERSION = 6
+        /**
+         * Версия 7: пароль каталога в базе шифруется ключом из `AndroidKeyStore`
+         * ([Pass], п. 10.12). Старые открытые пароли перешифровываются при обновлении.
+         */
+        const val VERSION = 7
 
         /** Автоматические полки: `_id` отрицательные, в таблице `shelves` их нет. */
         const val SHELF_READING = -1L

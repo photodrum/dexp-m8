@@ -134,6 +134,25 @@ BookLore → абсолютный шаблон, выбор `<Url kind="acquisiti
 снятие лишних подстановок (`{startIndex?}`, `{language}`), шаблон Calibre. Успех — строки `OK…`
 и `=== ВСЁ ОК`; `FAIL` в выводе — падение разбора.
 
+## Проверка шифрования пароля каталога
+
+Пароль OPDS в базе — шифртекст (`core/Pass.kt`, `v1:` + Base64). Проверяется только на книге:
+`AndroidKeyStore` на JVM нет. После установки APK и одного запуска:
+
+```bash
+adb shell 'run-as ru.ogrpfsense.dexpm8 sqlite3 databases/library.db \
+  "pragma user_version; select substr(pass,1,16) from catalogs"'
+# ожидается: 7   и   v1:BUt/ZJpRRCRbPrY
+
+adb shell 'run-as ru.ogrpfsense.dexpm8 sh -c \
+  "grep -c <старый-пароль> databases/library.db databases/library.db-wal"'
+# ожидается: 0 в обоих файлах — иначе уборка (VACUUM) не прошла
+```
+
+В трассе (`files/DexpM8-trace.txt`) должны быть строки «pass: перешифровано N паролей каталогов»,
+«db v7: открыта, версия 7» и «db v7: уборка после перешифрования готова». Вход в каталог после
+обновления должен работать без повторного ввода пароля — это и есть проверка, что ключ прочитан.
+
 ## Установка на книгу
 
 ```bash
@@ -249,6 +268,7 @@ GIT_ASKPASS=$PWD/tools/git-askpass.sh GIT_TERMINAL_PROMPT=0 \
 | `tools/typecheck.sh` / `tools/build.sh`: `OutOfMemoryError` в psi2ir или на `ShelfScreen.kt` | **решено 2026-11-13:** оба скрипта сами ставят `JAVA_OPTS=-Xmx1600m` (если переменная не задана); нужен только `JAVA_HOME` и PATH JDK. Раньше требовалось передавать вручную |
 | `tools/typecheck.sh` без JDK в PATH: пишет «классов собрано: 0» и **выходит с кодом 0** | `kotlinc` не нашёл `java` и умер молча — без ошибки в логе. Всегда `export JAVA_HOME=$HOME/.local/jdk PATH=$HOME/.local/jdk/bin:$PATH`; признак успеха — «классов собрано: 135» и выше |
 | JVM-харнесс ядра OPDS: `cannot access 'Companion': it is private in 'Opds'` | `companion object` в `Opds` — `private` (с 10.6); для теста собирать копию без слова `private` и вызывать `searchUrl` через экземпляр (`docs/BUILD.md`, «Проверка разбора OPDS на хосте») |
+| `db v7: VACUUM FAIL: cannot VACUUM from within a transaction` | `VACUUM` нельзя внутри `onUpgrade` (там уже открыта транзакция). Уборка после перешифрования паролей — в `LibraryDb.scrub()`, вызывается из `LibraryDb.open()` после открытия базы, не из `onUpgrade` (10.12) |
 | Gradle, запущенный фоном (`nohup … &`), падает с `Bad file descriptor` / зависает с пустым логом | терминал Cline закрывает stdin фонового процесса: `setsid ./gradlew assembleDebug --offline </dev/null > /tmp/build.log 2>&1 &`, затем читать `/tmp/build.log` |
 | `assembleDebug` пишет `UP-TO-DATE`, а APK старый в глазах «ничего не собралось» | APK мог быть собран раньше той же сессией: сверить `stat -c '%y %n'` у `app-debug.apk` и правленого `.kt` — APK должен быть новее |
 | `gradle` / `gradlew` «не найден» | Gradle в PATH не стоит: `~/.local/gradle-8.7/bin/gradle` (или `export PATH=$HOME/.local/gradle-8.7/bin:$PATH`); `gradlew` работает, но тянет дистрибутив в `~/.gradle` |

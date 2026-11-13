@@ -85,7 +85,7 @@ class EinkActivity : Activity() {
         private set
 
     /** База библиотеки — одна на приложение; экраны берут её отсюда. */
-    val db: LibraryDb by lazy { LibraryDb(this) }
+    val db: LibraryDb by lazy { LibraryDb(this).also { it.open() } }
 
     /** Книга для экрана B12 «О книге» (`_id`); ставится перед `go(SCR_BOOK)`. */
     var bookId = -1L
