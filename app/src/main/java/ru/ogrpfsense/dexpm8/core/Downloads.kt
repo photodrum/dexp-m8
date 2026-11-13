@@ -24,6 +24,8 @@ class Downloads(private val ctx: Context, private val db: LibraryDb) {
         var total: Long,
         var state: Int,
         var why: String?,
+        /** Вход каталога: защищённые серверы (BookLore, Calibre) без него отдают 401. */
+        val auth: Opds.Auth? = null,
     ) {
         val pct: Int get() = if (total > 0) ((done * 100) / total).toInt().coerceIn(0, 100) else 0
     }
@@ -58,10 +60,10 @@ class Downloads(private val ctx: Context, private val db: LibraryDb) {
      * Поставить книгу в очередь. Адрес файла и его имя передаёт экран каталога — сам
      * [Downloads] не разбирает OPDS. Повтор того же адреса игнорируется.
      */
-    fun add(url: String, title: String, format: String) {
+    fun add(url: String, title: String, format: String, auth: Opds.Auth? = null) {
         synchronized(lock) {
             if (list.any { it.url == url && (it.state == S_WAIT || it.state == S_RUN) }) return
-            list.add(Item(url, title, format, 0, 0, S_WAIT, null))
+            list.add(Item(url, title, format, 0, 0, S_WAIT, null, auth))
             gen++
         }
         start()
@@ -119,7 +121,7 @@ class Downloads(private val ctx: Context, private val db: LibraryDb) {
 
     private fun run(item: Item) {
         val link = Opds.Link(item.url, "http://opds-spec.org/acquisition", mimeOf(item.format), item.title)
-        val f = opds.download(link, dir, null, item.title) { done, total ->
+        val f = opds.download(link, dir, item.auth, item.title) { done, total ->
             synchronized(lock) {
                 item.done = done
                 if (total > 0) item.total = total
@@ -149,7 +151,7 @@ class Downloads(private val ctx: Context, private val db: LibraryDb) {
     }
 
     private fun mimeOf(format: String): String = when (format.uppercase()) {
-        "FB2" -> "application/fb2+zip"
+        "FB2" -> "application/x-fictionbook+xml"
         "EPUB" -> "application/epub+zip"
         "MOBI" -> "application/x-mobipocket-ebook"
         "TXT" -> "text/plain"

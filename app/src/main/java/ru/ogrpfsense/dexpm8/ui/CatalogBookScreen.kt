@@ -31,6 +31,24 @@ class CatalogBookScreen(act: EinkActivity) : Screen(act) {
     private var entry: Opds.Entry? = null
     private val lit = T.literata(ink.res, 600)
     private var formats = ArrayList<Opds.Link>()
+
+    /** Вход каталога: без него защищённый сервер отдаёт 401 на скачивание. */
+    private var auth: Opds.Auth? = null
+
+    /** Номер изменения очереди загрузок: кнопка перерисовывается, когда он другой. */
+    private var seenGen = downloads.generation()
+
+    /** Опрос очереди: после «Скачать» кнопка должна вернуться в исходный вид, а не висеть. */
+    private val tick = object : Runnable {
+        override fun run() {
+            if (!isAttachedToWindow) return
+            if (seenGen != downloads.generation()) {
+                seenGen = downloads.generation()
+                redraw()
+            }
+            if (downloads.running()) postDelayed(this, TICK_MS)
+        }
+    }
     private var sel = 0
 
     override fun render(c: Canvas) {
@@ -116,11 +134,16 @@ class CatalogBookScreen(act: EinkActivity) : Screen(act) {
     private fun button(c: Canvas) {
         val l = formats.getOrNull(sel)
         val fmt = if (l == null) "книгу" else (mime(l.type) ?: "файл")
-        val done = l != null && downloads.items().any {
-            it.url == l.href && (it.state == Downloads.S_DONE || it.state == Downloads.S_RUN || it.state == Downloads.S_WAIT)
-        }
+        // Три разных исхода: файл уже в библиотеке, качается/в очереди, можно качать.
+        val st = if (l == null) -1 else downloads.items()
+            .firstOrNull { it.url == l.href }?.state ?: -1
         ink.convexDark(c, 41.1f, 904f, 1320.8f, 141.7f, T.R_BUTTON)
-        val label = if (done) "Уже скачивается" else "Скачать $fmt"
+        val label = when (st) {
+            Downloads.S_DONE -> "В библиотеке"
+            Downloads.S_RUN, Downloads.S_WAIT -> "Уже скачивается"
+            Downloads.S_FAIL -> "Повторить $fmt"
+            else -> "Скачать $fmt"
+        }
         ink.text(c, label, 95.1f, T.base(944.9f, T.TS_ACTION, 1.25f), T.TS_ACTION, 700, T.G15)
         icons.draw(c, "download@43.9x43.9", 1265.1f, 949f, 43.9f, 43.9f)
     }
@@ -130,8 +153,9 @@ class CatalogBookScreen(act: EinkActivity) : Screen(act) {
         ink.convex(c, 41.1f, 1094.1f, 1320.8f, 638.9f, T.R_TILE)
         ink.text(c, "ОПИСАНИЕ", 95.1f, T.base(1137f, T.TS_BODY_S, 1.25f), T.TS_BODY_S, 800, T.G5)
         val text = if (e.summary.isEmpty()) "Описания в каталоге нет." else e.summary
-        ink.paragraph(c, text, 95.1f, 1191f, 1213.9f, 40f, 400, T.G1, 8f, lit)
-        val genres = e.categories.joinToString(" · ")
+        // Пять строк по ~56: от 1191 до «ЖАНР» на 1483 — больше в карточку не влезает.
+        ink.paragraph(c, text, 95.1f, 1191f, 1213.9f, 40f, 400, T.G1, 8f, lit, DESC_LINES)
+        val genres = e.categories.map { genreName(it) }.filter { it.isNotEmpty() }.joinToString(" · ")
         if (genres.isNotEmpty()) {
             ink.text(c, "ЖАНР", 95.1f, T.base(1483f, T.TS_BODY_S, 1.25f), T.TS_BODY_S, 800, T.G5)
             ink.text(c, ink.ellipsize(genres, 1213.9f, T.TS_LABEL, 600), 95.1f,
@@ -152,7 +176,7 @@ class CatalogBookScreen(act: EinkActivity) : Screen(act) {
     private fun mime(type: String): String? {
         val t = type.lowercase()
         return when {
-            t.contains("fb2") -> "FB2"
+            t.contains("fb2") || t.contains("fictionbook") -> "FB2"
             t.contains("epub") -> "EPUB"
             t.contains("mobipocket") -> "MOBI"
             t.contains("text/plain") -> "TXT"
@@ -187,11 +211,44 @@ class CatalogBookScreen(act: EinkActivity) : Screen(act) {
         return if (i == 4 && u.take(4).toIntOrNull() != null) u.take(4) else "—"
     }
 
+    /**
+     * Код жанра BookLore → подпись. Сервер отдаёт латинские коды (`foreign_prose`,
+     * `literature_20`), а читателю нужен жанр словами; незнакомый код оставляем как есть
+     * без подчёркиваний — это всё равно понятнее пустоты.
+     */
+    private fun genreName(code: String): String = when (code) {
+        "foreign_prose" -> "Зарубежная проза"
+        "prose_classic" -> "Классика"
+        "prose_rus_classic" -> "Русская классика"
+        "foreign_love" -> "Зарубежный любовный роман"
+        "love_history" -> "Исторический любовный роман"
+        "love_short" -> "Любовный роман, новеллы"
+        "love_contemporary" -> "Современный любовный роман"
+        "sf" -> "Фантастика"
+        "sf_social" -> "Социальная фантастика"
+        "sf_space" -> "Космическая фантастика"
+        "sf_humor" -> "Юмористическая фантастика"
+        "sf_heroic" -> "Героическая фантастика"
+        "sf_fantasy" -> "Фэнтези"
+        "sf_fantasy_city" -> "Городское фэнтези"
+        "child_sf" -> "Детская фантастика"
+        "romance_sf" -> "Любовно-фантастический роман"
+        "det_political" -> "Политический детектив"
+        "popadanec" -> "Попаданцы"
+        else -> when {
+            code.startsWith("literature_") -> "Литература " + code.removePrefix("literature_") + " века"
+            code.startsWith("det_") -> "Детектив"
+            code.startsWith("humor_") -> "Юмор"
+            else -> code.replace('_', ' ')
+        }
+    }
+
     private fun seriesOf(e: Opds.Entry): String = e.categories.firstOrNull { it.contains("серия", true) } ?: "—"
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         status.attach()
+        auth = act.db.catalog(act.catalogId)?.auth()
         entry = act.opdsEntry
         formats = entry?.acquisitions() ?: ArrayList()
         sel = 0
@@ -199,6 +256,7 @@ class CatalogBookScreen(act: EinkActivity) : Screen(act) {
     }
 
     override fun onDetachedFromWindow() {
+        removeCallbacks(tick)
         status.detach()
         super.onDetachedFromWindow()
     }
@@ -234,7 +292,9 @@ class CatalogBookScreen(act: EinkActivity) : Screen(act) {
     private fun download() {
         val e = entry ?: return
         val l = formats.getOrNull(sel) ?: return
-        downloads.add(l.href, e.title, formatLabel(l))
+        downloads.add(l.href, e.title, formatLabel(l), auth)
+        removeCallbacks(tick)
+        postDelayed(tick, TICK_MS)
         redraw()
     }
 
@@ -243,5 +303,8 @@ class CatalogBookScreen(act: EinkActivity) : Screen(act) {
 
     private companion object {
         const val R_BACK = 51.2f
+        const val DESC_LINES = 4
+        /** Опрос очереди загрузок — раз в секунду, как на B16 и B18. */
+        const val TICK_MS = 1000L
     }
 }

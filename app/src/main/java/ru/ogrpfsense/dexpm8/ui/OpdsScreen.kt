@@ -163,7 +163,7 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
             ink.textCenter(c, r.formats, 212.1f, w, T.base(y + 107.2f, 24f, 1.27f), 24f, 800, T.G1)
         }
         val url = r.entry.acquisitions().firstOrNull()?.href
-        when (val st = stateOf(url)) {
+        when (stateOf(url)) {
             Downloads.S_RUN -> progress(c, y, queue.firstOrNull { it.url == url })
             Downloads.S_WAIT -> ink.text(c, "В очереди", 1028.2f,
                 T.base(y + 104f, T.TS_BODY_S, 1.27f), T.TS_BODY_S, 700, T.G4)
@@ -178,6 +178,10 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
                     T.TS_BODY_S, 700, T.G4)
                 downloadButton(c, y)
             }
+            // Файла нет (BookLore отдаёт такие книги: «нет загрузки») — кнопка не рисуется,
+            // иначе она нажимается и молча ничего не делает.
+            NO_FILE -> ink.text(c, "Нет файла", 1006.2f, T.base(y + 104f, T.TS_BODY_S, 1.27f),
+                T.TS_BODY_S, 700, T.G5)
             else -> downloadButton(c, y)
         }
     }
@@ -229,7 +233,7 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
      * только дважды — «Открываем каталог…» и результат. Каталог берём по `act.catalogId`,
      * адрес — из базы; первый фид без названия записывает своё название в базу (B15).
      */
-    private fun load(url: String, clear: Boolean) {
+    private fun load(url: String, clear: Boolean, append: Boolean = false) {
         loading = true
         why = ""
         if (clear) {
@@ -257,9 +261,15 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
             }
             post {
                 feed = f
-                rows = list
+                // append: следующая порция фида дописывается к списку — до края 615 книг
+                // иначе пришлось бы делать по десять тапов на каждые 50 записей сервера.
+                if (append && f != null) {
+                    rows = ArrayList(rows).apply { addAll(list) }
+                } else {
+                    rows = list
+                }
                 title = if (f != null && f.title.isNotEmpty()) f.title else title
-                sub = subtitle(f)
+                sub = subtitle()
                 why = r.why ?: if (f == null) "Сервер не ответил" else ""
                 if (f != null && f.title.isNotEmpty() && catalogId > 0) {
                     db.catalogTitle(catalogId, f.title)
@@ -270,9 +280,10 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
         }, "opds-feed").start()
     }
 
-    private fun subtitle(f: Opds.Feed?): String {
-        if (f == null) return ""
-        val books = f.entries.count { it.acquisitions().isNotEmpty() }
+    /** «Новые · 615 книг»: всего в каталоге, а не на загруженной странице. */
+    private fun subtitle(): String {
+        val f = feed ?: return TABS[tab]
+        val books = rows.count { it.section == null }
         val n = if (f.total > 0) f.total else books
         if (n == 0) return TABS[tab]
         return TABS[tab] + " · " + Words.books(n)
@@ -282,7 +293,7 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
     private fun mimeName(type: String): String? {
         val t = type.lowercase()
         return when {
-            t.contains("fb2") -> "FB2"
+            t.contains("fb2") || t.contains("fictionbook") -> "FB2"
             t.contains("epub") -> "EPUB"
             t.contains("mobipocket") -> "MOBI"
             t.contains("text/plain") -> "TXT"
@@ -293,9 +304,9 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
         }
     }
 
-    /** Состояние строки: очередь загрузок важнее «уже в библиотеке». */
+    /** Состояние строки: очередь загрузок важнее «уже в библиотеке», нет ссылки — [NO_FILE]. */
     private fun stateOf(url: String?): Int {
-        if (url == null) return NONE
+        if (url == null) return NO_FILE
         val it = queue.firstOrNull { it.url == url }
         if (it != null) return it.state
         return NONE
@@ -361,7 +372,9 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
                 page++
                 redraw()
             } else if (f?.next != null) {
-                load(f.next, clear = true)
+                // Дописываем следующую порцию и листаем на неё — список не теряется.
+                page++
+                load(f.next, clear = false, append = true)
             }
             return
         }
@@ -397,7 +410,7 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
         val links = row.entry.acquisitions()
         val l = links.firstOrNull { mimeName(it.type) != null } ?: links.firstOrNull() ?: return
         val fmt = mimeName(l.type) ?: row.formats.substringBefore(' ').ifEmpty { "FB2" }
-        downloads.add(l.href, row.title, fmt)
+        downloads.add(l.href, row.title, fmt, db.catalog(catalogId)?.auth())
         queue = downloads.items()
         removeCallbacks(tick)
         postDelayed(tick, TICK_MS)
@@ -416,6 +429,8 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
         /** Опрос очереди загрузок — раз в секунду, как на B18. */
         const val TICK_MS = 1000L
         const val NONE = -1
+        /** Файла для скачивания нет — у записи нет ссылки получения. */
+        const val NO_FILE = 101
         /** Строка уже есть в библиотеке (по адресу мы этого не знаем) — рисуем как «В библиотеке». */
         const val IN_LIB = 100
         val TABS = arrayOf("Новые", "Авторы", "Серии", "Жанры")

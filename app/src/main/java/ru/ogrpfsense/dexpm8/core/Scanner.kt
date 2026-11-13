@@ -220,8 +220,8 @@ class Scanner(private val ctx: Context, private val db: LibraryDb) {
             val left = base.substring(0, i)
             val right = base.substring(i + 2).trim()
             if (right.isEmpty()) return null
-            val word = left.substringAfterLast(' ')
-            if (word.length <= 2 && word[0].isUpperCase()) {
+            val word = left.substringAfterLast(' ').trim()
+            if (word.length in 1..2 && word[0].isUpperCase()) {
                 val next = right.indexOf(". ")
                 val seg = if (next < 0) null else right.substring(0, next)
                 if (seg != null && seg.count { it == ' ' } <= 1 && ',' !in seg) {
@@ -306,7 +306,20 @@ class Scanner(private val ctx: Context, private val db: LibraryDb) {
             true
         } catch (e: Exception) {
             Log.w(TAG, "не добавлен: ${f.path}", e)
-            false
+            // Разбор имени споткнулся на странном названии — книга всё равно должна попасть
+            // в библиотеку: заносим её с названием из файла, без автора и серии.
+            try {
+                val bare = LibraryDb.Info(
+                    path = f.path, size = size, mtime = f.lastModified(), format = format,
+                    title = f.nameWithoutExtension.trim().ifEmpty { f.name }, author = null,
+                    authorSort = null, series = null, seriesNum = 0, lang = null, coverId = null,
+                )
+                db.upsert(bare)
+                true
+            } catch (e2: Exception) {
+                Log.w(TAG, "не добавлен и без разбора: ${f.path}", e2)
+                false
+            }
         }
     }
 

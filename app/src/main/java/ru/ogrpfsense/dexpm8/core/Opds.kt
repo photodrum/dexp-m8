@@ -340,7 +340,7 @@ class Opds(private val ctx: Context) {
     private fun formatOf(type: String): String? {
         val t = type.substringBefore(';').trim().lowercase(Locale.ROOT)
         return when {
-            t.contains("fb2") -> "FB2"
+            t.contains("fb2") || t.contains("fictionbook") -> "FB2"
             t.contains("epub") -> "EPUB"
             t.contains("mobipocket") -> "MOBI"
             t.contains("text/plain") -> "TXT"
@@ -354,10 +354,10 @@ class Opds(private val ctx: Context) {
 
     /** Имя файла из названия записи и типа ссылки: «Белая гвардия.fb2». */
     private fun safeName(name: String, link: Link): String {
-        val ext = (formatOf(link.type) ?: "bin").lowercase(Locale.ROOT)
+        val ext = (formatOf(link.type) ?: formatOf(link.title) ?: "bin").lowercase(Locale.ROOT)
         val sb = StringBuilder(name.length)
         for (ch in name) sb.append(if (ch in BAD_NAME) ' ' else ch)
-        val clean = sb.toString().trim().take(120).ifEmpty { "book" }
+        val clean = sb.toString().split(' ').filter { it.isNotEmpty() }.joinToString(" ").take(120).ifEmpty { "book" }
         return if (clean.lowercase(Locale.ROOT).endsWith(".$ext")) clean else "$clean.$ext"
     }
 

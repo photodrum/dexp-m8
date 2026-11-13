@@ -178,7 +178,9 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
             url.removePrefix("http://").removePrefix("https://").trimEnd('/')
         }
 
-        fun auth(): Opds.Auth = Opds.Auth(user, pass)
+        /** Вход каталога; `null` — каталог открытый (пустые логин и пароль не шлём). */
+        fun auth(): Opds.Auth? =
+            if (user.isEmpty() && pass.isEmpty()) null else Opds.Auth(user, pass)
     }
 
     /** Каталоги по «последнему открытому» вперёд, затем по имени (B14). */

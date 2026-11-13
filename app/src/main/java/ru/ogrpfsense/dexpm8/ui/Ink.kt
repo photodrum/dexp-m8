@@ -211,6 +211,7 @@ class Ink(ctx: Context) {
         var lineStart = 0
         var lastSpace = -1
         var i = 0
+        var lines = 0
         while (i < s.length) {
             val ch = s[i]
             if (ch == '\n') {
@@ -240,9 +241,13 @@ class Ink(ctx: Context) {
      * Абзац с переносом по словам. Возвращает использованную высоту.
      * Рисует в дизайн-px, [lineGap] добавляется к межстрочному.
      */
+    /**
+     * Абзац с переносом по словам. [maxLines] > 0 — не больше стольких строк, в последней «…»:
+     * описание книги из каталога бывает на несколько экранов, а карточка B17 — фиксированной высоты.
+     */
     fun paragraph(c: Canvas, s: String, x: Float, top: Float, maxW: Float, size: Float,
                   weight: Int, color: Int, lineGap: Float,
-                  font: Typeface = T.manrope(res, weight)): Float {
+                  font: Typeface = T.manrope(res, weight), maxLines: Int = 0): Float {
         text.typeface = font
         text.textSize = size
         text.color = color
@@ -253,18 +258,31 @@ class Ink(ctx: Context) {
         var lineStart = 0
         var lastSpace = -1
         var i = 0
+        var lines = 0
         while (i < s.length) {
             val ch = s[i]
             if (ch == '\n') {
+                if (maxLines > 0 && lines + 1 >= maxLines) {
+                    c.drawText(ellipsize(s.substring(lineStart).trim(), maxW, size, weight, font),
+                        x, y, text)
+                    return y - top + step
+                }
                 c.drawText(s, lineStart, i, x, y, text)
                 y += step
+                lines++
                 lineStart = i + 1
                 lastSpace = -1
             } else if (ch == ' ') {
                 if (text.measureText(s, lineStart, i) > maxW && lastSpace > lineStart) {
                     // Перенос по предыдущему пробелу: текущее слово целиком уходит вниз.
+                    if (maxLines > 0 && lines + 1 >= maxLines) {
+                        c.drawText(ellipsize(s.substring(lineStart).trim(), maxW, size, weight, font),
+                            x, y, text)
+                        return y - top + step
+                    }
                     c.drawText(s, lineStart, lastSpace, x, y, text)
                     y += step
+                    lines++
                     lineStart = lastSpace + 1
                 }
                 lastSpace = i
