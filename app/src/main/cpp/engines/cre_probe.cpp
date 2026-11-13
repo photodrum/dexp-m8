@@ -1,44 +1,21 @@
 // Пробный вход crengine (FB2, EPUB, MOBI, TXT, RTF, DOC…): первая страница в серый буфер. См. probe.h.
-// Шрифты для пробы — системные из /system/fonts (свои шрифты читалки — R1).
+// Шрифты для пробы — системные из /system/fonts; свои шрифты читалки и сеанс — R1
+// (`cre_session.cpp`, `cre_fonts.h`).
 #include <android/log.h>
 #include <dirent.h>
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
 
+#include "cre_fonts.h"
 #include "crengine.h"
 #include "probe.h"
-
-static const char *const FONT_DIR = "/system/fonts";
 
 static long now_ms()
 {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (long)(ts.tv_sec * 1000L + ts.tv_nsec / 1000000L);
-}
-
-static int register_fonts()
-{
-    DIR *d = opendir(FONT_DIR);
-    if (!d)
-        return 0;
-    int n = 0;
-    struct dirent *e;
-    while ((e = readdir(d)) != NULL) {
-        size_t len = strlen(e->d_name);
-        if (len < 5)
-            continue;
-        const char *ext = e->d_name + len - 4;
-        if (strcasecmp(ext, ".ttf") != 0 && strcasecmp(ext, ".otf") != 0)
-            continue;
-        lString8 path(FONT_DIR);
-        path << "/" << e->d_name;
-        if (fontMan->RegisterFont(path))
-            n++;
-    }
-    closedir(d);
-    return n;
 }
 
 extern "C" int dexp_cre_probe(const char *path, int w, int h, unsigned char *gray)
@@ -49,7 +26,7 @@ extern "C" int dexp_cre_probe(const char *path, int w, int h, unsigned char *gra
 
     if (!fontMan) {
         InitFontManager(lString8::empty_str);
-        if (register_fonts() == 0)
+        if (dexp_register_system_fonts() == 0)
             return DEXP_PROBE_ERENDER;
     }
 

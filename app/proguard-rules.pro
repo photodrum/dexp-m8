@@ -8,3 +8,5 @@
 -keep class ru.ogrpfsense.dexpm8.core.NativeBook$Block { *; }
 # JNI к движкам R0 (cpp/engines/probe_jni.c).
 -keep class ru.ogrpfsense.dexpm8.reader.EngineProbe { *; }
+# JNI сеанса читалки R1 (cpp/engines/reader_jni.cpp): имена методов зашиты в C++.
+-keep class ru.ogrpfsense.dexpm8.reader.Engine { *; }

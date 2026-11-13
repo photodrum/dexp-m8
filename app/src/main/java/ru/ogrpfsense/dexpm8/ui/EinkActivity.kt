@@ -152,6 +152,7 @@ class EinkActivity : Activity() {
 
         Trace.init(this)
         Trace.step("onCreate start")
+        ru.ogrpfsense.dexpm8.reader.Engine.init(this)
 
         try {
             D.init(this)
@@ -461,6 +462,14 @@ class EinkActivity : Activity() {
      */
     private fun probeFromIntent(intent: android.content.Intent?) {
         if (!ru.ogrpfsense.dexpm8.BuildConfig.DEBUG) return
+        // R1.1: самопроверка сеанса движка без экрана (`--es reader <путь>`, EngineSelfTest).
+        val book = intent?.getStringExtra("reader")
+        if (book != null && book.isNotEmpty()) {
+            intent.removeExtra("reader")
+            Trace.step("debug: selftest $book")
+            ru.ogrpfsense.dexpm8.reader.EngineSelfTest.run(book)
+            return
+        }
         val p = intent?.getStringExtra("probe")
         if (p == null) {
             if (intent?.getStringExtra("screen") != "wifi") return

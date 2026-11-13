@@ -1,0 +1,280 @@
+/*
+ * Сеанс crengine для читалки (R1, `docs/READER_SPEC.md` раздел 4).
+ *
+ * Один открытый документ на процесс: `LVDocView` не потокобезопасен, все вызовы идут
+ * из одного фонового потока (Kotlin — `Engine.worker`). Вид живёт между вызовами:
+ * страницы, шрифты и разметка не пересчитываются.
+ *
+ * Чего не было в пробе R0 (`cre_probe.cpp`):
+ *  - вид держится между вызовами;
+ *  - страница рисуется в буфер вызывающего, без аллокаций на кадр;
+ *  - позиция — xpointer, а не номер страницы: переживает смену кегля;
+ *  - ошибка возвращается кодом, процесс не падает (READER_SPEC, раздел 4).
+ *
+ * Коды ошибок — общие `DEXP_PROBE_*` из probe.h плюс свои `DEXP_READER_*`.
+ */
+#include <android/log.h>
+#include <string.h>
+#include <time.h>
+
+#include "crengine.h"
+#include "cre_fonts.h"
+#include "cre_gray.h"
+#include "probe.h"
+
+#define DEXP_LOG(...) __android_log_print(ANDROID_LOG_INFO, "DexpM8", __VA_ARGS__)
+
+/* Свои коды сеанса (общие `DEXP_PROBE_*` из probe.h не повторяются). */
+enum {
+    DEXP_READER_ENOSESSION = -10,  /* документ не открыт */
+    DEXP_READER_EPOS = -11,        /* позиция не нашлась в тексте */
+    DEXP_READER_EFONT = -12        /* шрифтов нет — рисовать нечем */
+};
+
+namespace {
+
+/* Кэш разметки: 24 МБ при 16 ГБ flash — хватает на 2–3 книги. */
+const lvsize_t CACHE_MAX_BYTES = 24 * 1024 * 1024;
+
+/** Единственный вид на процесс; между книгами тот же самый. */
+LVDocView *g_view = NULL;
+bool g_fontsOk = false;
+bool g_cacheOk = false;
+int g_pages = 0;
+
+long now_ms()
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (long)(ts.tv_sec * 1000L + ts.tv_nsec / 1000000L);
+}
+
+/**
+ * Подготовить движок: менеджер шрифтов (раз на процесс) и кэш разметки.
+ * Каталог кэша передаёт Kotlin: путь `/data/data/<пакет>` знает только он.
+ */
+bool prepare(const char *cacheDir)
+{
+    if (!fontMan) {
+        InitFontManager(lString8::empty_str);
+        g_fontsOk = dexp_register_system_fonts() > 0;
+        DEXP_LOG("reader: fontMan %s", g_fontsOk ? "ok" : "empty");
+    }
+    if (!g_fontsOk)
+        return false;
+    if (!g_cacheOk && cacheDir && cacheDir[0]) {
+        g_cacheOk = ldomDocCache::init(Utf8ToUnicode(cacheDir), CACHE_MAX_BYTES);
+        DEXP_LOG("reader: cache %s (%s)", g_cacheOk ? "ok" : "off", cacheDir);
+    }
+    return true;
+}
+
+/**
+ * Закрыть документ. Вид удаляется целиком: деструктор `LVDocView` освобождает DOM и разметку.
+ * Пустой `LVStreamRef` в `LoadDocument` не годится — там `stream->GetSize()` без проверки.
+ */
+void drop_document()
+{
+    if (g_view) {
+        delete g_view;
+        g_view = NULL;
+    }
+    g_pages = 0;
+}
+
+} // namespace
+
+extern "C" {
+
+/** Загрузить [path] и сверстать под окно [w]×[h]. 0 — ок, иначе код ошибки. */
+DEXP_PROBE_API int dexp_reader_open(const char *path, const char *cacheDir, int w, int h)
+{
+    if (!path || w <= 0 || h <= 0)
+        return DEXP_PROBE_EARG;
+    drop_document();
+    if (!prepare(cacheDir))
+        return DEXP_READER_EFONT;
+
+    long t0 = now_ms();
+    g_view = new LVDocView(8, false);
+    g_view->setViewMode(DVM_PAGES, 1);
+    g_view->setPageHeaderInfo(PGHDR_NONE);   // колонтитулы рисует оболочка (B3)
+    g_view->setDefaultFontFace(lString8("Noto Serif"));
+    g_view->Resize(w, h);
+    long t1 = now_ms();
+
+    if (!g_view->LoadDocument(path)) {
+        DEXP_LOG("reader: open FAIL %s", path);
+        drop_document();
+        return DEXP_PROBE_EOPEN;
+    }
+    long t2 = now_ms();
+    g_view->checkRender();
+    long t3 = now_ms();
+    g_pages = g_view->getPageCount();
+    if (g_pages <= 0) {
+        DEXP_LOG("reader: no pages %s", path);
+        drop_document();
+        return DEXP_PROBE_EPAGE;
+    }
+    DEXP_LOG("reader: open ok %dx%d pages=%d setup=%ld load=%ld layout=%ld",
+             w, h, g_pages, t1 - t0, t2 - t1, t3 - t2);
+    return DEXP_PROBE_OK;
+}
+
+/** Закрыть документ; менеджер шрифтов и кэш остаются. */
+DEXP_PROBE_API int dexp_reader_close()
+{
+    drop_document();
+    return DEXP_PROBE_OK;
+}
+
+DEXP_PROBE_API int dexp_reader_page_count()
+{
+    return g_view ? g_pages : DEXP_READER_ENOSESSION;
+}
+
+/** Номер страницы, на которой стоит движок сейчас (0-based); < 0 — нет документа. */
+DEXP_PROBE_API int dexp_reader_cur_page()
+{
+    if (!g_view)
+        return DEXP_READER_ENOSESSION;
+    return g_view->getCurPage();
+}
+
+/** Отрисовать страницу [page] в [gray] (8 бит, stride = w). 0 — ок. */
+DEXP_PROBE_API int dexp_reader_page(int page, int w, int h, unsigned char *gray)
+{
+    if (!g_view)
+        return DEXP_READER_ENOSESSION;
+    if (!gray || w <= 0 || h <= 0)
+        return DEXP_PROBE_EARG;
+    if (page < 0 || page >= g_pages)
+        return DEXP_PROBE_EPAGE;
+    long t0 = now_ms();
+    g_view->goToPage(page);
+    LVGrayDrawBuf buf(w, h, 8, gray);
+    g_view->Draw(buf, false);
+    long ms = now_ms() - t0;
+    if (ms > 100)
+        DEXP_LOG("reader: page %d draw=%ldms", page, ms);
+    return DEXP_PROBE_OK;
+}
+
+/**
+ * Сменить кегль (дизайн-px макета) и сверстать заново. 0 — ок.
+ * [keepPos] — xpointer строки, на которой стояли: кегль меняет число страниц,
+ * место чтения держится позицией в тексте, а не номером страницы (READER_SPEC, раздел 4).
+ */
+DEXP_PROBE_API int dexp_reader_set_font(int size, const char *keepPos)
+{
+    if (!g_view)
+        return DEXP_READER_ENOSESSION;
+    if (size <= 0)
+        return DEXP_PROBE_EARG;
+    long t0 = now_ms();
+    g_view->setFontSize(size);
+    g_view->checkRender();
+    g_pages = g_view->getPageCount();
+    /* Позицию ищем строкой ПОСЛЕ перевёрстки: xpointer, созданный на старом DOM,
+       после новой разметки указывает в другое место (проверено на книге 2026-11-13 —
+       место чтения уезжало с 50 % на 61 %). FB2 при этом держит фразу, а EPUB с
+       `DocFragment` — нет: разбор см. в DEVLOG (R1.1, «грабли 3»). */
+    if (keepPos && keepPos[0]) {
+        ldomXPointer pos = g_view->getDocument()->createXPointer(Utf8ToUnicode(keepPos));
+        if (!pos.isNull()) {
+            g_view->goToBookmark(pos);
+            g_view->checkRender();
+            DEXP_LOG("reader: font %d keepPos -> page %d", size, g_view->getCurPage());
+        }
+    }
+    DEXP_LOG("reader: font %d pages=%d %ldms", size, g_pages, now_ms() - t0);
+    return g_pages > 0 ? DEXP_PROBE_OK : DEXP_PROBE_EPAGE;
+}
+
+/**
+ * Встать на позицию [pos] (xpointer) — так читалка восстанавливает место чтения.
+ * Возвращает номер страницы (0-based) или `< 0`, если позиция не нашлась.
+ */
+DEXP_PROBE_API int dexp_reader_goto_pos(const char *pos)
+{
+    if (!g_view)
+        return DEXP_READER_ENOSESSION;
+    if (!pos || !pos[0])
+        return DEXP_PROBE_EARG;
+    ldomXPointer ptr = g_view->getDocument()->createXPointer(Utf8ToUnicode(pos));
+    if (ptr.isNull())
+        return DEXP_READER_EPOS;
+    g_view->goToBookmark(ptr);
+    g_view->checkRender();
+    int page = g_view->getCurPage();
+    DEXP_LOG("reader: goto pos -> page %d", page);
+    return page;
+}
+
+/** Позиция страницы [page] строкой xpointer в [out]. Длина строки или код < 0. */
+DEXP_PROBE_API int dexp_reader_pos(int page, char *out, int outLen)
+{
+    if (!g_view)
+        return DEXP_READER_ENOSESSION;
+    if (!out || outLen <= 1)
+        return DEXP_PROBE_EARG;
+    if (page < 0 || page >= g_pages)
+        return DEXP_PROBE_EPAGE;
+    ldomXPointer ptr = g_view->getPageBookmark(page, true);
+    if (ptr.isNull())
+        return DEXP_READER_EPOS;
+    lString8 s = UnicodeToUtf8(ptr.toString());
+    int n = (int)s.length();
+    if (n + 1 > outLen) {
+        n = outLen - 1;
+        /* Не разрывать символ UTF-8 — см. `dexp_reader_page_text`. */
+        while (n > 0 && ((unsigned char)s[n] & 0xC0) == 0x80)
+            n--;
+    }
+    memcpy(out, s.c_str(), (size_t)n);
+    out[n] = 0;
+    return n;
+}
+
+/** Страница по xpointer [pos]; -1 — не нашлась. */
+DEXP_PROBE_API int dexp_reader_page_of(const char *pos)
+{
+    if (!g_view)
+        return DEXP_READER_ENOSESSION;
+    if (!pos || !pos[0])
+        return DEXP_PROBE_EARG;
+    ldomXPointer ptr = g_view->getDocument()->createXPointer(Utf8ToUnicode(pos));
+    if (ptr.isNull())
+        return -1;
+    int page = g_view->getBookmarkPage(ptr);
+    if (page < 0 || page >= g_pages)
+        return -1;
+    return page;
+}
+
+/**
+ * Первые байты текста текущей (последней отрисованной) страницы в [out] — для проверки,
+ * что место чтения не уехало при смене кегля. Длина или код < 0.
+ */
+DEXP_PROBE_API int dexp_reader_page_text(char *out, int outLen)
+{
+    if (!g_view)
+        return DEXP_READER_ENOSESSION;
+    if (!out || outLen <= 1)
+        return DEXP_PROBE_EARG;
+    lString8 s = UnicodeToUtf8(g_view->getPageText(false, -1));
+    int n = (int)s.length();
+    if (n + 1 > outLen) {
+        n = outLen - 1;
+        /* Не разрывать символ UTF-8: обрыв посреди символа даёт невалидную строку,
+           а `NewStringUTF` на ней абортит процесс (падеж на EPUB 2026-11-13). */
+        while (n > 0 && ((unsigned char)s[n] & 0xC0) == 0x80)
+            n--;
+    }
+    memcpy(out, s.c_str(), (size_t)n);
+    out[n] = 0;
+    return n;
+}
+
+} // extern "C"

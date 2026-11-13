@@ -116,11 +116,15 @@ app/src/main/java/ru/ogrpfsense/dexpm8/
         AdminReceiver  device admin (сон по кнопке B5)
         PowerService   служба спецвозможностей: меню питания («Выключение» B5), включается через adb
         NativeBook     JNI-мост к C-ядру, грузится лениво
-  reader/ EngineProbe, ProbeScreen   R0 (7.2): JNI к движкам и временный отладочный экран на SCR_READER
+  reader/ Engine, EngineSelfTest   R1: сеанс crengine (открытие, страницы, кегль, позиции xpointer);
+                                     EngineSelfTest — временная проверка без экрана (`--es reader`), уйдёт в R1.3
+        EngineProbe, ProbeScreen   R0 (7.2): JNI к движкам и временный отладочный экран на SCR_READER
 app/src/main/cpp/
   core/book.c,.h       потоковый разбор FB2
   jni_bridge.c         JNI
-  engines/             движки R0: *.cmake, *_probe.*, probe_jni.c (JNI, 16 уровней, ALPHA_8)
+  engines/             движки R0: *.cmake, *_probe.*, probe_jni.c (JNI, 16 уровней, ALPHA_8);
+                       R1: cre_session.cpp (сеанс), reader_jni.cpp (JNI → Engine),
+                       cre_fonts.h (шрифты), cre_gray.h (16 уровней серого)
   test/                хостовые тесты (gcc + ASan), без NDK
 ```
 

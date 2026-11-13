@@ -171,8 +171,12 @@ target_compile_definitions(cre_core PRIVATE ${CRE_DEFS})
 target_compile_features(cre_core PRIVATE cxx_std_17)
 target_compile_options(cre_core PRIVATE ${CRE_LIB_OPTS} -fvisibility-inlines-hidden -fexceptions)
 
-# --- итоговая .so: пробный вход + JNI (шаг 7.2) ---
-add_library(dexp_cre SHARED engines/cre_probe.cpp engines/probe_jni.c)
+# --- итоговая .so: пробный вход + JNI (шаг 7.2), сеанс читалки и его JNI (R1) ---
+add_library(dexp_cre SHARED
+        engines/cre_probe.cpp
+        engines/cre_session.cpp
+        engines/probe_jni.c
+        engines/reader_jni.cpp)
 target_include_directories(dexp_cre PRIVATE ${CRE_INC} engines)
 target_compile_definitions(dexp_cre PRIVATE ${CRE_DEFS} DEXP_ENGINE=cre)
 target_compile_features(dexp_cre PRIVATE cxx_std_17)
