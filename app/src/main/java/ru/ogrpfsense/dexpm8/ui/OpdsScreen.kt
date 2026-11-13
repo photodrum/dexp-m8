@@ -28,9 +28,14 @@ import ru.ogrpfsense.dexpm8.core.Downloads
  * Состояния строки берутся из макета: «Скачивается» с дорожкой (10 делений), «В очереди»,
  * «В библиотеке» со значком check, обычная кнопка загрузки.
  *
- * Отступление от макета: разделы «Авторы/Серии/Жанры» в OPDS нет как сегментов — это
- * навигационные записи фида, поэтому сегменты переключают адрес фида, если каталог отдал
- * ссылки срезов ([Opds.Link] с `rel="facet"` или навигацию в корне). Иначе остаётся «Новые».
+ * Срезы (10.11, B64–B69). Сегмент «Авторы/Серии/Жанры» открывает фид-список среза: адрес
+ * берётся из корневого фида ([Opds.findSlice]) — BookLore объявляет `/authors` и `/series`
+ * ссылками `rel="subsection"` и записями-навигациями. Список среза — B64/B66/B68 (круг с
+ * инициалами у авторов, `list` у серий, `library` у жанров, шаг 184, шесть строк,
+ * разделитель 237,y+147.5 1076×2). Выбор строки — фид книг среза (B65/B67/B69): те же строки,
+ * что в B16, шапка — имя среза, подзаголовок «Авторы · 12 книг». «Назад» в шапке там
+ * возвращает к списку среза (фид держится в памяти), а не в B14. Среза каталог не отдал
+ * (у BookLore жанров нет) — карточка B44 «Нет раздела», а не пустой список.
  *
  * Поиск (10.9). На B16 поле поиска нарисовано, но поведения у него нет: клавиатура — B48
  * листом с y 1385, как в B21, запрос — по тёмной клавише «Найти» (каждая буква была бы
@@ -67,6 +72,21 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
     private var catalogId = -1L
     private var title = ""
     private var sub = ""
+    /**
+     * Срез каталога (10.11, B64–B69): [tab] 0 — обычный фид (B16), 1/2/3 — «Авторы/Серии/Жанры»
+     * (значения совпадают с [Opds.Slice]). [inSlice] — открыты книги среза (B65/B67/B69),
+     * [sliceFeed] — его список в памяти: «Назад» возвращает к нему без запроса к серверу.
+     */
+    private var sliceFeed: Opds.Feed? = null
+    /** Строки списка среза на момент ухода в книги: возврат по «Назад» — без запроса к серверу. */
+    private var sliceRows = ArrayList<Row>()
+    private var sliceTitle = ""
+    private var slicePage = 0
+    private var inSlice = false
+    /** Каталог не отдал этот срез (у BookLore нет жанров) — карточка «Нет раздела». */
+    private var noSlice = false
+    /** Название каталога из базы: шапка B16 и B64 — оно, а не название фида. */
+    private var catTitle = ""
     /** Поле поиска (10.9): введённое и открыта ли клавиатура B48. */
     private var query = ""
     private var kbOpen = false
@@ -122,7 +142,9 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
         header(c)
         search(c)
         tabs(c)
-        ink.convex(c, 41.1f, 516.4f, 1320.8f, 1136.2f, T.R_TILE)
+        // Панель списка среза короче (B64/B66/B68: 1099.1 вместо 1136.2) — по шести строкам.
+        if (sliceList) ink.convex(c, 41.1f, 516.4f, 1320.8f, 1099.1f, T.R_TILE)
+        else ink.convex(c, 41.1f, 516.4f, 1320.8f, 1136.2f, T.R_TILE)
         // B57 сам называет причину: под диалогом карточку «Не удалось открыть» не рисуем,
         // иначе «Нет подключения» стоит дважды (макет B57 показывает под диалогом книги из кэша).
         if (loading) busy(c) else if (rows.isEmpty() && !offline) empty(c) else list(c)
@@ -140,10 +162,21 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
         if (offline) noNet.draw(c)
     }
 
+    /**
+     * Открыт список среза (B64/B66/B68), а не книги: шесть строк, шаг 184. Результаты поиска
+     * рисуются как книги B16, даже если поиск начат из среза (сервер ищет по всему каталогу).
+     */
+    private val sliceList: Boolean get() = tab != 0 && !inSlice && searchFor.isEmpty()
+
+    /**
+     * Шапка. B16 и B64/B66/B68 называют каталог (из базы), B65/B67/B69 — сам срез
+     * («Михаил Булгаков», «Мир Полудня», «Фантастика»); подзаголовок — [sub].
+     */
     private fun header(c: Canvas) {
         ink.convex(c, 41.1f, 112.9f, 106.9f, 112.4f, R_BACK)
         icons.draw(c, "back", 71.3f, 143f, 47.5f, 49.5f)
-        ink.text(c, ink.ellipsize(title.ifEmpty { "Каталог" }, 900f, T.TS_TITLE, 700), 175.5f,
+        val head = if (inSlice) title.ifEmpty { catTitle } else catTitle.ifEmpty { title }
+        ink.text(c, ink.ellipsize(head.ifEmpty { "Каталог" }, 900f, T.TS_TITLE, 700), 175.5f,
             T.base(105f, T.TS_TITLE, 1.2f), T.TS_TITLE, 700, T.G1)
         ink.text(c, ink.ellipsize(sub, 900f, T.TS_BODY_S, 600), 175.5f,
             T.base(181f, T.TS_BODY_S, 1.25f), T.TS_BODY_S, 600, T.G4)
@@ -185,6 +218,14 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
             val idx = from + i
             if (idx >= rows.size) break
             val r = rows[idx]
+            if (sliceList) {
+                // B64/B66/B68: строки 548, 732, 916, 1100, 1284, 1468 (шаг 184),
+                // разделитель 237,y+147.5 1076×2.
+                val y = SLICE_Y0 + i * SLICE_STEP
+                sectionRow(c, r, y)
+                if (idx < rows.size - 1) ink.rect(c, 237f, y + 147.5f, 1076f, 2f, T.G11)
+                continue
+            }
             val y = ROW_Y0 + i * ROW_STEP
             if (r.section != null) sectionRow(c, r, y) else bookRow(c, r, y)
             if (idx < rows.size - 1) ink.rect(c, 212.1f, y + 186.4f, 1104.2f, 1.8f, T.G11)
@@ -193,21 +234,43 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
 
     /**
      * Строк на экране: пять по макету B16, четыре — пока открыта клавиатура B48 (лист с 1385,
-     * пятая строка 1400…1588 уходит под него; в B21 по той же причине строки кончаются на 1375).
+     * пятая строка 1400…1588 уходит под него; в B21 по той же причине строки кончаются на 1375),
+     * шесть — в списке среза (B64/B66/B68: 548…1468).
      */
-    private fun perPage(): Int = if (kbOpen) PER_PAGE_KB else PER_PAGE
+    private fun perPage(): Int = when {
+        // Список среза при открытой клавиатуре: 548, 732, 916, 1100 — 1100+149.5 = 1249.5,
+        // а пятая строка 1284…1433.5 уходит под лист B48 (верх 1385).
+        sliceList && kbOpen -> PER_PAGE_SLICE_KB
+        sliceList -> PER_PAGE_SLICE
+        kbOpen -> PER_PAGE_KB
+        else -> PER_PAGE
+    }
 
     /**
-     * Раздел каталога (автор, серия, жанр) — строка B64/B66/B68: круг 88,y 115×120
-     * с инициалами, имя 42/700 в 237,y, «N книг» 32/600 G4 в 237,y+62.5, «next» 1302,y+47.
+     * Раздел каталога (автор, серия, жанр) — строка B64/B66/B68: круг 88,y 115×120,
+     * у авторов инициалы 36/700, у серий `list@38.4x40` в 126.8,y+39.1, у жанров
+     * `library@38.4x40` там же; имя 42/700 в 237,y, описание 32/600 G4 в 237,y+62.5,
+     * «next» 1302,y+47.
      */
     private fun sectionRow(c: Canvas, r: Row, y: Float) {
         ink.convex(c, 88f, y + 4.1f, 115f, 120f, 55f)
-        ink.textCenter(c, initials(r.title), 88f, 115f, T.base(y + 44.1f, T.TS_LABEL, 1.25f),
-            T.TS_LABEL, 700, T.G1)
+        val icon = when (tab) {
+            Opds.Slice.SERIES -> "list@38.4x40"
+            Opds.Slice.GENRES -> "library@38.4x40"
+            else -> null
+        }
+        if (icon != null) {
+            icons.draw(c, icon, 126.8f, y + 39.1f, 38.4f, 40f)
+        } else {
+            ink.textCenter(c, initials(r.title), 88f, 115f, T.base(y + 44.1f, T.TS_LABEL, 1.25f),
+                T.TS_LABEL, 700, T.G1)
+        }
         ink.text(c, ink.ellipsize(r.title, 900f, T.TS_ACTION, 700), 237f,
             T.base(y + 10f, T.TS_ACTION, 1.25f), T.TS_ACTION, 700, T.G1)
-        ink.text(c, r.formats, 237f, T.base(y + 62.5f, T.TS_BODY_S, 1.25f), T.TS_BODY_S, 600, T.G4)
+        if (r.formats.isNotEmpty()) {
+            ink.text(c, ink.ellipsize(r.formats, 1040f, T.TS_BODY_S, 600), 237f,
+                T.base(y + 62.5f, T.TS_BODY_S, 1.25f), T.TS_BODY_S, 600, T.G4)
+        }
         icons.draw(c, "next@11x23.8", 1302f, y + 47f, 11f, 23.8f)
     }
 
@@ -275,17 +338,24 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
     private fun empty(c: Canvas) {
         // После поиска пусто — это «Ничего не найдено» из B21, а не «не удалось открыть».
         val miss = searchFor.isNotEmpty()
+        if (noSlice) {
+            empty.card(c, (W - EmptyState.CARD_W) / 2f, 700f, "library", 113.3f, 113.4f,
+                "Нет раздела", "Каталог не отдал этот раздел")
+            return
+        }
         empty.card(c, (W - EmptyState.CARD_W) / 2f, 700f,
             if (miss) EmptyState.ICON_SEARCH else "library",
             if (miss) 36.2f else 113.3f, if (miss) 38.4f else 113.4f,
             when {
                 why.isNotEmpty() -> "Не удалось открыть"
                 miss -> "Ничего не найдено"
+                sliceList -> "Каталог пуст"
                 else -> "В каталоге пусто"
             },
             when {
                 why.isNotEmpty() -> why
                 miss -> "Проверьте написание или ищите по автору"
+                sliceList -> "В этом разделе пока ничего нет"
                 else -> ""
             })
     }
@@ -311,7 +381,7 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
             val sec = e.section()
             val acq = e.acquisitions()
             if (sec != null && acq.isEmpty()) {
-                list.add(Row(e.title, e.author, e.summary, e, sec))
+                list.add(Row(e.title, e.author, sliceSummary(e), e, sec))
             } else {
                 val fmts = acq.mapNotNull { mimeName(it.type) }.distinct().joinToString(" · ")
                 list.add(Row(e.title, e.author, fmts, e, null))
@@ -357,10 +427,18 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
                 } else {
                     rows = list
                 }
+                // Следующая страница дописана к списку среза — «Назад» из книг среза вернёт его целиком.
+                if (sliceList && f != null) {
+                    sliceFeed = f
+                    sliceRows = rows
+                }
                 title = if (f != null && f.title.isNotEmpty()) f.title else title
+                // Название каталога берём из корневого фида: у BookLore все фиды называют себя
+                // «Grimmory Catalog», а у фида автора заголовок «Books by …» — в базу он не годится.
+                if (f != null && root && f.title.isNotEmpty()) catTitle = f.title
                 sub = subtitle()
                 why = r.why ?: if (f == null) "Сервер не ответил" else ""
-                if (f != null && f.title.isNotEmpty() && catalogId > 0) {
+                if (f != null && f.title.isNotEmpty() && root && catalogId > 0) {
                     db.catalogTitle(catalogId, f.title)
                 }
                 loading = false
@@ -369,6 +447,75 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
             }
         }, "opds-feed").start()
     }
+
+    /**
+     * Открыть срез ([tab] 1…3, B64/B66/B68). Адрес берётся из корневого фида ([Opds.sliceHref]):
+     * BookLore объявляет `/authors` и `/series` ссылками `rel="subsection"`. Среза нет — карточка
+     * «Нет раздела» (жанров BookLore не отдаёт), в сеть не идём. Запрос — в фоне: фид авторов
+     * у BookLore 25 КБ, а на 1 ГБ ОЗУ и 20-секундном таймауте блокировать UI нельзя.
+     */
+    private fun openSlice(kind: Int) {
+        val root = base
+        val url = root?.let { opds.findSlice(it, kind) }
+        if (url == null) {
+            noSlice = true
+            why = ""
+            searchFor = ""
+            sliceFeed = null
+            sliceTitle = ""
+            rows = ArrayList()
+            page = 0
+            title = catTitle
+            sub = TABS[kind]
+            redraw()
+            return
+        }
+        noSlice = false
+        loading = true
+        why = ""
+        curUrl = url
+        curRoot = false
+        curSearch = ""
+        rows = ArrayList()
+        page = 0
+        searchFor = ""
+        title = catTitle
+        sub = TABS[kind]
+        redraw()
+        Thread({
+            val auth = db.catalog(catalogId)?.auth()
+            val on = opds.online()
+            val r = opds.fetch(url, auth)
+            val f = r.feed
+            val list = rowsOf(f)
+            post {
+                loading = false
+                // «N книг» в строке среза: у автора это число его книг, у серии — книг серии.
+                sliceFeed = f
+                sliceRows = list
+                feed = f
+                rows = list
+                page = 0
+                why = r.why ?: if (f == null) "Сервер не ответил" else ""
+                sub = subtitle()
+                setOffline(on)
+                redraw()
+            }
+        }, "opds-slice").start()
+    }
+
+    /**
+     * Строки среза → подпись строки: «12 книг». У записей-навигаций своего счётчика книг нет
+     * (OPDS его не задаёт), поэтому число берётся из `total` записи, если каталог его положил,
+     * иначе — пусто: врать «0 книг» нельзя.
+     */
+    private fun sliceSummary(e: Opds.Entry): String {
+        val s = e.summary
+        // BookLore: «Books by X» / «Books in the X series» — это не число, а тот же заголовок.
+        if (s.isEmpty() || s.startsWith("Books by") || s.startsWith("Books in the")) return ""
+        return s
+    }
+
 
     /**
      * B57 «Нет подключения» (10.10). Показываем, только когда сети нет совсем: отказ сервера
@@ -432,7 +579,11 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
         }, "opds-search").start()
     }
 
-    /** «Новые · 615 книг»: всего в каталоге, а не на загруженной странице. */
+    /**
+     * Подзаголовок шапки. B16 — «Новые · 615 книг»; список среза (B64/B66/B68) — «Авторы · 442»
+     * (в макете без «книг»: считается число записей среза); книги среза (B65/B67/B69) —
+     * «Авторы · 12 книг», где число — книги, а не записи.
+     */
     private fun subtitle(): String {
         if (searchFor.isNotEmpty()) {
             if (rows.isEmpty()) return "Поиск · ничего не найдено"
@@ -441,6 +592,10 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
             return "Поиск · " + Words.books(n)
         }
         val f = feed ?: return TABS[tab]
+        if (sliceList) {
+            val n = if (f.total > 0) f.total else rows.size
+            return if (n == 0) TABS[tab] else TABS[tab] + " · $n"
+        }
         val books = rows.count { it.section == null }
         val n = if (f.total > 0) f.total else books
         if (n == 0) return TABS[tab]
@@ -508,26 +663,35 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
         }
     }
 
-    /** «×» в поле поиска: пустой запрос и корневой фид каталога (как было до поиска). */
+    /**
+     * «×» в поле поиска: пустой запрос и то, что было до поиска. Из среза возвращаемся к списку
+     * среза (он в памяти), из корня — к корневому фиду каталога.
+     */
     private fun clearSearch() {
         query = ""
         searchFor = ""
         curSearch = ""
-        val root = base
         kbOpen = false
-        if (root != null) {
-            feed = root
-            rows = rowsOf(root)
-            page = 0
-            why = ""
-            curUrl = root.url
-            curRoot = true
-            sub = subtitle()
-            redraw()
-        } else {
-            val c0 = db.catalog(catalogId)
-            if (c0 != null) load(c0.url, clear = true, root = true)
+        page = 0
+        if (tab != 0) {
+            noSlice = false
+            if (inSlice) {
+                backToList()
+                return
+            }
+            if (sliceFeed != null) {
+                feed = sliceFeed
+                rows = sliceRows
+                page = slicePage
+                why = ""
+                curUrl = sliceFeed?.url ?: ""
+                curRoot = false
+                sub = subtitle()
+                redraw()
+                return
+            }
         }
+        showRoot()
     }
 
     override fun onAttachedToWindow() {
@@ -535,7 +699,8 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
         status.attach()
         catalogId = act.catalogId
         val c0 = db.catalog(catalogId)
-        title = c0?.label() ?: ""
+        catTitle = c0?.label() ?: ""
+        title = catTitle
         sub = ""
         base = null
         query = ""
@@ -546,6 +711,13 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
         curRoot = false
         curSearch = ""
         waitNet = false
+        // Срезы (10.11): экран открывается на «Новые», списки срезов — заново с сервера.
+        tab = 0
+        sliceFeed = null
+        sliceTitle = ""
+        inSlice = false
+        noSlice = false
+        page = 0
         kb.setAction("Найти")
         if (c0 == null) {
             why = "Каталог не выбран"
@@ -627,6 +799,12 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
             return
         }
         if (inRect(x, y, 41.1f, 112.9f, 106.9f, 112.4f)) {
+            // B65/B67/B69: «Назад» возвращает к списку среза (он в памяти), а не в B14 —
+            // иначе из книг автора выходишь сразу из каталога.
+            if (inSlice) {
+                backToList()
+                return
+            }
             act.pop()
             return
         }
@@ -645,12 +823,18 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
             }
             return
         }
-        // Разделы: срез каталога — это запись-навигация в текущем фиде.
+        // Разделы: 0 — «Новые» (обычный фид B16), 1…3 — срезы каталога (B64/B66/B68).
         for (i in TABS.indices) {
             if (!inRect(x, y, SEG_X0 + i * SEG_STEP, 387.6f, SEG_W, 87.7f)) continue
-            if (i != tab) {
-                tab = i
-                redraw()
+            if (i == tab) return
+            tab = i
+            inSlice = false
+            page = 0
+            kbOpen = false
+            if (i == 0) {
+                showRoot()
+            } else {
+                openSlice(i)
             }
             return
         }
@@ -680,8 +864,14 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
         for (i in 0 until per) {
             val idx = from + i
             if (idx >= rows.size) break
-            val rowY = ROW_Y0 + i * ROW_STEP
             val row = rows[idx]
+            if (sliceList) {
+                // B64/B66/B68: строка среза — вся полоса 88,y 1225×149.5 ведёт к книгам среза.
+                val rowY = SLICE_Y0 + i * SLICE_STEP
+                if (inRect(x, y, 88f, rowY, 1225f, 149.5f)) openSliceBooks(row)
+                return
+            }
+            val rowY = ROW_Y0 + i * ROW_STEP
             if (inRect(x, y, 1211.1f, rowY + 20.7f, 106.9f, 112.4f)) {
                 download(row)
                 return
@@ -697,6 +887,87 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
             }
             return
         }
+    }
+
+    /** «Новые» (сегмент 0): корневой фид каталога — в памяти или с сервера. */
+    private fun showRoot() {
+        tab = 0
+        noSlice = false
+        inSlice = false
+        sliceTitle = ""
+        val root = base
+        if (root != null && !root.books) {
+            feed = root
+            rows = rowsOf(root)
+            page = 0
+            why = ""
+            curUrl = root.url
+            curRoot = true
+            sub = subtitle()
+            redraw()
+            return
+        }
+        val c0 = db.catalog(catalogId)
+        if (c0 != null) load(c0.url, clear = true, root = true)
+        else redraw()
+    }
+
+    /**
+     * Строка среза → книги среза (B65/B67/B69). Фид книг отдельный от [feed]: «Назад» из него
+     * возвращает к списку среза ([backToList]), а не перезагружает список с сервера.
+     */
+    private fun openSliceBooks(row: Row) {
+        val link = row.section ?: return
+        // Список среза запоминаем целиком: по «Назад» вернёмся к той же странице и той же ленте.
+        sliceFeed = feed
+        sliceRows = ArrayList(rows)
+        slicePage = page
+        loading = true
+        why = ""
+        curUrl = link.href
+        curRoot = false
+        curSearch = ""
+        inSlice = true
+        sliceTitle = row.title
+        rows = ArrayList()
+        page = 0
+        searchFor = ""
+        title = row.title
+        sub = subtitle()
+        redraw()
+        Thread({
+            val auth = db.catalog(catalogId)?.auth()
+            val on = opds.online()
+            val r = opds.fetch(link.href, auth)
+            val f = r.feed
+            val list = rowsOf(f)
+            post {
+                loading = false
+                feed = f
+                rows = list
+                title = row.title
+                sub = subtitle()
+                why = r.why ?: if (f == null) "Сервер не ответил" else ""
+                setOffline(on)
+                redraw()
+            }
+        }, "opds-slice-books").start()
+    }
+
+    /** «Назад» из книг среза: список среза остался в памяти — без запроса к серверу. */
+    private fun backToList() {
+        inSlice = false
+        feed = sliceFeed
+        rows = sliceRows
+        page = slicePage
+        why = ""
+        title = catTitle
+        curUrl = sliceFeed?.url ?: ""
+        curRoot = false
+        curSearch = ""
+        searchFor = ""
+        sub = subtitle()
+        redraw()
     }
 
     /**
@@ -720,6 +991,15 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
         const val PER_PAGE = 5
         /** Пока открыта клавиатура: строки кончаются на 1236.2, лист B48 начинается с 1385. */
         const val PER_PAGE_KB = 4
+        /**
+         * Список среза (B64/B66/B68): строки 548, 732, 916, 1100, 1284, 1468 — шаг 184,
+         * шесть строк («1 / 14» при 84 авторах, «1 / 7» при 37 сериях, «1 / 2» при 12 жанрах).
+         */
+        const val SLICE_Y0 = 548f
+        const val SLICE_STEP = 184f
+        const val PER_PAGE_SLICE = 6
+        /** С клавиатурой B48 (лист с 1385): 548, 732, 916, 1100 — пятая строка 1284 уходит под лист. */
+        const val PER_PAGE_SLICE_KB = 4
         /** Верх листа клавиатуры в B21 — тот же, что здесь: 1385. */
         const val SHEET_Y = 1385f
         const val R_BACK = 51.2f

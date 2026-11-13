@@ -80,6 +80,12 @@ class Opds(private val ctx: Context) {
         val prev: String?,
         val search: String?,
         val total: Int,
+        /**
+         * Ссылки `rel="subsection"` самого фида — BookLore объявляет ими разделы каталога
+         * («…/opds/authors», «…/opds/series»), не повторяя их записями. По ним ищется срез
+         * ([sliceHref]); у фидов, где разделы есть записями, список пустой.
+         */
+        val subsections: ArrayList<String> = ArrayList(0),
     ) {
         /** В фиде книги (есть acquisition), а не разделы каталога. */
         val books: Boolean get() = entries.any { it.acquisitions().isNotEmpty() }
@@ -94,6 +100,17 @@ class Opds(private val ctx: Context) {
     /** Логин и пароль каталога; оба пустые — вход не нужен. */
     class Auth(val user: String, val pass: String) {
         val empty: Boolean get() = user.isEmpty() && pass.isEmpty()
+    }
+
+    /**
+     * Виды срезов каталога (B64–B69). Числа совпадают с индексами сегментов экрана
+     * (`OpdsScreen.TABS`: 1 — «Авторы», 2 — «Серии», 3 — «Жанры»), поэтому экран передаёт
+     * номер сегмента как есть.
+     */
+    object Slice {
+        const val AUTHORS = 1
+        const val SERIES = 2
+        const val GENRES = 3
     }
 
     // ------------------------------------------------------------------ сеть
@@ -263,6 +280,23 @@ class Opds(private val ctx: Context) {
             r.conn?.disconnect()
         }
     }
+
+    // ----------------------------------------------- срезы каталога (B64–B69)
+
+    /**
+     * Адрес фида-среза ([kind] — [Slice.AUTHORS], [Slice.SERIES], [Slice.GENRES]).
+     * null — каталог такого среза не отдал.
+     *
+     * В OPDS срезов нет как отдельного вида: каталог кладёт их навигационными записями
+     * корневого фида — BookLore «Authors» → `/api/v1/opds/authors`, «Series» → `/series`;
+     * Calibre «By Author» → `/opds/author`, «Tags» → `/opds/tag`. Поэтому ищем запись по
+     * адресу её ссылки, а если адрес ничего не говорит (бывает у прокси) — по названию.
+     * Адрес надёжнее: название переведено у части каталогов, а `series`/`author` в пути — нет.
+     *
+     * Имя не `slice`: так называется стандартное расширение `List.slice`, и вызов `Opds.slice`
+     * из другого пакета разбирается как оно (проверено на JVM-харнессе).
+     */
+    fun findSlice(feed: Feed, kind: Int): String? = sliceHref(feed, kind)
 
     // --------------------------------------------------- загрузка книги (B18)
 
@@ -611,14 +645,16 @@ class Opds(private val ctx: Context) {
 
             var next: String? = null
             var prev: String? = null
+            val subsections = ArrayList<String>(4)
             for (l in feedLinks) {
                 when (l.rel) {
                     "next" -> if (next == null) next = l.href
                     "prev", "previous" -> if (prev == null) prev = l.href
                     "search" -> if (search == null) search = l.href
+                    REL_SUBSECTION -> subsections.add(l.href)
                 }
             }
-            return Feed(base, feedTitle, entries, next, prev, search, total)
+            return Feed(base, feedTitle, entries, next, prev, search, total, subsections)
         }
 
         /** Текст элемента целиком; пусто → "". Вложенные элементы в OPDS почти не встречаются. */
@@ -704,6 +740,40 @@ class Opds(private val ctx: Context) {
 
         /** Каталог не отдал ссылку `rel="search"` (или описание без шаблона) — искать нечем. */
         const val NO_SEARCH = "Каталог не поддерживает поиск"
+
+        /**
+         * Части адреса и названия, по которым узнаётся срез. У BookLore — `/authors`, `/series`,
+         * жанров нет; у Calibre — `/opds/author`, `/opds/series`, `/opds/tag` (жанры там «Tags»).
+         * Проверяем и адрес записи, и адрес фида: часть каталогов объявляет срез ссылкой фида
+         * (`rel="subsection"`), а запись-навигацию не даёт.
+         */
+        private val SLICE_WORDS = arrayOf(
+            arrayOf("author", "автор", "писател"),
+            arrayOf("series", "серия", "серии"),
+            arrayOf("genre", "tag", "subject", "жанр", "тег"),
+        )
+
+        /**
+         * Адрес фида-среза [kind]: ссылка записи-навигации (по адресу, затем по названию),
+         * иначе — ссылка `rel="subsection"` самого фида. Срез, которого каталог не отдал, —
+         * null; подставлять вместо него что-то похожее нельзя (B64–B69 называют срез точно).
+         */
+        fun sliceHref(feed: Feed, kind: Int): String? {
+            val words = SLICE_WORDS.getOrNull(kind - 1) ?: return null
+            fun match(s: String): Boolean {
+                val t = s.lowercase(Locale.ROOT)
+                return words.any { t.contains(it) }
+            }
+            for (e in feed.entries) {
+                val l = e.section() ?: continue
+                if (match(l.href)) return l.href
+            }
+            for (e in feed.entries) {
+                val l = e.section() ?: continue
+                if (match(e.title)) return l.href
+            }
+            return feed.subsections.firstOrNull { match(it) }
+        }
 
         /** Параметр с неизвестной подстановкой: `&start=…{startIndex?}`, `?ln={language}`. */
         private val PLACEHOLDER_PARAM =

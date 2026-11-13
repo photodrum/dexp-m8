@@ -134,6 +134,31 @@ BookLore → абсолютный шаблон, выбор `<Url kind="acquisiti
 снятие лишних подстановок (`{startIndex?}`, `{language}`), шаблон Calibre. Успех — строки `OK…`
 и `=== ВСЁ ОК`; `FAIL` в выводе — падение разбора.
 
+## Проверка срезов каталога на хосте
+
+`sliceHref`/`findSlice` (`core/Opds.kt`) — чистая функция, проверяется без устройства: BookLore
+отдаёт срезы записями-навигациями, Calibre — названиями «By Author»/«Tags», часть каталогов —
+только ссылками `rel="subsection"` фида. Харнесс — тот же, что у поиска (стабы и `kxml2`),
+файл теста `SliceTest.kt`:
+
+```bash
+# в харнессе /tmp/optest (см. выше), реальные фиды: /tmp/opds/f5b1d4f9d.xml — корень,
+# /tmp/authors.xml — /api/v1/opds/authors, /tmp/series.xml — /api/v1/opds/series
+$HOME/.local/kotlinc/bin/kotlinc -cp $KX -d /tmp/optest/out2 \
+    /tmp/optest/stub/*.kt /tmp/optest/h/Opds.kt /tmp/optest/SliceTest.kt
+java -Dfile.encoding=UTF-8 -cp "/tmp/optest/out2:$KX:$HOME/.local/kotlinc/lib/kotlin-stdlib.jar" SliceTestKt
+```
+
+19 проверок: срезы BookLore (`authors`/`series`, жанров нет), 442 автора и 147 серий, ссылки
+записей (`catalog?author=`, `catalog?series=`), поиск по названию («By Author», «Tags»,
+«Авторы/Серии/Жанры»), срез только ссылкой фида, `null` для отсутствующего среза. Успех —
+`=== ВСЁ ОК`.
+
+**Грабли харнесса:** `Opds.slice(...)` в тесте не компилируется — `slice` перехватывает
+стандартное расширение `List.slice(indices: IntRange)`; метод называется `findSlice`, в тесте
+вызывать через экземпляр (`opds.findSlice(feed, kind)`). Фикстуры `<feed>` не должны начинаться
+с `<?xml …?>` после `trimIndent()` — `KXmlParser` на это падает (`PI must not start with xml`).
+
 ## Проверка шифрования пароля каталога
 
 Пароль OPDS в базе — шифртекст (`core/Pass.kt`, `v1:` + Base64). Проверяется только на книге:
