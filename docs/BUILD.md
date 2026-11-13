@@ -112,6 +112,28 @@ cd test && setarch -R /tmp/test_core testdata/sample.fb2
 `setarch -R` (без ASLR) обязателен: ASan из gcc 12 на ядре хоста (7.0, высокая энтропия mmap)
 примерно в 1 запуске из 7 падает до `main` с `AddressSanitizer:DEADLYSIGNAL` — и на старом коде тоже.
 
+## Проверка разбора OPDS на хосте
+
+Ядро сетевых каталогов (`core/Opds.kt`) разбирается на JVM без устройства и без Gradle:
+`parse` и `parseTemplate` — чистые функции в `companion object`.
+
+```bash
+export JAVA_HOME=$HOME/.local/jdk PATH=$HOME/.local/jdk/bin:$PATH
+KX=~/.gradle/caches/modules-2/files-2.1/net.sf.kxml/kxml2/2.3.0/ccbc77a5fd907ef863c29f3596c6f54ffa4e9442/kxml2-2.3.0.jar
+# стабы android.content.Context / ConnectivityManager / Base64 / ui.Trace — в /tmp/optest/stub
+# companion object в Opds — private, поэтому для теста копия без слова private:
+sed 's/    private companion object {/    companion object {/' \
+    app/src/main/java/ru/ogrpfsense/dexpm8/core/Opds.kt > /tmp/optest/h/Opds.kt
+$HOME/.local/kotlinc/bin/kotlinc -cp $KX -d /tmp/optest/out \
+    /tmp/optest/stub/*.kt /tmp/optest/h/Opds.kt /tmp/optest/TplTest.kt
+java -Dfile.encoding=UTF-8 -cp "/tmp/optest/out:$KX:$HOME/.local/kotlinc/lib/kotlin-stdlib.jar" TplTestKt
+```
+
+Проверяет то, что живёт в разборе, а не в сети: `rel="search"` из фида, OpenSearch-описание
+BookLore → абсолютный шаблон, выбор `<Url kind="acquisition">`, шаблон без `{searchTerms}`,
+снятие лишних подстановок (`{startIndex?}`, `{language}`), шаблон Calibre. Успех — строки `OK…`
+и `=== ВСЁ ОК`; `FAIL` в выводе — падение разбора.
+
 ## Установка на книгу
 
 ```bash
@@ -226,6 +248,7 @@ GIT_ASKPASS=$PWD/tools/git-askpass.sh GIT_TERMINAL_PROMPT=0 \
 | `tools/typecheck.sh`: `unresolved reference: BuildConfig` | `BuildConfig` генерирует только Gradle; в `typecheck.sh` и `build.sh` есть заглушка (`DEBUG = true`) с 2026-11-12 |
 | `tools/typecheck.sh` / `tools/build.sh`: `OutOfMemoryError` в psi2ir или на `ShelfScreen.kt` | **решено 2026-11-13:** оба скрипта сами ставят `JAVA_OPTS=-Xmx1600m` (если переменная не задана); нужен только `JAVA_HOME` и PATH JDK. Раньше требовалось передавать вручную |
 | `tools/typecheck.sh` без JDK в PATH: пишет «классов собрано: 0» и **выходит с кодом 0** | `kotlinc` не нашёл `java` и умер молча — без ошибки в логе. Всегда `export JAVA_HOME=$HOME/.local/jdk PATH=$HOME/.local/jdk/bin:$PATH`; признак успеха — «классов собрано: 135» и выше |
+| JVM-харнесс ядра OPDS: `cannot access 'Companion': it is private in 'Opds'` | `companion object` в `Opds` — `private` (с 10.6); для теста собирать копию без слова `private` и вызывать `searchUrl` через экземпляр (`docs/BUILD.md`, «Проверка разбора OPDS на хосте») |
 | Gradle, запущенный фоном (`nohup … &`), падает с `Bad file descriptor` / зависает с пустым логом | терминал Cline закрывает stdin фонового процесса: `setsid ./gradlew assembleDebug --offline </dev/null > /tmp/build.log 2>&1 &`, затем читать `/tmp/build.log` |
 | `assembleDebug` пишет `UP-TO-DATE`, а APK старый в глазах «ничего не собралось» | APK мог быть собран раньше той же сессией: сверить `stat -c '%y %n'` у `app-debug.apk` и правленого `.kt` — APK должен быть новее |
 | `gradle` / `gradlew` «не найден» | Gradle в PATH не стоит: `~/.local/gradle-8.7/bin/gradle` (или `export PATH=$HOME/.local/gradle-8.7/bin:$PATH`); `gradlew` работает, но тянет дистрибутив в `~/.gradle` |

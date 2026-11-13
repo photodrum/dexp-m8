@@ -185,10 +185,83 @@ class Opds(private val ctx: Context) {
     /** Запись кэша: тело фида и его метки для `If-None-Match`. */
     class Hit(val body: ByteArray, val etag: String?, val lastModified: String?)
 
-    /** Подставить запрос в шаблон OpenSearch `...?q={searchTerms}`. */
+    /**
+     * Подставить запрос в шаблон OpenSearch `...?q={searchTerms}`. Остальные подстановки
+     * (`{startIndex?}`, `{language}`) мы не заполняем: параметр с ними убирается целиком.
+     * Буквальный `{startIndex?}` сервер понял бы как пустой запрос, а `{language}` — как
+     * фильтр по языку «{language}». Страницы каталог отдаёт ссылками `next`/`prev`, не через
+     * шаблон, поэтому терять нечего.
+     */
     fun searchUrl(template: String, q: String): String {
         val enc = java.net.URLEncoder.encode(q, "UTF-8")
-        return template.replace("{searchTerms}", enc).replace("{searchTerms?}", enc)
+        var s = template.replace("$TERMS_PREFIX?}", enc).replace(TERMS, enc)
+        s = PLACEHOLDER_PARAM.matcher(s).replaceAll("")
+        return PLACEHOLDER.matcher(s).replaceAll("")
+    }
+
+    /** Есть ли в адресе подстановка запроса (`{searchTerms}` или `{searchTerms?}`). */
+    private fun hasTerms(s: String): Boolean = s.contains(TERMS) || s.contains("$TERMS_PREFIX?}")
+
+    /** Шаблоны поиска, уже найденные за `rel="search"`: адрес описания → шаблон. */
+    private val templates = HashMap<String, String>(2)
+
+    /**
+     * Найти в каталоге (10.9). [feed] — открытый фид: ссылку `rel="search"` сервер кладёт в
+     * каждый свой фид, отдельного адреса у нас нет. Каталог ссылки не дал (или описание
+     * не прочиталось) — [Reply.feed] == null, причина в [Reply.why].
+     */
+    fun search(feed: Feed, q: String, auth: Auth?): Reply {
+        lastWhy = null
+        val t = searchTemplate(feed, auth)
+            ?: return Reply(null, 0, lastWhy ?: NO_SEARCH, false)
+        return fetch(searchUrl(t, q), auth)
+    }
+
+    /**
+     * Шаблон поиска каталога. `rel="search"` бывает двух видов:
+     *  - готовый шаблон с `{searchTerms}` — Calibre отдаёт `.../opds/search/{searchTerms}`;
+     *  - ссылка на OpenSearch-описание `application/opensearchdescription+xml`, а шаблон лежит
+     *    внутри, в `<Url template="…">` — так делает BookLore (`/api/v1/opds/search.opds` →
+     *    `/api/v1/opds/catalog?q={searchTerms}`).
+     *
+     * Описание дочитывается один раз и держится в памяти: иначе каждая правка запроса стоила бы
+     * двух запросов к серверу.
+     */
+    fun searchTemplate(feed: Feed, auth: Auth?): String? {
+        val href = feed.search ?: run {
+            lastWhy = NO_SEARCH
+            return null
+        }
+        if (hasTerms(href)) return href
+        templates[href]?.let { return it }
+        if (!online()) {
+            lastWhy = "Нет подключения"
+            return null
+        }
+        val r = request(href, auth, null, null)
+        try {
+            if (r.code !in 200..299 || r.stream == null) {
+                lastWhy = when (r.code) {
+                    401, 403 -> if (auth == null || auth.empty) "Нужен логин и пароль"
+                    else "Неверный логин или пароль"
+                    else -> NO_SEARCH
+                }
+                return null
+            }
+            val t = parseTemplate(readBody(r.stream), href)
+            if (t == null) lastWhy = NO_SEARCH else templates[href] = t
+            return t
+        } catch (t: Throwable) {
+            Trace.step("opds template FAIL $href: ${t.javaClass.simpleName}: ${t.message}")
+            lastWhy = NO_SEARCH
+            return null
+        } finally {
+            try {
+                r.stream?.close()
+            } catch (ignored: Throwable) {
+            }
+            r.conn?.disconnect()
+        }
     }
 
     // --------------------------------------------------- загрузка книги (B18)
@@ -555,6 +628,37 @@ class Opds(private val ctx: Context) {
             ""
         }
 
+        /**
+         * Шаблон из OpenSearch-описания (`application/opensearchdescription+xml`): первый
+         * `<Url template="…">` с подстановкой запроса. Остальные `Url` (по страницам, по авторам)
+         * не нужны. Адрес в описании относительный — считается от [base] (адреса описания).
+         * null — шаблона нет.
+         *
+         * Чистая функция без `Context` — проверяется на JVM (`docs/BUILD.md`).
+         */
+        fun parseTemplate(bytes: ByteArray, base: String): String? {
+            val p = XmlPullParserFactory.newInstance().newPullParser()
+            p.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, true)
+            p.setInput(bytes.inputStream(), null)
+            var first: String? = null
+            var books: String? = null
+            var ev = p.eventType
+            while (ev != XmlPullParser.END_DOCUMENT) {
+                if (ev == XmlPullParser.START_TAG && p.name == "Url") {
+                    val t = p.getAttributeValue(null, "template")
+                    if (t != null && t.contains(TERMS)) {
+                        if (first == null) first = t
+                        // В описании бывает несколько Url: поиск книг (acquisition) и разделов.
+                        val type = p.getAttributeValue(null, "type") ?: ""
+                        if (books == null && type.contains("acquisition")) books = t
+                    }
+                }
+                ev = p.next()
+            }
+            val t = books ?: first ?: return null
+            return resolve(base, t)
+        }
+
         /** Относительный `href` → абсолютный. `URI.resolve` падает на не-ASCII, тогда руками. */
         private fun resolve(base: String, href: String): String {
             if (href.startsWith("http://") || href.startsWith("https://")) return href
@@ -593,6 +697,20 @@ class Opds(private val ctx: Context) {
         const val REL_SUBSECTION = "subsection"
         const val REL_OTHER = "other"
         const val TYPE_NAV = "application/atom+xml;profile=opds-catalog"
+
+        /** Подстановка запроса в шаблоне OpenSearch. */
+        const val TERMS = "{searchTerms}"
+        const val TERMS_PREFIX = "{searchTerms"
+
+        /** Каталог не отдал ссылку `rel="search"` (или описание без шаблона) — искать нечем. */
+        const val NO_SEARCH = "Каталог не поддерживает поиск"
+
+        /** Параметр с неизвестной подстановкой: `&start=…{startIndex?}`, `?ln={language}`. */
+        private val PLACEHOLDER_PARAM =
+            java.util.regex.Pattern.compile("[?&][^?&#]*\\{[a-zA-Z]+\\??\\}")
+        /** Подстановка, оставшаяся без своего параметра (шаблон не начинается с `?`/`&`). */
+        private val PLACEHOLDER = java.util.regex.Pattern.compile("\\{[a-zA-Z]+\\??\\}")
+
     }
 }
 
