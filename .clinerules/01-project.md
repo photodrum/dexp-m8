@@ -23,7 +23,7 @@
 - Что куда писать (без дублей): `CONTEXT.md` — только «СЛЕДУЮЩИЙ ШАГ», номер пункта, ссылки, один экран; `ROADMAP.md` — статусы (✅) и открытые замечания (вопросы дизайну — `DESIGN_QUESTIONS.md`); `DEVLOG.md` — что сделано, решения и результаты проверок (запись ≤ ~6 пунктов, не более ~5 записей; в ROADMAP и CONTEXT — одна строка со ссылкой); грабли окружения — сразу в `BUILD.md`; пункт закрыт — его «подробно» и записи DEVLOG сразу в `docs/archive/`.
 - Код — строго по `docs/ARCHITECTURE.md` (палитра G0–G15, без прозрачности/анимаций/скролла, дизайн-px; без AndroidX/Material/Compose) — правила там, здесь не дублируются.
 - Даты — по `date`. Долгие команды (`typecheck.sh`, Gradle) — `> /tmp/x.log 2>&1`, затем читать файл. `JAVA_OPTS` скрипты ставят сами.
-- Gradle — `~/.local/gradle-8.7/bin/gradle` (в PATH его нет). Под `denisle`, не root. Токен git — `~/.config/dexp-m8/git-push-token`.
+- Gradle — `~/.local/gradle-8.7/bin/gradle` (в PATH его нет). Под `denisle`, не root. Токен git — `~/.config/dexp-m8/git-push-token`. git-команды с русским текстом (`log`, `show`, `diff`) — только с `--no-pager`, иначе терминал отдаёт мусор.
 
 ## Кто что делает
 
