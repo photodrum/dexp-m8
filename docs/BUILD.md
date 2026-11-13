@@ -285,6 +285,8 @@ GIT_ASKPASS=$PWD/tools/git-askpass.sh GIT_TERMINAL_PROMPT=0 \
 | Терминал Cline зависает на длинном heredoc | писать скрипт файлом (редактором), затем запускать |
 | В терминале Cline нет вывода долгих команд (`typecheck.sh`, Gradle) | `cmd > /tmp/x.log 2>&1`, затем читать файл |
 | `screencap` отдаёт чёрный кадр | экран погас по таймауту: `adb shell input keyevent KEYCODE_WAKEUP`; сразу после запуска E-Ink ещё не обновилась — снимать через 10–15 с |
+| `adb install` пишет `Success`, а на книге старый APK (нет новой строки в трассе, `--es read` не срабатывает) | сверить: `adb shell pm path <пакет>`, затем `adb shell 'cat <путь>/base.apk' \| md5sum` против `md5sum app/build/.../app-debug.apk`; не совпало — ставить через `adb push … /data/local/tmp/d.apk` + `adb shell pm install -r -d /data/local/tmp/d.apk` |
+| повторный `am start … --es …` пишет «Warning: Activity not started» и экстра не доходит | Activity уже жива: перед запуском `adb shell am force-stop <пакет>` (иначе меряешь прошлый запуск) |
 | Иконка не рисуется (пустая круглая клавиша), ошибок в логе нет | `icons.draw(c, "sort@36.8x30.6", …)` — такого варианта в `IconSpecs` нет, а `Icons.draw` на неизвестном имени молча выходит. Сверить имя: `grep -n '"sort' ui/IconSpecs.kt`; варианты с `@ШxВ` появляются, только если размер снят в Penpot, а `plus~1201ai8` и другие варианты B4 в `SKIP` генератора `tools/icon_specs.py` (2026-11-12, 9.6) |
 | В файле после записи через `sed`/`cat` из терминала VS Code появились `ESC]633…` | сборка падает на первой строке; писать файлы редактором, проверять `grep -c $'\x1b' файл` = 0 |
 | Скрипт с `while`/`grep -q` и `adb logcat -d` подвисает в терминале Cline | запускать по одному файлу в фоне, читать лог отдельно |

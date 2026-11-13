@@ -117,8 +117,9 @@ app/src/main/java/ru/ogrpfsense/dexpm8/
         PowerService   служба спецвозможностей: меню питания («Выключение» B5), включается через adb
         NativeBook     JNI-мост к C-ядру, грузится лениво
   reader/ Engine, EngineSelfTest   R1: сеанс crengine (открытие, страницы, кегль, позиции xpointer);
-                                     EngineSelfTest — временная проверка без экрана (`--es reader`), уйдёт в R1.3
-        EngineProbe, ProbeScreen   R0 (7.2): JNI к движкам и временный отладочный экран на SCR_READER
+                                     EngineSelfTest — временная проверка без экрана (`--es reader`)
+        ReaderScreen               B3 «Чтение» (R1.3): страница, колонтитулы, прогресс, листание
+        EngineProbe, ProbeScreen   R0 (7.2): JNI к движкам и отладочный экран (`--es probe`), не на SCR_READER
 app/src/main/cpp/
   core/book.c,.h       потоковый разбор FB2
   jni_bridge.c         JNI

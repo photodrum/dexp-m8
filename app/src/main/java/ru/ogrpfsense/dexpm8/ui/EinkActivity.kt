@@ -472,6 +472,16 @@ class EinkActivity : Activity() {
         }
         val p = intent?.getStringExtra("probe")
         if (p == null) {
+            // R1.3: открыть книгу из библиотеки по `_id` без кликов — `--es read 506`.
+            val read = intent?.getStringExtra("read")
+            if (read != null) {
+                intent.removeExtra("read")
+                bookId = read.toLongOrNull() ?: -1L
+                Trace.step("debug: read $bookId")
+                if (stack.isNotEmpty() && stack[stack.size - 1] == SCR_READER) changeTo(SCR_READER)
+                else go(SCR_READER)
+                return
+            }
             if (intent?.getStringExtra("screen") != "wifi") return
             intent.removeExtra("screen")
             Trace.step("debug: screen wifi")
@@ -483,6 +493,30 @@ class EinkActivity : Activity() {
         Trace.step("probe: intent $p")
         ru.ogrpfsense.dexpm8.reader.ProbeScreen.debugPath = p
         if (stack.isNotEmpty() && stack[stack.size - 1] == SCR_READER) changeTo(SCR_READER) else go(SCR_READER)
+    }
+
+    /**
+     * Физические клавиши книги (R1.3): `gpio-keys` отдаёт PAGE_UP/PAGE_DOWN, `adc-keys` —
+     * громкость. На читалке (B3) они листают; в остальной оболочке идут как раньше.
+     * `KEYCODE_BACK` не перехватываем никогда — выход с экрана идёт через [onBackPressed].
+     */
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        val code = event.keyCode
+        if (code != android.view.KeyEvent.KEYCODE_BACK) {
+            val top = current()
+            if (top is ru.ogrpfsense.dexpm8.reader.ReaderScreen && shade?.parent == null) {
+                if (event.action == android.view.KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                    if (top.key(code)) return true
+                } else if (event.action == android.view.KeyEvent.ACTION_UP) {
+                    // Листание по нажатию: UP не отдаём системе, иначе громкость «щёлкнет».
+                    if (code == android.view.KeyEvent.KEYCODE_VOLUME_UP ||
+                        code == android.view.KeyEvent.KEYCODE_VOLUME_DOWN ||
+                        code == android.view.KeyEvent.KEYCODE_PAGE_UP ||
+                        code == android.view.KeyEvent.KEYCODE_PAGE_DOWN) return true
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     override fun onBackPressed() {
@@ -724,7 +758,7 @@ class EinkActivity : Activity() {
             SCR_CATALOG -> OpdsScreen(this)
             SCR_CATALOG_BOOK -> CatalogBookScreen(this)
             SCR_DOWNLOADS -> DownloadsScreen(this)
-            SCR_READER -> ru.ogrpfsense.dexpm8.reader.ProbeScreen(this)   // R0, шаг 7.2: отладка движков
+            SCR_READER -> ru.ogrpfsense.dexpm8.reader.ReaderScreen(this)   // B3, R1.3
             else -> HomeScreen(this)
         }
         screens[screenId] = s
