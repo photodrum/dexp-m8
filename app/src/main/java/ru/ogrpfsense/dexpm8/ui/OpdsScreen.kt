@@ -249,11 +249,19 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
     /**
      * Раздел каталога (автор, серия, жанр) — строка B64/B66/B68: круг 88,y 115×120,
      * у авторов инициалы 36/700, у серий `list@38.4x40` в 126.8,y+39.1, у жанров
-     * `library@38.4x40` там же; имя 42/700 в 237,y, описание 32/600 G4 в 237,y+62.5,
+     * `library@38.4x40` там же; имя 42/700 в 237,y+10, описание 32/600 G4 в 237,y+62.5,
      * «next» 1302,y+47.
+     *
+     * Всё в строке выровнено по центру круга (y+57.75): стрелка (y+47, центр y+58.9), иконка
+     * (центр y+59.1), инициалы и блок «имя + описание». Счётчика книг OPDS не отдаёт
+     * (BookLore в `content` пишет «Books by …», см. [sliceSummary]), поэтому на книге строка
+     * однострочная — тогда имя стоит по центру круга (верх y+31.5), а не на верхней позиции
+     * двухстрочного макета: иначе оно висело на 26 выше середины и не совпадало со стрелкой.
      */
     private fun sectionRow(c: Canvas, r: Row, y: Float) {
-        ink.convex(c, 88f, y + 4.1f, 115f, 120f, 55f)
+        // Центр круга: поверхность 88+2.8,y+2.8 110×109.9 → y+57.75 (в B64 блик 88,y,
+        // поверхность 91,y+3). Было y+4.1 — круг уезжал на 4.1 ниже стрелки и иконки.
+        ink.convex(c, 88f, y, 115f, 120f, 55f)
         val icon = when (tab) {
             Opds.Slice.SERIES -> "list@38.4x40"
             Opds.Slice.GENRES -> "library@38.4x40"
@@ -262,12 +270,16 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
         if (icon != null) {
             icons.draw(c, icon, 126.8f, y + 39.1f, 38.4f, 40f)
         } else {
-            ink.textCenter(c, initials(r.title), 88f, 115f, T.base(y + 44.1f, T.TS_LABEL, 1.25f),
+            // Инициалы: рамка B64 91,y+3 110×110 с va:center, центр = центр круга y+57.75,
+            // верх строки 57.75 − 36·1.25/2 = y+35.25, базовая y+71.5 (было y+44.1 — на 8.6 ниже).
+            ink.textCenter(c, initials(r.title), 88f, 115f, T.base(y + 35.25f, T.TS_LABEL, 1.25f),
                 T.TS_LABEL, 700, T.G1)
         }
+        val one = r.formats.isEmpty()
+        // Однострочное имя — по центру круга: верх 57.75 − 42·1.25/2 = y+31.5.
         ink.text(c, ink.ellipsize(r.title, 900f, T.TS_ACTION, 700), 237f,
-            T.base(y + 10f, T.TS_ACTION, 1.25f), T.TS_ACTION, 700, T.G1)
-        if (r.formats.isNotEmpty()) {
+            T.base(if (one) y + 31.5f else y + 10f, T.TS_ACTION, 1.25f), T.TS_ACTION, 700, T.G1)
+        if (!one) {
             ink.text(c, ink.ellipsize(r.formats, 1040f, T.TS_BODY_S, 600), 237f,
                 T.base(y + 62.5f, T.TS_BODY_S, 1.25f), T.TS_BODY_S, 600, T.G4)
         }
