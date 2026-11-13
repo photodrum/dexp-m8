@@ -1,6 +1,8 @@
 package ru.ogrpfsense.dexpm8.ui
 
+import android.content.Intent
 import android.graphics.Canvas
+import android.provider.Settings
 import ru.ogrpfsense.dexpm8.core.LibraryDb
 import ru.ogrpfsense.dexpm8.core.Opds
 import ru.ogrpfsense.dexpm8.core.Downloads
@@ -70,6 +72,19 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
     private var kbOpen = false
     /** Запрос, по которому сейчас показан список: по нему же возвращаются «×» и «Назад». */
     private var searchFor = ""
+    /**
+     * B57 «Нет подключения» (10.10): сети нет совсем (`Opds.online()` == false). Под диалогом
+     * остаётся последний удачный фид из кэша — отсюда строка «Скачанные книги читаются и без сети».
+     * Адрес, по которому шёл запрос, хранится в [curUrl]: по нему повторяет «Повторить».
+     */
+    private var offline = false
+    private var curUrl = ""
+    /** Был ли [curUrl] корневым фидом каталога: повтор должен идти так же. */
+    private var curRoot = false
+    /** Запрос поиска, который не прошёл из-за сети: «Повторить» повторит его, а не фид. */
+    private var curSearch = ""
+    private var waitNet = false
+    private val noNet = NoNetDialog(ink, icons)
     private val empty = EmptyState(ink, icons)
     private val lit: android.graphics.Typeface = T.literata(ink.res, 600)
 
@@ -100,13 +115,17 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
 
 
     override fun render(c: Canvas) {
+        // B57: под диалогом «Нет подключения» остаётся B16 с кэшем фида — экран затемняется,
+        // как под листами и диалогами (замечание 15). Статус-бар и диалог не темнеют.
+        val dim = if (offline) dimBegin(c) else -1
         ink.rect(c, 0f, 0f, W, H, T.BG)
-        status.draw(c)
         header(c)
         search(c)
         tabs(c)
         ink.convex(c, 41.1f, 516.4f, 1320.8f, 1136.2f, T.R_TILE)
-        if (loading) busy(c) else if (rows.isEmpty()) empty(c) else list(c)
+        // B57 сам называет причину: под диалогом карточку «Не удалось открыть» не рисуем,
+        // иначе «Нет подключения» стоит дважды (макет B57 показывает под диалогом книги из кэша).
+        if (loading) busy(c) else if (rows.isEmpty() && !offline) empty(c) else list(c)
         if (kbOpen) {
             // Лист B48 поверх панели: y 1385 в B21, здесь то же — панель 516.4…1652.6.
             ink.convex(c, -3f, SHEET_Y, 1409f, 520f, 66f)
@@ -116,6 +135,9 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
             // а «1 / 0» листать нечего.
             paging(c)
         }
+        if (dim >= 0) dimEnd(c, dim)
+        status.draw(c)
+        if (offline) noNet.draw(c)
     }
 
     private fun header(c: Canvas) {
@@ -306,6 +328,9 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
     private fun load(url: String, clear: Boolean, append: Boolean = false, root: Boolean = false) {
         loading = true
         why = ""
+        curUrl = url
+        curRoot = root
+        curSearch = ""
         if (clear) {
             rows = ArrayList()
             page = 0
@@ -314,6 +339,9 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
         redraw()
         Thread({
             val auth = db.catalog(catalogId)?.auth()
+            // Сеть проверяем до запроса: `fetch` при её отсутствии молча отдаёт кэш, а по B57
+            // пользователь должен узнать, что каталог открыт по кэшу, а не по сети.
+            val on = opds.online()
             val r = opds.fetch(url, auth)
             val f = r.feed
             val list = rowsOf(f)
@@ -336,9 +364,28 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
                     db.catalogTitle(catalogId, f.title)
                 }
                 loading = false
+                setOffline(on)
                 redraw()
             }
         }, "opds-feed").start()
+    }
+
+    /**
+     * B57 «Нет подключения» (10.10). Показываем, только когда сети нет совсем: отказ сервера
+     * (404, 500) — это [why] в карточке B44, а не «Wi-Fi выключен». Подзаголовок диалога —
+     * название каталога из базы (оно есть и до первого ответа).
+     */
+    private fun setOffline(net: Boolean) {
+        val v = !net
+        if (v == offline) return
+        offline = v
+        if (v) {
+            kbOpen = false
+            noNet.open(db.catalog(catalogId)?.label() ?: title)
+            act.bigFrame("no net open")    // большой кадр в «Быстром» — полной перерисовкой
+        } else {
+            act.bigFrame("no net close")
+        }
     }
 
     /**
@@ -356,11 +403,13 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
         }
         loading = true
         why = ""
+        curSearch = q
         rows = ArrayList()
         page = 0
         redraw()
         Thread({
             val auth = db.catalog(catalogId)?.auth()
+            val on = opds.online()
             val r = opds.search(src, q, auth)
             val f = r.feed
             val list = rowsOf(f)
@@ -377,6 +426,7 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
                     searchFor = ""
                     why = r.why ?: "Сервер не ответил"
                 }
+                setOffline(on)
                 redraw()
             }
         }, "opds-search").start()
@@ -462,6 +512,7 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
     private fun clearSearch() {
         query = ""
         searchFor = ""
+        curSearch = ""
         val root = base
         kbOpen = false
         if (root != null) {
@@ -469,6 +520,8 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
             rows = rowsOf(root)
             page = 0
             why = ""
+            curUrl = root.url
+            curRoot = true
             sub = subtitle()
             redraw()
         } else {
@@ -488,6 +541,11 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
         query = ""
         searchFor = ""
         kbOpen = false
+        offline = false
+        curUrl = ""
+        curRoot = false
+        curSearch = ""
+        waitNet = false
         kb.setAction("Найти")
         if (c0 == null) {
             why = "Каталог не выбран"
@@ -502,10 +560,67 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
         super.onDetachedFromWindow()
     }
 
+    /**
+     * Касание под B57: «Повторить» — снова тот же фид (или тот же поиск), «Настройки Wi-Fi» —
+     * системный экран Wi-Fi; по возврате из него (фокус окна) экран сам проверит сеть и повторит
+     * запрос. Мимо диалога — ничего: закрыть его без сети нечем.
+     */
+    private fun offlineUp(x: Float, y: Float) {
+        when (noNet.hit(x, y)) {
+            NoNetDialog.ACT_RETRY -> retry()
+            NoNetDialog.ACT_WIFI -> {
+                try {
+                    waitNet = true
+                    act.startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
+                } catch (t: Throwable) {
+                    waitNet = false
+                    Trace.step("wifi settings FAIL: ${t.javaClass.simpleName}: ${t.message}")
+                }
+            }
+            // В B57 закрывать диалог нечем, а без сети в каталоге делать нечего: «Назад» в шапке
+            // (мимо диалога, 41.1,112.9) оставлен рабочим, чтобы со экрана можно было уйти.
+            else -> if (inRect(x, y, 41.1f, 112.9f, 106.9f, 112.4f)) act.pop()
+        }
+    }
+
+    /** Повторить запрос, который не прошёл: результаты поиска — поиском, иначе — фидом. */
+    private fun retry() {
+        if (curSearch.isNotEmpty()) {
+            runSearch(curSearch)
+            return
+        }
+        val url = curUrl.ifEmpty { db.catalog(catalogId)?.url ?: "" }
+        if (url.isEmpty()) {
+            why = "Каталог не выбран"
+            redraw()
+            return
+        }
+        load(url, clear = true, root = curRoot)
+    }
+
+    /**
+     * Вернулись из «Настроек Wi-Fi»: чистим панель после системного экрана (иначе E-Ink
+     * оставляет след) и повторяем запрос — даже если сети нет, так пользователь увидит,
+     * что приложение её проверило.
+     */
+    override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+        super.onWindowFocusChanged(hasWindowFocus)
+        if (!hasWindowFocus || parent == null) return
+        if (!waitNet) return
+        waitNet = false
+        act.cleanScreen()
+        retry()
+    }
+
     private fun inRect(x: Float, y: Float, rx: Float, ry: Float, rw: Float, rh: Float) =
         x >= rx && x <= rx + rw && y >= ry && y <= ry + rh
 
     override fun onUp(x: Float, y: Float) {
+        // B57: пока сети нет, экран под диалогом не нажимается — только две кнопки диалога.
+        if (offline) {
+            offlineUp(x, y)
+            return
+        }
         // Клавиатура листом: пока открыта, касания ниже её верха достаются только ей.
         if (kbOpen && y >= SHEET_Y) {
             onKey(x, y)
