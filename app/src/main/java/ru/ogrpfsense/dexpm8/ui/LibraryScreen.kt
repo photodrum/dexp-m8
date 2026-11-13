@@ -130,6 +130,8 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
         const val HIT_VIEW = 6
         const val HIT_FILTER = 8
         const val HIT_SHELVES = 7
+        /** Сетевые каталоги (п. 10): клавиша в шапке B2. */
+        const val HIT_CATALOGS = 60
         const val HIT_BOOK = 9
 
         const val ST_PROGRESS = 0
@@ -168,6 +170,7 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
             hits.add(Hit(HIT_SEARCH, 43.9f, 248.6f, 1316.2f, 102.4f))
             hits.add(Hit(HIT_VIEW, 1155.4f, 122.3f, 204.8f, 87.7f))
             hits.add(Hit(HIT_SHELVES, 1020f, 112.3f, 120f, 112.4f))
+            hits.add(Hit(HIT_CATALOGS, 915f, 112.3f, 120f, 112.4f))
             hits.add(Hit(HIT_SORT, SORT_X, 387.6f, 1316.2f, 87.7f))
             // Пустой список (B44): пагинации на экране нет, значит и зон у неё нет.
             if (rowIds.isNotEmpty()) {
@@ -331,6 +334,11 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
         // «Полки»: круглая клавиша левее переключателя вида (в макете B2/B11 её нет, решение DEVLOG 9.3).
         ink.convex(c, 1030f, 112.3f, 106.9f, 112.4f, R_ROUND_BACK)
         icons.draw(c, "library", 1057f, 142f, 52f, 54.2f)
+        // «Сетевые каталоги» (п. 10): третья клавиша — в макете B2 её нет, вход задуман только
+        // с пустой библиотеки B44, но при 530 книгах B44 недостижим. Место выбрано между
+        // «Полками» и переключателем вида, шаг 106.9 как у остальных круглых клавиш.
+        ink.convex(c, 920.2f, 112.3f, 106.9f, 112.4f, R_ROUND_BACK)
+        icons.draw(c, "download", 947f, 141.5f, 52f, 54.2f)
         // Переключатель вида: желоб 204.8×87.7, активный сегмент сдвигается на 95.1.
         ink.inset(c, 1155.4f, 122.3f, 204.8f, 87.7f, T.R_GROOVE)
         ink.convex(c, 1159.9f + viewMode * 95.1f, 126.9f, 99.6f, 83.2f, T.R_SEGMENT)
@@ -504,7 +512,11 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
                     act.go(EinkActivity.SCR_WIFI)
                     return
                 }
-                EmptyState.ACT_CATALOG -> return
+                EmptyState.ACT_CATALOG -> {
+                    act.catalogId = -1L
+                    act.go(EinkActivity.SCR_CATALOGS)
+                    return
+                }
             }
         }
         for (h in hits) {
@@ -528,6 +540,7 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
                     }
                     HIT_FILTER -> openSheet()
                     HIT_SHELVES -> act.go(EinkActivity.SCR_SHELVES)
+                    HIT_CATALOGS -> act.go(EinkActivity.SCR_CATALOGS)
                     HIT_SEARCH -> {
                         act.searchFresh = true
                         act.go(EinkActivity.SCR_SEARCH)

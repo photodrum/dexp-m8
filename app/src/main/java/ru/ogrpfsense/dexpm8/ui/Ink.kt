@@ -162,6 +162,38 @@ class Ink(ctx: Context) {
     }
 
     /**
+     * Разбить название на [lines] строк по словам (обложка B17: «Белая\\nгвардия»).
+     * Не влезло — последняя строка обрезается по «…», как [ellipsize].
+     */
+    fun ellipsize2(s: String, maxW: Float, size: Float, weight: Int,
+                   font: Typeface = T.manrope(res, weight), lines: Int = 2): ArrayList<String> {
+        val out = ArrayList<String>(lines)
+        var rest = s.trim()
+        for (i in 0 until lines) {
+            if (rest.isEmpty()) break
+            if (i == lines - 1) {
+                out.add(ellipsize(rest, maxW, size, weight, font))
+                break
+            }
+            // Самое длинное начало, которое ещё влезает целиком по словам.
+            var cut = rest.indexOf(' ')
+            var best = -1
+            while (cut > 0) {
+                if (measure(rest.substring(0, cut), size, weight, font) <= maxW) best = cut
+                else if (best >= 0) break
+                cut = rest.indexOf(' ', cut + 1)
+            }
+            if (best < 0) {
+                out.add(ellipsize(rest, maxW, size, weight, font))
+                return out
+            }
+            out.add(rest.substring(0, best))
+            rest = rest.substring(best + 1).trim()
+        }
+        return out
+    }
+
+    /**
      * Абзац с переносом по словам, выровненный по центру полосы [x, x+w].
      * Возвращает использованную высоту; шаг строки — fs·[lh].
      * [Ink.paragraph] центрировать не умеет: там текст рисуется от левого края.

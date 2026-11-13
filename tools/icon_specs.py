@@ -67,6 +67,9 @@ PRIMARY = {
     "download": (35.3, 40.9),     # B42, «Очистить кэш»
     "library": (73.1, 76.2),      # плитка B1 и строка автора на B21
     "settings": (73.1, 76.2),     # плитка B1
+    # Сетевые каталоги (п. 10): размеры строк B14/B16/B17/B18.
+    "browser": (51.2, 53.3),      # строка открытого каталога на B14
+    "home": (51.2, 53.3),         # строка Calibre на B14
 }
 # Цветовой вариант той же формы под своим именем: файл → имя в IconSpecs.kt.
 # search~fapjtl (G1, шапка B6/B36) отличается от search~hhvmhx (G5, B2) только цветом.
@@ -95,7 +98,9 @@ SKIP = {
 SKIP_DIM = {
     "audio~1y6kbrh.json",
     "back~1669nm4.json",
+    "back~17385ri.json",
     "back~185lzao.json",
+    "back~19mwmtk.json",
     "back~1nwoxff.json",
     "back~ce9cq0.json",
     "bookmark~1oi0ewj.json",
@@ -113,6 +118,14 @@ SKIP_DIM = {
     "next~fkcejo.json",
     "plus~lcbp9f.json",
     "search~wgbvc3.json",
+    "back~34utwk.json",
+    "back~4xa23n.json",
+    "back~mk9u0y.json",
+    "check~1lsr44q.json",
+    "download~gcxxg8.json",
+    "next~1mi8kyq.json",
+    "next~g4mq3l.json",
+    "search~1ow5j29.json",
 }
 
 HEADER = '''package ru.ogrpfsense.dexpm8.ui

@@ -59,8 +59,17 @@ class WifiShare(private val ctx: Context, private val db: LibraryDb) {
 
     val running: Boolean get() = server != null
 
+    /**
+     * Папка книг на памяти — одна для сканера, приёма по Wi-Fi и загрузок каталогов (п. 10).
+     * Лежит рядом в [Books], чтобы путь не разъезжался между тремя местами.
+     */
+    object Books {
+        @JvmStatic
+        fun dirOf(ctx: Context): File = File(Environment.getExternalStorageDirectory(), "Books")
+    }
+
     /** Каталог загрузки — тот же, что обходит [Scanner]. */
-    val dir: File = File(Environment.getExternalStorageDirectory(), "Books")
+    val dir: File = Books.dirOf(ctx)
 
     /** Один сканер на сервер: `addFile` и `fileFormat` — его методы. */
     private val scanner = Scanner(ctx.applicationContext, db)

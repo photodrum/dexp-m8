@@ -8,7 +8,9 @@ import android.os.Handler
 import android.os.Looper
 import android.view.View
 import android.view.WindowManager
+import ru.ogrpfsense.dexpm8.core.Downloads
 import ru.ogrpfsense.dexpm8.core.LibraryDb
+import ru.ogrpfsense.dexpm8.core.Opds
 import ru.ogrpfsense.dexpm8.core.Prefs
 import ru.ogrpfsense.dexpm8.core.Sys
 
@@ -44,6 +46,13 @@ class EinkActivity : Activity() {
 
         /** B26 «Загрузка по Wi-Fi» — свой HTTP-сервер; вход — кнопка на пустой библиотеке B44. */
         const val SCR_WIFI = 19
+
+        /** Сетевые каталоги (п. 10): B14 список, B15 добавить, B16 каталог, B17 книга, B18 загрузки. */
+        const val SCR_CATALOGS = 20
+        const val SCR_CATALOG_ADD = 21
+        const val SCR_CATALOG = 22
+        const val SCR_CATALOG_BOOK = 23
+        const val SCR_DOWNLOADS = 24
 
         private const val REQ_STORAGE = 1
         private const val REQ_WRITE_SETTINGS = 2
@@ -86,6 +95,16 @@ class EinkActivity : Activity() {
 
     /** Поиск B21: true — открыть с пустым запросом и клавиатурой; при возврате с «О книге» запрос остаётся. */
     var searchFresh = true
+
+    /** Каталог для B16 (п. 10): `_id` в таблице `catalogs`; -1 — новый (B15 «Добавить каталог»). */
+    var catalogId = -1L
+
+    /** Запись каталога для B17 «Книга в каталоге» и адрес фида, из которого она пришла. */
+    var opdsEntry: Opds.Entry? = null
+    var opdsSource = ""
+
+    /** Очередь загрузок каталогов (B18, счётчик на B14) — одна на приложение. */
+    val downloads: Downloads by lazy { Downloads(this, db) }
 
     /** Системные настройки (B37–B42, B5) и свои настройки оболочки. */
     val sys: Sys by lazy { Sys(this) }
@@ -691,6 +710,11 @@ class EinkActivity : Activity() {
             SCR_SET_ABOUT -> SetAboutScreen(this)
             SCR_FILES -> FilesScreen(this)
             SCR_WIFI -> WifiUploadScreen(this)
+            SCR_CATALOGS -> CatalogsScreen(this)
+            SCR_CATALOG_ADD -> CatalogAddScreen(this)
+            SCR_CATALOG -> OpdsScreen(this)
+            SCR_CATALOG_BOOK -> CatalogBookScreen(this)
+            SCR_DOWNLOADS -> DownloadsScreen(this)
             SCR_READER -> ru.ogrpfsense.dexpm8.reader.ProbeScreen(this)   // R0, шаг 7.2: отладка движков
             else -> HomeScreen(this)
         }
