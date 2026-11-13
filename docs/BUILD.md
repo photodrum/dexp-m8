@@ -42,7 +42,7 @@ export PATH=$JAVA_HOME/bin:$PATH
 
 | Что | Команда | Результат |
 |---|---|---|
-| Debug APK | `~/.local/gradle-8.7/bin/gradle -p ~/projects/dexp-m8 assembleDebug` | `app/build/outputs/apk/debug/app-debug.apk` (8,2 МБ с тремя `.so` движков, 7.1) |
+| Debug APK | `~/.local/gradle-8.7/bin/gradle -p ~/projects/dexp-m8 assembleDebug` | `app/build/outputs/apk/debug/app-debug.apk` (4,9 МиБ, 5 157 572 б; внутри `libdexp_core.so`, `libdexp_cre.so`, `libdexp_djvu.so`) |
 | Release APK | `... assembleRelease` | `app/build/outputs/apk/release/app-release-unsigned.apk` (145 КБ) |
 | Быстро, без Gradle | `~/projects/dexp-m8/tools/build.sh` | `build/app-debug.apk` (~0,9 МБ) — **без `.so`**; Kotlin stdlib в dex, подпись как у Gradle (ставится поверх без удаления) |
 | Только типы Kotlin | `~/projects/dexp-m8/tools/typecheck.sh` | ~10 сек |
@@ -228,7 +228,8 @@ GIT_ASKPASS=$PWD/tools/git-askpass.sh GIT_TERMINAL_PROMPT=0 \
 | `tools/typecheck.sh` без JDK в PATH: пишет «классов собрано: 0» и **выходит с кодом 0** | `kotlinc` не нашёл `java` и умер молча — без ошибки в логе. Всегда `export JAVA_HOME=$HOME/.local/jdk PATH=$HOME/.local/jdk/bin:$PATH`; признак успеха — «классов собрано: 135» и выше |
 | Gradle, запущенный фоном (`nohup … &`), падает с `Bad file descriptor` / зависает с пустым логом | терминал Cline закрывает stdin фонового процесса: `setsid ./gradlew assembleDebug --offline </dev/null > /tmp/build.log 2>&1 &`, затем читать `/tmp/build.log` |
 | `assembleDebug` пишет `UP-TO-DATE`, а APK старый в глазах «ничего не собралось» | APK мог быть собран раньше той же сессией: сверить `stat -c '%y %n'` у `app-debug.apk` и правленого `.kt` — APK должен быть новее |
-
+| `gradle` / `gradlew` «не найден» | Gradle в PATH не стоит: `~/.local/gradle-8.7/bin/gradle` (или `export PATH=$HOME/.local/gradle-8.7/bin:$PATH`); `gradlew` работает, но тянет дистрибутив в `~/.gradle` |
+| Два вызова терминала **параллельно** (два `run_commands` в одном ответе): вывод перемешивается, «command completion could not be observed», команды попадают в чужую строку | терминал один на чат. Несколько команд — одним вызовом массивом (внутри вызов они идут последовательно) |
 | «Быстрый» (B5/B37): шторка или новый экран рисуются кашей поверх старого | A2-режим на большой кадр с серым; такие кадры должны идти через `EinkActivity.bigFrame` / `fullOnSwitch` (п. 8.2) |
 | `NoClassDefFoundError: kotlin.jvm.internal.Lambda` | APK без Kotlin stdlib (старый `build.sh`); исправлено 2026-11-11 |
 | `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | другой ключ подписи; `build.sh` и Gradle используют один `~/.android/debug.keystore`. Иначе `adb uninstall` (данные пропадут) |

@@ -5,13 +5,15 @@
 
 ## Старт каждой задачи
 
-1. Одной командой (в `main` коммитят и отсюда, и через GitLab из чата дизайна):
+1. Одна команда — **один вызов** `run_commands` (терминал один на чат: два параллельных вызова перемешивают вывод и теряют результат; несколько команд — массивом в одном вызове).
+   Act:
    `git pull --ff-only; git status -sb; git config user.name; cat docs/CONTEXT.md; grep -n '^## ' docs/DEVLOG.md | head -3`
-   В Plan изменения запрещены — вместо `git pull --ff-only` взять `git fetch` (`--ff-only` только у `pull`).
+   Plan (изменения запрещены, поэтому `fetch`, а не `pull`):
+   `git fetch; git status -sb; git config user.name; cat docs/CONTEXT.md; grep -n '^## ' docs/DEVLOG.md | head -3`
    Не проходит, есть незакоммиченное или `user.name` не `denisle` — остановись, покажи вывод, сам не сливай.
 2. Из `docs/CONTEXT.md` — «СЛЕДУЮЩИЙ ШАГ». `docs/ROADMAP.md` — не целиком: `grep -n '^## '` → нужный раздел `sed -n 'A,Bp'` (в терминале Cline `awk` с русским шаблоном зависает).
-3. Из `docs/DEVLOG.md` — только верхняя запись так же (`head -2`, затем `sed`); `docs/archive/` — только по ссылке.
-4. Остальное — по теме: UI — `docs/DESIGN_USAGE.md`, `design/README.md` (числа — `tools/design_flat.py`, флаги там же; JSON целиком — если не хватило поля), `docs/DESIGN.md` — справочно; читалка — `docs/READER_SPEC.md`; сборка/установка/git/токены/ошибки — `docs/BUILD.md`; рендер, структура кода, E-Ink — `docs/ARCHITECTURE.md`; чат дизайна — `docs/DESIGN_QUESTIONS.md`; карта документов — `README.md`.
+3. Из `docs/DEVLOG.md` — только верхняя запись так же (`head -2`, затем `sed`); `docs/archive/` в `.clineignore` — нужен файл по ссылке, строку временно закомментировать и вернуть после.
+4. Остальное — по теме: UI — `docs/DESIGN_USAGE.md` и `design/README.md` (числа — `tools/design_flat.py`, флаги там же; JSON целиком — если не хватило поля), `docs/DESIGN.md` — справочно; читалка — `docs/READER_SPEC.md`; сборка/установка/git/токены/ошибки — `docs/BUILD.md`; рендер, структура кода, E-Ink — `docs/ARCHITECTURE.md`; чат дизайна — `docs/DESIGN_QUESTIONS.md`; карта документов — `README.md`.
 
 Ответа нет в CONTEXT — `grep -rn 'слово' docs/*.md` (файлы короткие), затем спросить; не выдумывать.
 
@@ -21,11 +23,12 @@
 - Действие человека (сборка на книге, настройка, проверка на экране) — расписать по шагам, ждать подтверждения после каждого.
 - После шага — коммит и push; перед `git push` показать `git diff --stat` и дождаться подтверждения.
 - Что куда писать (без дублей): `CONTEXT.md` — только «СЛЕДУЮЩИЙ ШАГ», номер пункта, ссылки, один экран; `ROADMAP.md` — статусы (✅) и открытые замечания (вопросы дизайну — `DESIGN_QUESTIONS.md`); `DEVLOG.md` — что сделано, решения и результаты проверок (запись ≤ ~6 пунктов, не более ~5 записей; в ROADMAP и CONTEXT — одна строка со ссылкой); грабли окружения — сразу в `BUILD.md`; пункт закрыт — его «подробно» и записи DEVLOG сразу в `docs/archive/`.
-- Код — строго по `docs/ARCHITECTURE.md`: палитра G0–G15, без прозрачности, размытия, анимаций, скролла; без AndroidX/Material/Compose; дизайн-px, не dp.
+- Код — строго по `docs/ARCHITECTURE.md` (палитра G0–G15, без прозрачности, размытия, анимаций, скролла; дизайн-px, не dp; без AndroidX/Material/Compose). Правила E-Ink и слои объёма там, здесь не повторяются.
 - Даты — по `date` в терминале. Долгие команды (`typecheck.sh`, Gradle) — `> /tmp/x.log 2>&1`, затем читать файл. `JAVA_OPTS` скрипты ставят сами.
+- Gradle — только `~/.local/gradle-8.7/bin/gradle` (в PATH его нет; `./gradlew` тянет дистрибутив в `~/.gradle`). Частые ошибки — `docs/BUILD.md`.
 - Работаем под `denisle`, не под root. Токен git — `~/.config/dexp-m8/git-push-token`.
 
 ## Кто что делает
 
-- **Чат дизайна** (Claude, Penpot): макеты, дизайн-система, снимок `design/v5/*.json`, документы по дизайну и ТЗ. **Cline в VS Code** (хост tools): код, сборка, проверка на книге.
-- Макет в Penpot из Cline не менять; можно читать, снимать ещё не снятый экран через `tools/penpot_dump.js` (`design/README.md`) и проверять `tools/check_design.py`. Trilium — только по прямой просьбе.
+- **Чат дизайна** (Claude, Penpot): макеты, дизайн-система, снимок `design/v5/*.json`, документы по дизайну и ТЗ. **Cline в VS Code**: код, сборка, проверка на книге.
+- Макет в Penpot из Cline не менять; можно читать, снимать ещё не снятый экран (`tools/penpot_dump.js`, `design/README.md`) и проверять `tools/check_design.py`. Trilium — только по прямой просьбе.
