@@ -41,6 +41,40 @@ object Engine {
 
     private var open = false
 
+    // ---------------------------------------------------------------- прогресс открытия (B58)
+
+    /**
+     * Прогресс открытия 0…100, который присылает движок: колбэк crengine
+     * (`OnLoadFileProgress` / `OnFormatProgress`) → `cre_session.cpp` → JNI-переходник
+     * (`reader_jni.cpp`) → [onOpenProgress]. Кладётся из потока движка, читается с UI.
+     */
+    @Volatile
+    private var openPercent = -1
+
+    /** Последний отданный экрану процент: E-Ink не любит частую перерисовку. */
+    private var sentPercent = -1
+
+    /** Приёмник прогресса от нативного кода — зовётся из потока движка. */
+    @JvmStatic
+    fun onOpenProgress(percent: Int) {
+        openPercent = percent
+        val l = progressListener
+        // Шаг в 2 % — примерно строка журнала: мельче на E-Ink не видно, а кадр дорог.
+        if (l != null && (percent - sentPercent >= 2 || percent >= 100)) {
+            sentPercent = percent
+            l(percent)
+        }
+    }
+
+    /** Экран B58 подписывается на прогресс открытия; null — отписка. */
+    @Volatile
+    private var progressListener: ((Int) -> Unit)? = null
+
+    fun setProgressListener(l: ((Int) -> Unit)?) {
+        progressListener = l
+        sentPercent = -1
+    }
+
     /**
      * Задать каталог кэша разметки. Вызывается один раз из `EinkActivity.onCreate`:
      * `/data/data/<пакет>` знает только `Context`.

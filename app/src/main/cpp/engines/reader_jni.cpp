@@ -12,6 +12,65 @@
 #include "probe.h"
 
 /**
+ * Мост прогресса открытия: C-колбэк crengine → статический метод Kotlin
+ * `Engine.onOpenProgress(Int)`. C++-сторона (`cre_session.cpp`) не знает про JNI,
+ * JNI-сторона — про crengine.
+ *
+ * Вызовы идут из потока движка (`Engine.worker`) — обычного Java-потока, то есть
+ * уже присоединённого к JVM. `GetEnv` на нём возвращает готовый `JNIEnv`;
+ * если поток всё же не присоединён, `AttachCurrentThread` присоединяет его на время
+ * вызова. Сам метод в Kotlin только складывает процент в поле и просит перерисовку —
+ * ничего не блокирует поток движка.
+ */
+static JavaVM *g_vm = NULL;
+static jclass g_engineCls = NULL;
+static jmethodID g_progressMid = NULL;
+
+static void progress_trampoline(int percent)
+{
+    if (!g_vm || !g_engineCls || !g_progressMid)
+        return;
+    JNIEnv *env = NULL;
+    bool detach = false;
+    jint r = g_vm->GetEnv((void **)&env, JNI_VERSION_1_6);
+    if (r == JNI_EDETACHED) {
+        if (g_vm->AttachCurrentThread(&env, NULL) != JNI_OK)
+            return;
+        detach = true;
+    } else if (r != JNI_OK) {
+        return;
+    }
+    env->CallStaticVoidMethod(g_engineCls, g_progressMid, (jint)percent);
+    if (env->ExceptionCheck())
+        env->ExceptionClear();     // прогресс не должен ронять открытие
+    if (detach)
+        g_vm->DetachCurrentThread();
+}
+
+/** Подготовить JNI-переходник (один раз); `< 0` — класс или метод не нашлись. */
+static int setup_progress(JNIEnv *env)
+{
+    if (g_progressMid)
+        return 0;
+    if (!g_vm)
+        env->GetJavaVM(&g_vm);
+    jclass c = env->FindClass("ru/ogrpfsense/dexpm8/reader/Engine");
+    if (!c)
+        return -1;
+    jmethodID m = env->GetStaticMethodID(c, "onOpenProgress", "(I)V");
+    if (!m) {
+        env->DeleteLocalRef(c);
+        return -1;
+    }
+    g_engineCls = (jclass)env->NewGlobalRef(c);
+    env->DeleteLocalRef(c);
+    if (!g_engineCls)
+        return -1;
+    g_progressMid = m;
+    return 0;
+}
+
+/**
  * UTF-8 → `jstring` через UTF-16. `NewStringUTF` здесь не годится: он ждёт Modified UTF-8,
  * а текст книги — обычный UTF-8, и 4-байтный символ роняет процесс (падеж на EPUB
  * 2026-11-13: «input is not valid Modified UTF-8»).
@@ -74,6 +133,7 @@ extern "C" {
 
 DEXP_PROBE_API int dexp_reader_open(const char *path, const char *cacheDir, int w, int h);
 DEXP_PROBE_API int dexp_reader_close();
+DEXP_PROBE_API void dexp_reader_set_progress_hook(void (*hook)(int percent));
 DEXP_PROBE_API int dexp_reader_page_count();
 DEXP_PROBE_API int dexp_reader_cur_page();
 DEXP_PROBE_API int dexp_reader_page(int page, int w, int h, unsigned char *gray);
@@ -99,7 +159,11 @@ Java_ru_ogrpfsense_dexpm8_reader_Engine_openNative(JNIEnv *env, jclass cls,
     if (!p)
         return DEXP_PROBE_EARG;
     const char *c = cacheDir ? env->GetStringUTFChars(cacheDir, NULL) : NULL;
+    /* Прогресс открытия (B58): переходник ставится один раз на сеанс .so. */
+    if (setup_progress(env) == 0)
+        dexp_reader_set_progress_hook(progress_trampoline);
     int rc = dexp_reader_open(p, c, w, h);
+    dexp_reader_set_progress_hook(NULL);    // вне открытия прогресса нет
     if (c)
         env->ReleaseStringUTFChars(cacheDir, c);
     env->ReleaseStringUTFChars(path, p);

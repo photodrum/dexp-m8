@@ -38,11 +38,60 @@ namespace {
 /* Кэш разметки: 24 МБ при 16 ГБ flash — хватает на 2–3 книги. */
 const lvsize_t CACHE_MAX_BYTES = 24 * 1024 * 1024;
 
+/**
+ * Вес загрузки файла в общем прогрессе открытия, проценты. Загрузка 5-МБ FB2 — сотни мс,
+ * разметка — секунды, поэтому разметке отдана основная часть шкалы.
+ */
+const int LOAD_SHARE = 30;
+
+/** Куда писать прогресс (Kotlin, ставит `dexp_reader_set_progress_hook`). */
+typedef void (*ProgressHook)(int percent);
+
+ProgressHook g_hook = NULL;
+/* Последний отданный процент: движок при загрузке из кэша может шагнуть назад — шкала не должна. */
+int g_lastPercent = -1;
+
 /** Единственный вид на процесс; между книгами тот же самый. */
 LVDocView *g_view = NULL;
 bool g_fontsOk = false;
 bool g_cacheOk = false;
 int g_pages = 0;
+
+void report_progress(int percent)
+{
+    if (percent < 0)
+        percent = 0;
+    if (percent > 100)
+        percent = 100;
+    if (percent <= g_lastPercent)
+        return;
+    g_lastPercent = percent;
+    if (g_hook)
+        g_hook(percent);
+}
+
+/**
+ * Колбэк crengine (`lvtinydom.h`, `LVDocViewCallback`) — экран B58 «Открываем книгу».
+ * Движок зовёт его из того же потока, что и `dexp_reader_open` (`Engine.worker`).
+ *
+ * Прерывания разметки в crengine нет: `Render` — один вызов без флагов остановки,
+ * `OnFormatProgress` только сообщает процент. Поэтому отмена в читалке — решение
+ * Kotlin: экран уходит, результат открытия выбрасывается, документ закрывается
+ * сразу после возврата `dexp_reader_open`.
+ */
+class ProgressCallback : public LVDocViewCallback {
+public:
+    void OnLoadFileStart(lString32 /*filename*/) override { report_progress(0); }
+    void OnLoadFileProgress(int percent) override { report_progress(percent * LOAD_SHARE / 100); }
+    void OnLoadFileEnd() override { report_progress(LOAD_SHARE); }
+    void OnFormatStart() override { report_progress(LOAD_SHARE); }
+    void OnFormatProgress(int percent) override {
+        report_progress(LOAD_SHARE + percent * (100 - LOAD_SHARE) / 100);
+    }
+    void OnDocumentReady() override { report_progress(100); }
+};
+
+ProgressCallback g_progressCallback;
 
 /**
  * Пункт оглавления в том виде, в каком его отдаёт JNI: уже строкой UTF-8.
@@ -159,7 +208,9 @@ DEXP_PROBE_API int dexp_reader_open(const char *path, const char *cacheDir, int 
         return DEXP_READER_EFONT;
 
     long t0 = now_ms();
+    g_lastPercent = -1;
     g_view = new LVDocView(8, false);
+    g_view->setCallback(&g_progressCallback);   // прогресс открытия (B58)
     g_view->setViewMode(DVM_PAGES, 1);
     g_view->setPageHeaderInfo(PGHDR_NONE);   // колонтитулы рисует оболочка (B3)
     g_view->setDefaultFontFace(lString8("Noto Serif"));
@@ -190,6 +241,15 @@ DEXP_PROBE_API int dexp_reader_close()
 {
     drop_document();
     return DEXP_PROBE_OK;
+}
+
+/**
+ * Куда слать прогресс открытия (0…100): JNI-переходник из `reader_jni.cpp`.
+ * NULL — прогресс никому не нужен. Ставится один раз за сеанс приложения.
+ */
+DEXP_PROBE_API void dexp_reader_set_progress_hook(ProgressHook hook)
+{
+    g_hook = hook;
 }
 
 DEXP_PROBE_API int dexp_reader_page_count()

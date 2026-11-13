@@ -89,6 +89,50 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
     private val dialog = ErrorDialog(ink, icons)
     private var dialogOpen = false
 
+    // --- B58 «Открываем книгу»: первое открытие длиннее SHOW_AFTER_MS
+    private val openDialog = OpenBookDialog(ink, icons)
+    /** Диалог на экране: загрузка идёт и порог ожидания уже прошёл. */
+    private var opening = false
+    /** Процент, который пришёл от движка, когда диалога ещё не было. */
+    private var openPct = 0
+    /** Открытие идёт (от постановки задачи в `Engine.worker` до первой страницы). */
+    private var loading = false
+    /** Нажата «Отмена»: результат открытия выбрасывается, документ закрывается. */
+    @Volatile private var cancelled = false
+    private val showOpen = Runnable {
+        if (attached && loading && !cancelled) {
+            opening = true
+            openDialog.open(openSub(), openPct)
+            redraw()
+        }
+    }
+
+    /** Прогресс открытия с потока движка (переслан на UI). */
+    private fun onOpenProgress(p: Int) {
+        if (!attached) return
+        openPct = p
+        if (opening && openDialog.progress(p)) redraw()
+    }
+
+    /** Подзаголовок B58: «книга · автор · FB2» (в снимке «Война и мир · Л. Толстой · FB2»). */
+    private fun openSub(): String {
+        val e = entry ?: return title
+        val parts = ArrayList<String>(3)
+        if (e.title.isNotEmpty()) parts.add(e.title)
+        if (!e.author.isNullOrEmpty()) parts.add(e.author)
+        if (e.format.isNotEmpty()) parts.add(e.format.uppercase(java.util.Locale.ROOT))
+        return parts.joinToString(" · ")
+    }
+
+    private fun stopOpenDialog() {
+        loading = false
+        removeCallbacks(showOpen)
+        if (opening) {
+            opening = false
+            redraw()
+        }
+    }
+
     override fun layout(w: Float, h: Float) {
         super.layout(w, h)
         dst.set(TX, TY, TX + TW, TY + TH)
@@ -100,11 +144,14 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
     // ------------------------------------------------------------------ кадр
 
     override fun render(c: Canvas) {
+        val dim = if (opening) dimBegin(c) else -1
         ink.rect(c, 0f, 0f, W, H, T.BG_READ)
         header(c)
         val b = if (shownB) bmpB else bmpA
         if (b != null) c.drawBitmap(b, null, dst, pagePaint)
         if (pages > 0) footer(c)
+        if (dim >= 0) dimEnd(c, dim)
+        if (opening) openDialog.draw(c)
         if (dialogOpen) dialog.draw(c)
     }
 
@@ -153,12 +200,16 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         attached = true
+        // Экран живёт в кэше и отвязывается: подписка на прогресс — на каждый показ.
+        Engine.setProgressListener { p -> post { onOpenProgress(p) } }
         start()
     }
 
     override fun onDetachedFromWindow() {
         attached = false
         gen++                 // результат уже идущей отрисовки выбрасываем
+        stopOpenDialog()
+        Engine.setProgressListener(null)
         // Очередь движка: сначала сохранить место чтения (позиция берётся у движка),
         // потом закрыть документ — он держит DOM и разметку (PSS).
         Engine.worker.execute {
@@ -219,12 +270,28 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         bmpB = Engine.newPageBitmap(w, h)
         buf = ByteArray(w * h)
         val my = ++gen
+        cancelled = false
+        openPct = 0
+        loading = true
+        removeCallbacks(showOpen)
+        postDelayed(showOpen, OpenBookDialog.SHOW_AFTER_MS)
         Engine.worker.execute {
             val t0 = SystemClock.uptimeMillis()
             val rc = Engine.open(e.path, w, h)
             if (rc != Engine.OK) {
                 Trace.step("b3: open rc=$rc ${Engine.codeText(rc)} ${SystemClock.uptimeMillis() - t0}ms")
-                post { if (attached && my == gen) fail(rc, Engine.codeText(rc)) }
+                post {
+                    if (!attached || my != gen) return@post
+                    stopOpenDialog()
+                    fail(rc, Engine.codeText(rc))
+                }
+                return@execute
+            }
+            // «Отмена» на B58: разметка в crengine не прерывается (см. `cre_session.cpp`),
+            // поэтому открытие доводится до конца и тут же закрывается — экран уже ушёл.
+            if (cancelled || my != gen) {
+                Trace.step("b3: open отменён ${SystemClock.uptimeMillis() - t0}ms")
+                Engine.close()
                 return@execute
             }
             pages = Engine.pageCount()
@@ -238,6 +305,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
                 "pos=${if (e.pos.isNullOrEmpty()) "нет" else "есть -> $saved"}")
             post {
                 if (!attached || my != gen) return@post
+                stopOpenDialog()
                 chapter(cur)
                 show(cur, 0)
             }
@@ -257,6 +325,8 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         flips = 0
         toc = emptyList()
         dialogOpen = false
+        stopOpenDialog()
+        cancelled = false
     }
 
     /**
@@ -308,6 +378,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
      * (+1 вперёд, −1 назад, 0 — открытие): соседняя в этом же направлении готовится заранее.
      */
     private fun show(page: Int, dir: Int) {
+        if (loading) return             // книга ещё открывается, листать нечего
         if (page < 0 || page >= pages) return
         if (page == shownPage && nextPage == -1) return    // уже на экране
         val my = ++epoch
@@ -412,10 +483,30 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
             }
             return
         }
+        // B58: пока книга открывается, касания только на «Отмену» — страниц ещё нет.
+        if (opening) {
+            if (openDialog.hitCancel(x, y)) cancelOpen()
+            return
+        }
         when {
             x < W / 3f -> back()
             x > W * 2f / 3f -> forward()
         }
+    }
+
+    /**
+     * «Отмена» на B58. Разметку crengine не прерывает (флага остановки в движке нет),
+     * поэтому: экран уходит в библиотеку сразу, результат открытия выбрасывается,
+     * документ закрывается по возврату `Engine.open` (см. `open`).
+     */
+    private fun cancelOpen() {
+        Trace.step("b3: отмена открытия на ${openPct}%")
+        cancelled = true
+        gen++            // результат открытия уже не нужен
+        loading = false
+        opening = false
+        removeCallbacks(showOpen)
+        act.onBackPressed()
     }
 
     private fun forward() = show(cur + 1, 1)
@@ -428,6 +519,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
      */
     fun key(code: Int): Boolean {
         if (dialogOpen) return false
+        if (opening) return false     // B58: страниц ещё нет, клавиши листания не наши
         val next = code == KEY_PAGEDOWN || code == KEY_VOLUME_DOWN
         val prev = code == KEY_PAGEUP || code == KEY_VOLUME_UP
         if (!next && !prev) return false
