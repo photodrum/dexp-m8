@@ -44,6 +44,9 @@ object EngineSelfTest {
         val pages = Engine.pageCount()
         Trace.step("selftest: pages=$pages")
 
+        // R2.4: настройки B31 на движке — масштаб, обрезка, сдвиг, контраст.
+        if (Engine.djvu) viewStep()
+
         // Страницы: первая, вторая, последняя. Первая после открытия — самая дорогая.
         for (p in intArrayOf(0, 1, pages - 1)) {
             if (p < 0 || p >= pages) continue
@@ -142,6 +145,76 @@ object EngineSelfTest {
         dump(1, "first")
         Engine.close()
     }
+    /**
+     * R2.4 на книге: прогон настроек B31 через `Engine.pageView` — «по странице»,
+     * обрезка, «по ширине», свой масштаб, сдвиг до предела, контраст. Для каждого варианта
+     * в трассу идут время, доля чернил и `panOut`, а кадр — в PNG (посмотреть глазами).
+     * Приёмка движка до экрана R2.5: экранных кнопок ещё нет.
+     */
+    private fun viewStep() {
+        val page = if (Engine.pageCount() > 2) 2 else 0
+        val buf = ByteArray(BUF)
+        val pan = IntArray(4)
+        var t0: Long
+
+        fun run(name: String, view: DjvuView) {
+            t0 = SystemClock.uptimeMillis()
+            val rc = Engine.pageView(page, W, H, buf, view, pan)
+            val ms = SystemClock.uptimeMillis() - t0
+            Trace.step("selftest: view $name rc=$rc ${Engine.codeText(rc)} ${ms}ms " +
+                "dark=${dark(buf)} pan=${pan[0]},${pan[1]} max=${pan[2]},${pan[3]}")
+            if (rc == Engine.OK) dumpBuf(buf, "view-$name")
+            else Trace.step("selftest: view $name КАДР НЕ СНЯТ")
+        }
+
+        run("page", DjvuView())                                            // «По странице»
+        run("crop", DjvuView(cropL = 100, cropT = 100, cropR = 100, cropB = 100))
+        run("width", DjvuView(zoom = DjvuView.ZOOM_WIDTH))                  // «По ширине»
+        run("zoom140", DjvuView(zoom = 140))                                // «Свой · 140 %»
+        run("contrast", DjvuView(contrast = true))
+
+        // Сдвиг: сначала предел при 140 %, потом два положения внутри него.
+        Engine.pageView(page, W, H, buf, DjvuView(zoom = 140), pan)
+        val maxX = pan[2]
+        val maxY = pan[3]
+        Trace.step("selftest: view пределы при 140 % max=$maxX,$maxY")
+        if (maxY > 0) {
+            run("panY0", DjvuView(zoom = 140, panY = 0))
+            run("panYmax", DjvuView(zoom = 140, panY = maxY))
+            run("panYclamp", DjvuView(zoom = 140, panY = maxY + 500))       // должен стать maxY
+        }
+        if (maxX > 0) run("panXmax", DjvuView(zoom = 140, panX = maxX))
+        // «По ширине» на узком окне: maxX = 0, сдвиг только вниз — так и должно быть.
+        Engine.pageView(page, W, H, buf, DjvuView(zoom = DjvuView.ZOOM_WIDTH), pan)
+        Trace.step("selftest: view по ширине max=${pan[2]},${pan[3]} " +
+            if (pan[2] == 0) "X НЕ СДВИГАЕТСЯ (верно)" else "X СДВИГАЕТСЯ (странно)")
+    }
+
+    /**
+     * Сохранить готовый буфер (уже 16 уровней, инвертирован под `ALPHA_8`) в PNG —
+     * посмотреть глазами. Путь тот же, что у [dump].
+     */
+    private fun dumpBuf(buf: ByteArray, name: String) {
+        try {
+            val px = IntArray(W * H)
+            for (i in px.indices) {
+                val g = 255 - (buf[i].toInt() and 0xFF)
+                px[i] = (0xFF shl 24) or (g shl 16) or (g shl 8) or g
+            }
+            val bmp = android.graphics.Bitmap.createBitmap(W, H, android.graphics.Bitmap.Config.ARGB_8888)
+            bmp.setPixels(px, 0, W, 0, 0, W, H)
+            val dir = java.io.File("/sdcard/Android/data/ru.ogrpfsense.dexpm8/files")
+            dir.mkdirs()
+            val f = java.io.File(dir, "page-$name.png")
+            java.io.FileOutputStream(f).use {
+                bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+            }
+            bmp.recycle()
+        } catch (t: Throwable) {
+            Trace.step("selftest: dump $name FAIL ${t.javaClass.simpleName}: ${t.message}")
+        }
+    }
+
     /** Доля чёрных точек (альфа 255) в буфере — грубая проверка, что текст нарисован. */
     private fun dark(buf: ByteArray): String {
         var n = 0

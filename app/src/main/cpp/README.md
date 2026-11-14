@@ -53,6 +53,25 @@ cd test && setarch -R /tmp/test_core testdata/sample.fb2   # без ASLR: см. 
 для `book_meta_fb2` — все поля, кодировки, обрезку файла в любом месте, ошибки, мусор.
 Прогоняется под ASan + UBSan, ожидается 34 `ok` и `all good`.
 
+## Раскладка DjVu: масштаб, обрезка, сдвиг (R2.4)
+
+Арифметика — `engines/djvu_layout.h`, без DjVuLibre: тест собирается обычным `g++`
+и не требует NDK. Проверяет инварианты, из-за которых `ddjvu_page_render` возвращал
+пусто (`bad_rect2`): `renderrect` внутри `pagerect` и внутри буфера, обрезка применяется
+до вписывания, сдвиг ограничивается.
+
+```bash
+g++ -std=c++17 -O1 -Wall -Wextra -Iapp/src/main/cpp/engines \
+    -o /tmp/test_djvu_layout app/src/main/cpp/test/test_djvu_layout.cpp
+/tmp/test_djvu_layout          # ожидается «140 проверок, 0 провалов»
+```
+
+`test/host_djvu_view.cpp` — стенд на настоящем файле: собирается один раз с хостовой
+libdjvu (57 объектов из `third_party/djvulibre/libdjvu` с нашим `engines/djvu/config.h`),
+проверяет на странице, что сдвиг по X и Y совпадает пиксель-в-пиксель со срезом
+неподвижного кадра, а контраст углубляет штрихи. В сборку приложения не входит.
+
+
 ## Сборка под Android
 
 `CMakeLists.txt` собирает `libdexp_core.so` с флагами:

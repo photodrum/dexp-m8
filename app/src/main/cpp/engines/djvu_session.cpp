@@ -24,6 +24,8 @@
 
 #include "libdjvu/ddjvuapi.h"
 #include "libdjvu/miniexp.h"
+#include "djvu_gray.h"
+#include "djvu_layout.h"
 #include "probe.h"
 
 #define DEXP_LOG(...) __android_log_print(ANDROID_LOG_INFO, "DexpM8", __VA_ARGS__)
@@ -264,10 +266,22 @@ DEXP_PROBE_API int dexp_djvu_cur_page()
 
 
 /**
- * Страница [page] в [gray] (w×h, stride = w, 8 бит): вписана с сохранением пропорций,
- * по центру, фон 255. EPAGE — страница в файле повреждена (B59), документ остаётся открыт.
+ * Страница [page] в [gray] (w×h, stride = w, 8 бит) по настройкам B31 (R2.4):
+ * [zoom] (0 «по странице» / −1 «по ширине» / 50…300 %), [crop] — 4 промилле
+ * (слева, сверху, справа, снизу) или NULL, [panX]/[panY] — сдвиг в пикселях буфера,
+ * [contrast] ≠ 0 — «Усилить контраст скана».
+ *
+ * [out] (4 int, может быть NULL) — фактический сдвиг и предел: [panX, panY, maxX, maxY].
+ * Экран по `max` решает, листать страницу или сдвигать изображение третями.
+ *
+ * Порядок: обрезка (промилле) → масштаб по обрезанной части → сдвиг → один вызов
+ * `ddjvu_page_render` с областью внутри `pagerect`. Фон буфера 255 (белый), видимая
+ * часть вне страницы остаётся фоном: при «по странице» её нет, при увеличении — тонкие
+ * поля по краям. EPAGE — страница в файле повреждена (B59), документ остаётся открыт.
  */
-DEXP_PROBE_API int dexp_djvu_page(int page, int w, int h, unsigned char *gray)
+DEXP_PROBE_API int dexp_djvu_page_view(int page, int w, int h, unsigned char *gray,
+                                       int zoom, const int *crop, int panX, int panY,
+                                       int contrast, int *out)
 {
     if (!g_doc)
         return DEXP_READER_ENOSESSION;
@@ -290,30 +304,49 @@ DEXP_PROBE_API int dexp_djvu_page(int page, int w, int h, unsigned char *gray)
     } else {
         int pw = ddjvu_page_get_width(pg);
         int ph = ddjvu_page_get_height(pg);
-        if (pw <= 0 || ph <= 0) {
+        dexpdjvu::Layout lay;
+        /* pagerect/ymax у ddjvu — в координатах снизу вверх, но при
+         * set_y_direction(1) движок переворачивает Y сам (ddjvuapi.cpp:2449);
+         * второй раз не переворачиваем. */
+        if (pw <= 0 || ph <= 0 || !dexpdjvu::layout(pw, ph, w, h, zoom, crop,
+                                                    panX, panY, lay)) {
             rc = DEXP_PROBE_EPAGE;
         } else {
-            int rw = w, rh = (int)((long long)ph * w / pw);
-            if (rh > h) {
-                rh = h;
-                rw = (int)((long long)pw * h / ph);
-            }
-            if (rw < 1) rw = 1;
-            if (rh < 1) rh = 1;
-            ddjvu_rect_t prect = {0, 0, (unsigned)rw, (unsigned)rh};
-            ddjvu_rect_t rrect = prect;
-            unsigned char *dst = gray + (size_t)((h - rh) / 2) * (size_t)w + (size_t)((w - rw) / 2);
+            ddjvu_rect_t prect = {0, 0, (unsigned)lay.pageW, (unsigned)lay.pageH};
+            ddjvu_rect_t rrect = {lay.rectX, lay.rectY,
+                                  (unsigned)lay.rectW, (unsigned)lay.rectH};
+            unsigned char *dst = gray + (size_t)lay.bufY * (size_t)w + (size_t)lay.bufX;
             if (!ddjvu_page_render(pg, DDJVU_RENDER_COLOR, &prect, &rrect, g_fmt,
                                    (unsigned long)w, (char *)dst))
                 rc = DEXP_PROBE_ERENDER;
+            else if (contrast)
+                for (int row = 0; row < lay.rectH; row++)
+                    dexp_djvu_contrast(dst + (size_t)row * (size_t)w, (size_t)lay.rectW);
+            if (out) {
+                out[dexpdjvu::PAN_X] = lay.panX;
+                out[dexpdjvu::PAN_Y] = lay.panY;
+                out[dexpdjvu::PAN_MAX_X] = lay.maxX;
+                out[dexpdjvu::PAN_MAX_Y] = lay.maxY;
+            }
         }
     }
     ddjvu_page_release(pg);
     drain();
     if (rc == DEXP_PROBE_OK)
         g_cur = page;
-    DEXP_LOG("djvu: page %d rc=%d %ldms", page, rc, now_ms() - t0);
+    DEXP_LOG("djvu: page %d rc=%d zoom=%d pan=%d,%d %ldms", page, rc, zoom, panX, panY,
+             now_ms() - t0);
     return rc;
+}
+
+/**
+ * Страница [page] в [gray] (w×h, stride = w, 8 бит): вписана с сохранением пропорций,
+ * по центру, фон 255 — прежнее поведение R2.1, теперь поверх [dexp_djvu_page_view]
+ * с настройками по умолчанию («по странице», без обрезки, без контраста).
+ */
+DEXP_PROBE_API int dexp_djvu_page(int page, int w, int h, unsigned char *gray)
+{
+    return dexp_djvu_page_view(page, w, h, gray, dexpdjvu::ZOOM_PAGE, NULL, 0, 0, 0, NULL);
 }
 
 /** Позиция страницы строкой `djvu:<страница>`. Длина или код < 0. */

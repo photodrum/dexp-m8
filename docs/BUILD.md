@@ -112,6 +112,22 @@ cd test && setarch -R /tmp/test_core testdata/sample.fb2
 `setarch -R` (без ASLR) обязателен: ASan из gcc 12 на ядре хоста (7.0, высокая энтропия mmap)
 примерно в 1 запуске из 7 падает до `main` с `AddressSanitizer:DEADLYSIGNAL` — и на старом коде тоже.
 
+### Раскладка DjVu (R2.4)
+
+`engines/djvu_layout.h` — чистая арифметика без DjVuLibre, поэтому проверяется `g++`
+без NDK:
+
+```bash
+cd ~/projects/dexp-m8
+g++ -std=c++17 -O1 -Wall -Wextra -Iapp/src/main/cpp/engines \
+    -o /tmp/test_djvu_layout app/src/main/cpp/test/test_djvu_layout.cpp
+/tmp/test_djvu_layout          # «140 проверок, 0 провалов», «all good»
+```
+
+Стенд на настоящем файле (`test/host_djvu_view.cpp`) требует хостовой libdjvu; рецепт —
+`app/src/main/cpp/README.md`, раздел «Раскладка DjVu». В APK он не входит.
+
+
 ## Проверка разбора OPDS на хосте
 
 Ядро сетевых каталогов (`core/Opds.kt`) разбирается на JVM без устройства и без Gradle:
@@ -271,7 +287,7 @@ GIT_ASKPASS=$PWD/tools/git-askpass.sh GIT_TERMINAL_PROMPT=0 \
 | `adb` не распознан в PowerShell | запускать как `.\adb` из `C:\platform-tools` |
 | `java: command not found` (`apksigner`, `d8`, `kotlinc` в `typecheck.sh`, фон) | в PATH нет JDK: `export JAVA_HOME=$HOME/.local/jdk PATH=$HOME/.local/jdk/bin:$PATH` |
 | `adb: command not found` в Linux | `export PATH=$HOME/.local/android-sdk/platform-tools:$PATH` |
-| Книга не видна в `adb devices` после переподключения или перезагрузки (LXC `tools`, VMID 113, USB проброшен: udev `51-android.rules`, vendor `2207`) | `pkill adb; adb start-server`, подождать 3 с. Нет `2207` в `/sys/bus/usb/devices` (`lsusb \| grep 2207`, `2207:0011`) — другой порт ПК |
+| Книга не видна в `adb devices` после переподключения или перезагрузки (LXC `tools`, VMID 113, USB проброшен: udev `51-android.rules`, vendor `2207`) | `pkill adb; adb start-server`, подождать 3 с. Нет `2207` в `/sys/bus/usb/devices` (`lsusb \| grep 2207`, `2207:0011`) — другой порт ПК. **Повторилось 2026-11-14** (R2.4а): кабель на месте, `lsusb` недоступен, `adb devices` пуст — `pkill adb; adb start-server` вернул `6IVJ8C68AP device` |
 | `401` на `/api/v4/mcp` | legacy-токен вместо fine-grained, либо `PRIVATE-TOKEN` вместо `Authorization: Bearer` |
 | `403 insufficient_granular_scope` | у токена нет нужного ресурса — дописать в Edit PAT |
 | `403 [Code: Push]` | у токена нет `write_repository` |

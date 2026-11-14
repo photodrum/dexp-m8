@@ -18,6 +18,9 @@ DEXP_PROBE_API int dexp_djvu_close();
 DEXP_PROBE_API int dexp_djvu_page_count();
 DEXP_PROBE_API int dexp_djvu_cur_page();
 DEXP_PROBE_API int dexp_djvu_page(int page, int w, int h, unsigned char *gray);
+DEXP_PROBE_API int dexp_djvu_page_view(int page, int w, int h, unsigned char *gray,
+                                       int zoom, const int *crop, int panX, int panY,
+                                       int contrast, int *out);
 DEXP_PROBE_API int dexp_djvu_pos(int page, char *out, int outLen);
 DEXP_PROBE_API int dexp_djvu_page_of(const char *pos);
 DEXP_PROBE_API int dexp_djvu_goto_pos(const char *pos);
@@ -83,6 +86,43 @@ DJVU_JNI(pageNative)(JNIEnv *env, jclass, jint page, jint w, jint h, jbyteArray 
     if (rc == DEXP_PROBE_OK)
         dexp_gray_to_palette(g, (size_t)w * (size_t)h);
     env->ReleaseByteArrayElements(out, buf, 0);
+    return rc;
+}
+
+/**
+ * Страница по настройкам B31 (R2.4). [crop] — 4 промилле (слева, сверху, справа, снизу),
+ * null — без обрезки; [panOut] — 4 int (сдвиг и предел), null — не нужно.
+ * Копии массивов короткие и делаются один раз на кадр, поэтому здесь они обычные:
+ * `GetByteArrayElements` для кадра страницы (до 1,5 с) держал бы GC дольше.
+ */
+JNIEXPORT jint JNICALL
+DJVU_JNI(viewNative)(JNIEnv *env, jclass, jint page, jint w, jint h, jbyteArray out,
+                     jint zoom, jintArray crop, jint panX, jint panY, jint contrast,
+                     jintArray panOut)
+{
+    if (!out || w <= 0 || h <= 0)
+        return DEXP_PROBE_EARG;
+    if (env->GetArrayLength(out) < (jsize)w * (jsize)h)
+        return DEXP_PROBE_EARG;
+    int c[4];
+    const int *cropPtr = NULL;
+    if (crop) {
+        if (env->GetArrayLength(crop) != 4)
+            return DEXP_PROBE_EARG;
+        env->GetIntArrayRegion(crop, 0, 4, c);
+        cropPtr = c;
+    }
+    int pan[4] = {0, 0, 0, 0};
+    jbyte *buf = env->GetByteArrayElements(out, NULL);
+    if (!buf)
+        return DEXP_PROBE_EARG;
+    unsigned char *g = (unsigned char *)buf;
+    int rc = dexp_djvu_page_view(page, w, h, g, zoom, cropPtr, panX, panY, contrast, pan);
+    if (rc == DEXP_PROBE_OK)
+        dexp_gray_to_palette(g, (size_t)w * (size_t)h);
+    env->ReleaseByteArrayElements(out, buf, 0);
+    if (panOut && env->GetArrayLength(panOut) >= 4)
+        env->SetIntArrayRegion(panOut, 0, 4, (const jint *)pan);
     return rc;
 }
 

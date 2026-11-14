@@ -182,6 +182,28 @@ object Engine {
         }
     }
 
+    /**
+     * Отрисовать страницу DjVu по настройкам B31 (R2.4): [view] — масштаб, обрезка,
+     * сдвиг, контраст. Для crengine настройки B31 не действуют — обычная [page].
+     *
+     * [panOut] (4 int) заполняется фактическим сдвигом и пределом: `[0]`/`[1]` — panX/panY
+     * после ограничения, `[2]`/`[3]` — `maxX`/`maxY`, сколько ещё можно сдвинуть.
+     * По ним экран решает, сдвигать изображение третями или листать страницу.
+     * Только в [worker]; возвращает код.
+     */
+    fun pageView(page: Int, w: Int, h: Int, out: ByteArray, view: DjvuView,
+                 panOut: IntArray?): Int {
+        if (!open) return ENOSESSION
+        if (!djvu) return page(page, w, h, out)
+        return try {
+            DjvuEngine.viewNative(page, w, h, out, view.zoom, view.crop(),
+                view.panX, view.panY, if (view.contrast) 1 else 0, panOut)
+        } catch (t: Throwable) {
+            Trace.step("reader: pageView FAIL ${t.javaClass.simpleName}: ${t.message}")
+            ERENDER
+        }
+    }
+
     /** Сменить кегль, сохранив место чтения [keepPos]. Только в [worker]. */
     fun setFont(size: Int, keepPos: String?): Int {
         if (!open) return ENOSESSION

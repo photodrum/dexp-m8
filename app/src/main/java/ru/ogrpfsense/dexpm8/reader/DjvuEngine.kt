@@ -13,6 +13,9 @@ internal object DjvuEngine {
     @JvmStatic external fun pageCountNative(): Int
     @JvmStatic external fun curPageNative(): Int
     @JvmStatic external fun pageNative(page: Int, w: Int, h: Int, out: ByteArray): Int
+    @JvmStatic external fun viewNative(page: Int, w: Int, h: Int, out: ByteArray,
+                                       zoom: Int, crop: IntArray?, panX: Int, panY: Int,
+                                       contrast: Int, panOut: IntArray?): Int
     @JvmStatic external fun posNative(page: Int): String?
     @JvmStatic external fun pageOfNative(pos: String): Int
     @JvmStatic external fun gotoPosNative(pos: String): Int
