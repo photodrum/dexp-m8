@@ -20,6 +20,10 @@ import android.graphics.Canvas
  * не рисуется намеренно: другой программы для книг на книге нет, а на B59 «страница повреждена»
  * это и вовсе тупик. Макет B45 поправить — строку и `next` убрать, кнопки сдвинуть вверх.
  * Кнопки пока стоят по макету.
+ *
+ * B59 «Страница повреждена» (R2.3, снимка нет — `docs/DESIGN_QUESTIONS.md`): тот же диалог,
+ * вместо «Удалить файл» в той же выпуклой кнопке — «Следующая стр.» ([ACT_NEXT]), подпись
+ * по центру кнопки 38/700, без иконки. Включается `next = true`.
  */
 internal class ErrorDialog(private val ink: Ink, private val icons: Icons) {
 
@@ -29,15 +33,17 @@ internal class ErrorDialog(private val ink: Ink, private val icons: Icons) {
     private var label = ""
     private var code = ""
     private var canDelete = false
+    private var canNext = false
 
     fun open(title: String, sub: String, note: String, label: String, code: String,
-             canDelete: Boolean) {
+             canDelete: Boolean, next: Boolean = false) {
         this.title = title
         this.sub = sub
         this.note = note
         this.label = label
         this.code = code
         this.canDelete = canDelete
+        this.canNext = next && !canDelete
     }
 
     fun draw(c: Canvas) {
@@ -62,14 +68,23 @@ internal class ErrorDialog(private val ink: Ink, private val icons: Icons) {
             ink.text(c, "Удалить файл", 263f, T.base(1348.3f, T.TS_LABEL_L, 1.25f),
                 T.TS_LABEL_L, 700, T.G1)
         }
+        if (canNext) {
+            ink.convex(c, 152f, 1318f, 465f, 112f, 51f)
+            ink.textCenter(c, ink.ellipsize(NEXT_LABEL, 425f, T.TS_LABEL_L, 700), 152f, 465f,
+                T.base(1348.3f, T.TS_LABEL_L, 1.25f), T.TS_LABEL_L, 700, T.G1)
+        }
         ink.convexDark(c, 652f, 1303f, 605f, 142f, T.R_BUTTON)
         ink.textCenter(c, "Понятно", 655f, 600f, T.base(1345.7f, T.TS_ACTION, 1.25f),
             T.TS_ACTION, 700, T.G15)
     }
 
-    /** Касание: [ACT_NONE], [ACT_CLOSE] («Понятно», значок, мимо диалога) или [ACT_DELETE]. */
+    /**
+     * Касание: [ACT_NONE], [ACT_CLOSE] («Понятно», значок, мимо диалога), [ACT_DELETE]
+     * или [ACT_NEXT] (B59).
+     */
     fun hit(x: Float, y: Float): Int {
         if (canDelete && inRect(x, y, 152f, 1318f, 465f, 112f)) return ACT_DELETE
+        if (canNext && inRect(x, y, 152f, 1318f, 465f, 112f)) return ACT_NEXT
         if (inRect(x, y, 652f, 1303f, 605f, 142f)) return ACT_CLOSE
         if (inRect(x, y, 152f, 534f, 140f, 140f)) return ACT_CLOSE
         if (y < DY || y > DY + DH || x < DX || x > DX + DW) return ACT_CLOSE
@@ -83,6 +98,10 @@ internal class ErrorDialog(private val ink: Ink, private val icons: Icons) {
         const val ACT_NONE = 0
         const val ACT_CLOSE = 1
         const val ACT_DELETE = 2
+        const val ACT_NEXT = 3
+
+        /** Подпись второй кнопки B59; макета нет — предложено в `docs/DESIGN_QUESTIONS.md`. */
+        private const val NEXT_LABEL = "Следующая стр."
 
         private const val DX = 92f
         private const val DY = 470f

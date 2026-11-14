@@ -88,6 +88,8 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
 
     private val dialog = ErrorDialog(ink, icons)
     private var dialogOpen = false
+    /** B59: какая страница не декодировалась (−1 — диалог B45 или его нет). */
+    private var badPage = -1
 
     // --- B58 «Открываем книгу»: первое открытие длиннее SHOW_AFTER_MS
     private val openDialog = OpenBookDialog(ink, icons)
@@ -325,6 +327,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         flips = 0
         toc = emptyList()
         dialogOpen = false
+        badPage = -1
         stopOpenDialog()
         cancelled = false
     }
@@ -365,6 +368,28 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
             label = "КОД ОШИБКИ",
             code = text,
             canDelete = false,
+        )
+        badPage = -1
+        dialogOpen = true
+        redraw()
+    }
+
+    /**
+     * B59 «Страница повреждена» (R2.3): книга открыта, не декодируется одна страница
+     * (`EPAGE`, например обрезанный DjVu). Остальные страницы листаются; «Следующая стр.»
+     * сразу просит [page] + 1. Тексты предложены чату дизайна — `docs/DESIGN_QUESTIONS.md`.
+     */
+    private fun pageFail(page: Int) {
+        Trace.step("b3: B59 page $page")
+        badPage = page
+        dialog.open(
+            title = "Страница не открылась",
+            sub = if (title.isEmpty()) "Файл" else title,
+            note = "Эта страница в файле повреждена. Остальные страницы открываются — можно листать дальше.",
+            label = "КОД ОШИБКИ",
+            code = "Стр. ${page + 1} из $pages · ${Engine.codeText(Engine.EPAGE)}",
+            canDelete = false,
+            next = page + 1 < pages,
         )
         dialogOpen = true
         redraw()
@@ -418,7 +443,9 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         val ms = SystemClock.uptimeMillis() - t0
         if (rc != Engine.OK) {
             Trace.step("b3: page $page rc=$rc ${Engine.codeText(rc)}")
-            post { if (attached) fail(rc, Engine.codeText(rc)) }
+            // Страница не декодировалась, а книга открыта — B59; остальное — B45.
+            if (rc == Engine.EPAGE && pages > 0) post { if (attached) pageFail(page) }
+            else post { if (attached) fail(rc, Engine.codeText(rc)) }
             return
         }
         copyToHidden(page)
@@ -477,9 +504,13 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
 
     override fun onUp(x: Float, y: Float) {
         if (dialogOpen) {
-            if (dialog.hit(x, y) != ErrorDialog.ACT_NONE) {
+            val a = dialog.hit(x, y)
+            if (a != ErrorDialog.ACT_NONE) {
                 dialogOpen = false
                 redraw()
+                // B59: «Следующая стр.» — сразу за повреждённой, мимо неё.
+                if (a == ErrorDialog.ACT_NEXT && badPage >= 0) show(badPage + 1, 1)
+                badPage = -1
             }
             return
         }

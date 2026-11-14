@@ -6,6 +6,8 @@ local.properties
 *.iml
 .idea/
 .DS_Store
+# Личные настройки VS Code (абсолютные пути этой машины)
+.vscode/
 captures/
 .externalNativeBuild/
 .cxx/
