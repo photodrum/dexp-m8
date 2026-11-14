@@ -284,6 +284,7 @@ GIT_ASKPASS=$PWD/tools/git-askpass.sh GIT_TERMINAL_PROMPT=0 \
 | ld: `undefined symbol: png_init_filter_functions_neon` | libpng 1.6 на ARM ждёт `arm/*.c`; задано `PNG_ARM_NEON_OPT=0` |
 | Терминал Cline зависает на длинном heredoc | писать скрипт файлом (редактором), затем запускать |
 | В терминале Cline нет вывода долгих команд (`typecheck.sh`, Gradle) | `cmd > /tmp/x.log 2>&1`, затем читать файл |
+| `adb: command not found` в терминале Cline | в PATH его нет: `~/.local/android-sdk/platform-tools/adb` (2026-11-14) |
 | `screencap` отдаёт чёрный кадр | экран погас по таймауту: `adb shell input keyevent KEYCODE_WAKEUP`; сразу после запуска E-Ink ещё не обновилась — снимать через 10–15 с |
 | `adb install` пишет `Success`, а на книге старый APK (нет новой строки в трассе, `--es read` не срабатывает) | сверить: `adb shell pm path <пакет>`, затем `adb shell 'cat <путь>/base.apk' \| md5sum` против `md5sum app/build/.../app-debug.apk`; не совпало — ставить через `adb push … /data/local/tmp/d.apk` + `adb shell pm install -r -d /data/local/tmp/d.apk` |
 | повторный `am start … --es …` пишет «Warning: Activity not started» и экстра не доходит | Activity уже жива: перед запуском `adb shell am force-stop <пакет>` (иначе меряешь прошлый запуск) |
