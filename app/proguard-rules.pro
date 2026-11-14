@@ -10,3 +10,5 @@
 -keep class ru.ogrpfsense.dexpm8.reader.EngineProbe { *; }
 # JNI сеанса читалки R1 (cpp/engines/reader_jni.cpp): имена методов зашиты в C++.
 -keep class ru.ogrpfsense.dexpm8.reader.Engine { *; }
+# JNI сеанса DjVu R2 (cpp/engines/djvu_jni.cpp).
+-keep class ru.ogrpfsense.dexpm8.reader.DjvuEngine { *; }

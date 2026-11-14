@@ -7,7 +7,9 @@ import java.io.File
 import ru.ogrpfsense.dexpm8.ui.Trace
 
 /**
- * Сеанс чтения (R1): один открытый документ, все вызовы — в одном потоке [worker].
+ * Сеанс чтения (R1, R2): один открытый документ, все вызовы — в одном потоке [worker].
+ * Движок выбирается в [open] по расширению: DjVu — [DjvuEngine] (`libdexp_djvu.so`),
+ * остальное — crengine (`libdexp_cre.so`). Снаружи разницы нет.
  *
  * Почему один поток: `LVDocView` из crengine не потокобезопасен (READER_SPEC, раздел 4).
  * Очередь `newSingleThreadExecutor` и есть эта гарантия; наружу видны только готовые
@@ -90,36 +92,54 @@ object Engine {
         }
     }
 
-    /** Загрузить `libdexp_cre.so`; null — успех, иначе текст ошибки. Только в [worker]. */
-    private fun load(): String? {
-        if (loaded.containsKey("cre")) return loaded["cre"]
+    /**
+     * Открытый документ — DjVu (R2, [DjvuEngine], `libdexp_djvu.so`), иначе crengine.
+     * Ставится в [open] по расширению файла и не меняется до следующего [open].
+     */
+    var djvu = false
+        private set
+
+    /** Файл [path] — DjVu (по расширению, как `EngineProbe.engineFor`). */
+    fun isDjvu(path: String): Boolean {
+        val ext = path.substringAfterLast('.', "").lowercase(java.util.Locale.ROOT)
+        return EngineProbe.engineFor(ext) == EngineProbe.DJVU
+    }
+
+    /** Загрузить `libdexp_<lib>.so`; null — успех, иначе текст ошибки. Только в [worker]. */
+    private fun load(lib: String): String? {
+        if (loaded.containsKey(lib)) return loaded[lib]
         val err = try {
-            System.loadLibrary("dexp_cre")
+            System.loadLibrary("dexp_$lib")
             null
         } catch (t: Throwable) {
             t.message ?: t.javaClass.simpleName
         }
-        loaded["cre"] = err
-        if (err != null) Trace.step("reader: load FAIL $err")
+        loaded[lib] = err
+        if (err != null) Trace.step("reader: load $lib FAIL $err")
         return err
     }
 
     /**
-     * Открыть [path] и сверстать под окно [w]×[h] (реальные px текста без колонтитулов).
-     * Только в [worker]. Возвращает код; место чтения ищется по [pageOf].
+     * Открыть [path] и сверстать под окно [w]×[h] (реальные px текста без колонтитулов;
+     * DjVu вписывает страницу в это окно при отрисовке). Только в [worker].
+     * Возвращает код; место чтения ищется по [pageOf].
      */
     fun open(path: String, w: Int, h: Int): Int {
-        val err = load()
+        close()                         // прошлый документ — того же или другого движка
+        val dj = isDjvu(path)
+        val err = load(if (dj) "djvu" else "cre")
         if (err != null) return ELOAD
+        djvu = dj
         val t0 = SystemClock.uptimeMillis()
         val rc = try {
-            openNative(path, cacheDir, w, h)
+            if (dj) DjvuEngine.openNative(path) else openNative(path, cacheDir, w, h)
         } catch (t: Throwable) {
             Trace.step("reader: open FAIL ${t.javaClass.simpleName}: ${t.message}")
             ERENDER
         }
         open = rc == OK
-        Trace.step("reader: open rc=$rc ${SystemClock.uptimeMillis() - t0}ms $path")
+        Trace.step("reader: open ${if (dj) "djvu" else "cre"} rc=$rc " +
+            "${SystemClock.uptimeMillis() - t0}ms $path")
         return rc
     }
 
@@ -128,7 +148,7 @@ object Engine {
         if (!open) return
         open = false
         try {
-            closeNative()
+            if (djvu) DjvuEngine.closeNative() else closeNative()
         } catch (t: Throwable) {
             Trace.step("reader: close FAIL ${t.javaClass.simpleName}: ${t.message}")
         }
@@ -136,14 +156,14 @@ object Engine {
 
     /** Число страниц; `< 0` — документ не открыт. Только в [worker]. */
     fun pageCount(): Int = if (!open) ENOSESSION else try {
-        pageCountNative()
+        if (djvu) DjvuEngine.pageCountNative() else pageCountNative()
     } catch (t: Throwable) {
         EPAGE
     }
 
     /** Страница, на которой стоит движок сейчас (0-based); `< 0` — нет документа. Только в [worker]. */
     fun curPage(): Int = if (!open) ENOSESSION else try {
-        curPageNative()
+        if (djvu) DjvuEngine.curPageNative() else curPageNative()
     } catch (t: Throwable) {
         EPAGE
     }
@@ -155,7 +175,7 @@ object Engine {
     fun page(page: Int, w: Int, h: Int, out: ByteArray): Int {
         if (!open) return ENOSESSION
         return try {
-            pageNative(page, w, h, out)
+            if (djvu) DjvuEngine.pageNative(page, w, h, out) else pageNative(page, w, h, out)
         } catch (t: Throwable) {
             Trace.step("reader: page FAIL ${t.javaClass.simpleName}: ${t.message}")
             ERENDER
@@ -166,7 +186,7 @@ object Engine {
     fun setFont(size: Int, keepPos: String?): Int {
         if (!open) return ENOSESSION
         return try {
-            setFontNative(size, keepPos)
+            if (djvu) OK else setFontNative(size, keepPos)   // DjVu не верстается
         } catch (t: Throwable) {
             Trace.step("reader: setFont FAIL ${t.javaClass.simpleName}: ${t.message}")
             ERENDER
@@ -177,7 +197,7 @@ object Engine {
     fun pos(page: Int): String? {
         if (!open) return null
         return try {
-            posNative(page)
+            if (djvu) DjvuEngine.posNative(page) else posNative(page)
         } catch (t: Throwable) {
             null
         }
@@ -187,7 +207,7 @@ object Engine {
     fun pageOf(pos: String?): Int {
         if (!open || pos.isNullOrEmpty()) return -1
         return try {
-            pageOfNative(pos)
+            if (djvu) DjvuEngine.pageOfNative(pos) else pageOfNative(pos)
         } catch (t: Throwable) {
             -1
         }
@@ -201,7 +221,7 @@ object Engine {
     fun gotoPos(pos: String?): Int {
         if (!open || pos.isNullOrEmpty()) return -1
         return try {
-            gotoPosNative(pos)
+            if (djvu) DjvuEngine.gotoPosNative(pos) else gotoPosNative(pos)
         } catch (t: Throwable) {
             -1
         }
@@ -211,7 +231,7 @@ object Engine {
     fun pageText(): String? {
         if (!open) return null
         return try {
-            pageTextNative()
+            if (djvu) DjvuEngine.pageTextNative() else pageTextNative()
         } catch (t: Throwable) {
             null
         }
@@ -228,7 +248,7 @@ object Engine {
     fun posOnPage(pos: String?): Int {
         if (!open || pos.isNullOrEmpty()) return -1
         return try {
-            posOnPageNative(pos)
+            if (djvu) DjvuEngine.posOnPageNative(pos) else posOnPageNative(pos)
         } catch (t: Throwable) {
             -1
         }
@@ -243,17 +263,17 @@ object Engine {
     fun toc(): List<TocItem> {
         if (!open) return emptyList()
         return try {
-            val n = tocCountNative()
+            val n = if (djvu) DjvuEngine.tocCountNative() else tocCountNative()
             if (n <= 0) return emptyList()
             ArrayList<TocItem>(n).apply {
                 for (i in 0 until n) {
-                    val title = tocStringNative(i, 0)
+                    val title = if (djvu) DjvuEngine.tocStringNative(i, 0) else tocStringNative(i, 0)
                     if (title == null) continue
                     add(TocItem(
                         title = title,
-                        level = tocLevelNative(i),
-                        page = tocPageNative(i),
-                        pos = tocStringNative(i, 1),
+                        level = if (djvu) DjvuEngine.tocLevelNative(i) else tocLevelNative(i),
+                        page = if (djvu) DjvuEngine.tocPageNative(i) else tocPageNative(i),
+                        pos = (if (djvu) DjvuEngine.tocStringNative(i, 1) else tocStringNative(i, 1))?.ifEmpty { null },
                     ))
                 }
             }

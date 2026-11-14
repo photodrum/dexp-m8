@@ -116,8 +116,10 @@ app/src/main/java/ru/ogrpfsense/dexpm8/
         AdminReceiver  device admin (сон по кнопке B5)
         PowerService   служба спецвозможностей: меню питания («Выключение» B5), включается через adb
         NativeBook     JNI-мост к C-ядру, грузится лениво
-  reader/ Engine, EngineSelfTest   R1: сеанс crengine (открытие, страницы, кегль, позиции xpointer);
+  reader/ Engine, EngineSelfTest   R1: сеанс чтения (открытие, страницы, кегль, позиции); движок — по
+                                     расширению: crengine (xpointer) или DjVuLibre (R2, `djvu:<стр.>`);
                                      EngineSelfTest — временная проверка без экрана (`--es reader`)
+        DjvuEngine                 R2: JNI-методы сеанса DjVu (`libdexp_djvu.so`), снаружи — через Engine
         ReaderScreen               B3 «Чтение» (R1.3): страница, колонтитулы, прогресс, листание
         EngineProbe, ProbeScreen   R0 (7.2): JNI к движкам и отладочный экран (`--es probe`), не на SCR_READER
 app/src/main/cpp/
@@ -125,7 +127,9 @@ app/src/main/cpp/
   jni_bridge.c         JNI
   engines/             движки R0: *.cmake, *_probe.*, probe_jni.c (JNI, 16 уровней, ALPHA_8);
                        R1: cre_session.cpp (сеанс), reader_jni.cpp (JNI → Engine),
-                       cre_fonts.h (шрифты), cre_gray.h (16 уровней серого)
+                       cre_fonts.h (шрифты), cre_gray.h (16 уровней серого);
+                       R2: djvu_session.cpp (сеанс DjVu), djvu_jni.cpp (JNI → DjvuEngine),
+                       jni_utf8.h (UTF-8 → jstring, общий)
   test/                хостовые тесты (gcc + ASan), без NDK
 ```
 
