@@ -95,6 +95,16 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
     private val sheet = DjvuViewSheet(ink, icons)
     /** Открыт лист B31 поверх страницы. */
     private var sheetOpen = false
+    // --- B9 «Меню чтения» (R3.1): две панели поверх страницы, состояние — здесь
+    private val menu = ReaderMenu(ink, icons)
+    /** Открыто меню B9. */
+    private var menuOpen = false
+    // --- B10 «Оглавление» (R3.2): полноэкранный список поверх страницы
+    private val tocView = TocScreen(ink, icons)
+    /** Открыт список B10. */
+    private var tocOpen = false
+    /** Страница списка B10 (по 7 пунктов). */
+    private var tocPage = 0
     /** Настройки страницы DjVu этой книги; для crengine не используется. */
     @Volatile private var view = DjvuView.DEFAULT
     /** Предел сдвига последнего отрисованного кадра `[maxX, maxY]` — для третей (пишет worker). */
@@ -161,7 +171,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
     }
 
     /** Читалка: шторка B5 открывается касанием центральной трети в верхней части страницы. */
-    override val shadeZone: Float get() = if (sheetOpen) 0f else ShadeScreen.ZONE_READER
+    override val shadeZone: Float get() = if (sheetOpen || menuOpen || tocOpen) 0f else ShadeScreen.ZONE_READER
 
     // ------------------------------------------------------------------ кадр
 
@@ -174,15 +184,112 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
             if (dialogOpen) dialog.draw(c)
             return
         }
+        // B10 «Оглавление»: полноэкранный список поверх страницы, страница под ним не рисуется.
+        if (tocOpen) {
+            ink.rect(c, 0f, 0f, W, H, T.BG)
+            tocView.draw(c, "Оглавление", menuSub(), toc, tocPage, hereOf())
+            return
+        }
         val dim = if (opening) dimBegin(c) else -1
         ink.rect(c, 0f, 0f, W, H, T.BG_READ)
         header(c)
         val b = if (shownB) bmpB else bmpA
         if (b != null) c.drawBitmap(b, null, dst, pagePaint)
         if (pages > 0) footer(c)
+        if (menuOpen) menu.draw(c, title, menuSub(), menuPlace(), pages, cur, Engine.djvu)
         if (dim >= 0) dimEnd(c, dim)
         if (opening) openDialog.draw(c)
         if (dialogOpen) dialog.draw(c)
+    }
+
+    /**
+     * Подзаголовок меню B9: «Лев Толстой · Часть 1, глава I» в макете. У нас это автор и
+     * текущая глава из оглавления; чего нет — не выводим.
+     */
+    private fun menuSub(): String {
+        val a = entry?.author.orEmpty()
+        val ch = chapterTitle
+        return when {
+            a.isNotEmpty() && ch.isNotEmpty() -> "$a · $ch"
+            a.isNotEmpty() -> a
+            else -> ch
+        }
+    }
+
+    /** Положение в книге для нижней панели B9: «Стр. 124 из 350 · Глава I · 35%». */
+    private fun menuPlace(): String {
+        val pct = pctOf(cur)
+        val base = "Стр. ${cur + 1} из $pages"
+        return if (chapterTitle.isEmpty()) "$base · $pct%" else "$base · $chapterTitle · $pct%"
+    }
+
+    /** Открыть меню B9 (касание середины центральной колонки, решение 2026-11-12). */
+    private fun openMenu() {
+        if (menuOpen || loading || pages <= 0) return
+        menuOpen = true
+        redraw()
+        Trace.step("b3: menu open")
+    }
+
+    private fun closeMenu() {
+        if (!menuOpen) return
+        menuOpen = false
+        redraw()
+        Trace.step("b3: menu close")
+    }
+
+    /** Открыть B10 «Оглавление»: список уже в [toc] (`Engine.toc()` при открытии книги). */
+    private fun openToc() {
+        if (tocOpen) return
+        if (toc.isEmpty()) {
+            // Оглавления нет (часть DjVu без навигации) — открывать нечего, меню просто закрылось.
+            Trace.step("b3: toc пусто")
+            return
+        }
+        tocOpen = true
+        // Открываем на странице со текущей главой: иначе искать своё место в длинной книге.
+        val here = hereOf()
+        tocPage = if (here >= 0) here / TocScreen.ROWS else 0
+        redraw()
+        Trace.step("b3: toc open items=${toc.size} page=$tocPage here=$here")
+    }
+
+    private fun closeToc() {
+        if (!tocOpen) return
+        tocOpen = false
+        redraw()
+        Trace.step("b3: toc close")
+    }
+
+    /** Индекс пункта оглавления для текущей страницы — тот же, что даёт главу в колонтитуле. */
+    private fun hereOf(): Int {
+        if (toc.isEmpty()) return -1
+        var idx = -1
+        for (i in toc.indices) {
+            val p = toc[i].page
+            if (p in 0..cur) idx = i else if (p > cur) break
+        }
+        return idx
+    }
+
+    /** Перейти по пункту оглавления: позиция движка, а не номер страницы (переживает смену кегля). */
+    private fun gotoItem(i: Int) {
+        if (i < 0 || i >= toc.size) return
+        val pos = toc[i].pos
+        val page = toc[i].page
+        if (pos == null && page < 0) return
+        closeToc()
+        val my = ++epoch
+        Engine.worker.execute {
+            val target = if (pos != null) Engine.gotoPos(pos) else page
+            if (my != epoch) return@execute
+            if (target < 0 || target >= pages) return@execute
+            post {
+                if (!attached) return@post
+                show(target, 0)
+            }
+        }
+        Trace.step("b3: toc goto $i «${toc[i].title}» pos=${if (pos == null) "нет" else "ok"} page=$page")
     }
 
     private fun header(c: Canvas) {
@@ -369,6 +476,9 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         cancelled = false
         // B31: лист и всё, что живёт вокруг него, — от прошлой книги.
         sheetOpen = false
+        menuOpen = false
+        tocOpen = false
+        tocPage = 0
         prevPage = -1
         prevShown = null
         panLast = null
@@ -708,14 +818,40 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
             }
             return
         }
+        // B10 «Оглавление»: касания только списка (страницы, листание, кнопки).
+        if (tocOpen) {
+            when (tocView.hit(x, y, tocPage, toc)) {
+                TocScreen.ACT_CLOSE -> closeToc()
+                TocScreen.ACT_PREV -> { tocPage--; redraw() }
+                TocScreen.ACT_NEXT -> { tocPage++; redraw() }
+                TocScreen.ACT_OPEN -> gotoItem(tocView.chosen)
+            }
+            return
+        }
+        // B9 «Меню чтения»: пока открыто, касания только его.
+        if (menuOpen) {
+            when (menu.hit(x, y, Engine.djvu)) {
+                ReaderMenu.ACT_CLOSE -> closeMenu()
+                ReaderMenu.ACT_PREV -> { closeMenu(); back() }
+                ReaderMenu.ACT_NEXT -> { closeMenu(); forward() }
+                ReaderMenu.ACT_TOC -> { closeMenu(); openToc() }
+                ReaderMenu.ACT_SCALE -> { closeMenu(); openSheet() }
+                // Мимо меню — закрыть. «Текст» у crengine (B4), «Контраст», «Вслух» и «Ещё»
+                // ждут своих этапов: кнопки нарисованы, касание пока только закрывает меню.
+                else -> closeMenu()
+            }
+            return
+        }
         // B58: пока книга открывается, касания только на «Отмену» — страниц ещё нет.
         if (opening) {
             if (openDialog.hitCancel(x, y)) cancelOpen()
             return
         }
-        // R2.5: дверь в лист B31 — левая часть колонтитула (до меню B9 в R3).
-        if (x < 468f && y < 117f && Engine.djvu) {
-            openSheet()
+        // Середина центральной колонки — «Меню чтения» B9 (решение 2026-11-12:
+        // верх ≈27% — шторка B5, низ ≈27% — шторка B4, между ними — меню).
+        if (x >= ShadeScreen.ZONE_X0 && x <= ShadeScreen.ZONE_X1 &&
+            y > ShadeScreen.ZONE_READER && y < MENU_ZONE_Y1) {
+            openMenu()
             return
         }
         // Трети: сначала сдвиг увеличенной страницы, листание — когда сдвигать нечего.
@@ -766,8 +902,16 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         return true
     }
 
-    /** «Назад»: сначала лист B31, диалоги, потом уход из книги ([EinkActivity.onBackPressed]). */
+    /** «Назад»: сначала B10 и меню B9, лист B31, диалоги, потом уход из книги ([EinkActivity.onBackPressed]). */
     override fun backPressed(): Boolean {
+        if (tocOpen) {
+            closeToc()
+            return true
+        }
+        if (menuOpen) {
+            closeMenu()
+            return true
+        }
         if (sheetOpen) {
             closeSheet()
             return true
@@ -807,6 +951,8 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
     fun key(code: Int): Boolean {
         if (dialogOpen) return false
         if (sheetOpen) return false    // B31: пока лист открыт, страница не листается
+        if (menuOpen) return false     // B9: меню закрывается касанием или «Назад»
+        if (tocOpen) return false      // B10: список листается своими кнопками
         if (opening) return false     // B58: страниц ещё нет, клавиши листания не наши
         val next = code == KEY_PAGEDOWN || code == KEY_VOLUME_DOWN
         val prev = code == KEY_PAGEUP || code == KEY_VOLUME_UP
@@ -862,6 +1008,13 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
 
         /** Полная перерисовка каждые N страниц (READER_SPEC, раздел 6; в B37 пока нет). */
         private const val FULL_EVERY = 6
+
+        /**
+         * Нижняя граница зоны «Меню чтения» B9 (решение 2026-11-12): ниже начинается шторка
+         * B4 «Типографика» (y ≈1358). Границы взяты с картинки пользователя на глаз и
+         * подтверждаются на книге.
+         */
+        private const val MENU_ZONE_Y1 = 1358f
 
         // --- B31 «Масштаб и поля» (R2.5)
         /** Размер превью листа: 600×820 — слой «Страница DjVu» макета, без обрезки. */
