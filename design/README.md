@@ -9,8 +9,9 @@
 | `v5/B01.json`, `v5/B02.json`, … | один экран: все слои рекурсивно, координаты в дизайн-px от левого верхнего угла борда |
 | `v5/icons/<имя>~<хеш>.json` | одна иконка: слои относительно левого верхнего угла иконки |
 
-Сняты: **B1, B2, B3, B4, B5, B6, B11, B12, B13, B14–B18, B21–B26, B31, B31а, B31б, B36, B37–B46, B48, B49, B53–B55, B57, B58, B59, B64–B69**
-(`ls design/v5`). Остальные экраны снимаются тем же скриптом, когда до них доходит работа.
+Сняты **все 76 бордов** страницы v5 (2026-11-15, последняя пачка — B7, B8, B9, B10, B19, B20, B27, B28,
+B29, B30, B32–B35, B47, B50–B52, B56, B60–B63, B70–B76). К Penpot за геометрией больше ходить не нужно;
+скрипт остаётся для обновления, если макет поменяется.
 
 Состояния одного экрана — отдельные файлы с буквой в имени: `B31.json` — основной вид,
 `B31а.json` — выбранная ручка обрезки, `B31б.json` — желоб масштаба в режиме «− · 140 % · +».
@@ -42,7 +43,25 @@
 1. Запустить файл как `code` (в `BOARDS` — список бордов). Ответ:
    `{ count, bytes, index: [{ k, len, h, parts }] }` — `k` имя файла, `len` длина текста,
    `h` djb2 по UTF-16, `parts` число кусков по 18 000 символов. Опись сохранить: по ней сверяются файлы.
-2. Каждый файл забрать отдельным вызовом (один кусок в 18 КБ укладывается в лимит ответа):
+   В ответе чат её обрежет, поэтому попросить опись строками: `k\tlen\th\tparts` по одной на файл —
+   114 строк проходят целиком.
+2. **Быстрый путь — прямо в репозиторий (проверен 2026-11-15, 93 файла за 8 запросов).**
+   Плагин в браузере на машине разработчика, поэтому снимок можно отдать локальному приёмнику,
+   минуя чат: `python3 /tmp/penpot_recv.py 8765 <путь-к-репозиторию>` (скрипт ниже, в репозиторий
+   не кладётся) и из `execute_code` отправить пачками по ~60 КБ:
+
+   ```js
+   await fetch('http://<LAN-адрес>:8765', {
+     method: 'POST', headers: { 'Content-Type': 'application/json' },
+     body: JSON.stringify({ files: Object.fromEntries(list.map(k => [k, storage.snapshot.files[k]])) }),
+   });
+   ```
+
+   Адрес — **LAN** (`hostname -I`), не `127.0.0.1`: с localhost и с внешней сетью `fetch` из плагина
+   падает («Failed to fetch»), а LAN-адрес отвечает 200. Приёмник пишет файлы как есть (`newline=''`,
+   UTF-8) — неразрывные пробелы не портятся. Сверка — как в п. 4.
+3. **Медленный путь — через чат**, если LAN недоступен: каждый файл забрать отдельным вызовом
+   (один кусок в 18 КБ укладывается в лимит ответа):
 
    ```js
    const k = 'design/v5/B09.json';      // имя из описи
@@ -59,6 +78,42 @@
    файл перенесён без потерь.
 4. `python3 tools/check_design.py` — «нарушений: 0», затем `git diff design/` и коммит.
 
+
+## Приёмник снимка (для быстрого пути)
+
+Временный HTTP-сервер на машине разработчика: `python3 /tmp/penpot_recv.py 8765 /home/denisle/projects/dexp-m8`.
+Пишет `design/v5/**` из тела `{files: {путь: текст}}` как есть и печатает `ok <n>`. В репозиторий не кладётся —
+это инструмент разового переноса.
+
+```python
+import json, sys
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+ROOT = sys.argv[2]
+
+class H(BaseHTTPRequestHandler):
+    def _c(self):
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Headers", "*")
+    def do_OPTIONS(self):
+        self.send_response(204); self._c(); self.end_headers()
+    def do_POST(self):
+        data = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)).decode("utf-8"))
+        files = data.get("files", data)
+        n = 0
+        for k, v in files.items():
+            if not k.startswith("design/v5/") or ".." in k:
+                continue
+            with open(ROOT.rstrip("/") + "/" + k, "w", encoding="utf-8", newline="") as f:
+                f.write(v)
+            n += 1
+        body = ("ok %d\n" % n).encode()
+        self.send_response(200); self._c()
+        self.send_header("Content-Length", str(len(body))); self.end_headers()
+        self.wfile.write(body)
+
+HTTPServer(("0.0.0.0", int(sys.argv[1])), H).serve_forever()
+```
 
 ## Формат узла
 
