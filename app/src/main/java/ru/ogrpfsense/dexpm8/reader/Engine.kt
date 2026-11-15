@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.os.SystemClock
 import java.io.File
+import ru.ogrpfsense.dexpm8.R
 import ru.ogrpfsense.dexpm8.ui.Trace
 
 /**
@@ -40,6 +41,29 @@ object Engine {
     /** Каталог кэша разметки во внутренней памяти приложения (правило READER_SPEC). */
     @Volatile
     private var cacheDir: String? = null
+
+    /**
+     * Каталог со своими начертаниями для crengine (B4 «Гарнитура», R3.4). Ресурсы
+     * `res/font/` лежат внутри APK и файлового пути не имеют, поэтому [init] копирует
+     * нужные файлы в `filesDir/fonts` — движку передаётся уже путь каталога.
+     * Пусто — движок обойдётся системными шрифтами (Literata тогда не найдётся).
+     */
+    @Volatile
+    private var fontDir: String? = null
+
+    /**
+     * Что распаковать движку из `res/font/`: имя файла в каталоге шрифтов → ресурс.
+     * Гарнитуры B4: «Антиква» — Literata, «Гротекс» — Manrope; начертания 400/700,
+     * потому что движок подбирает вес сам (курсив и полужирный синтезирует, если нет).
+     * «Моно» своего файла не имеет: в макете Martian Mono, в проекте его нет —
+     * движок берёт системный DroidSansMono (вопрос в `docs/DESIGN_QUESTIONS.md`).
+     */
+    private val FONT_FILES = arrayOf(
+        "literata_400.ttf" to R.font.literata_400,
+        "literata_600.ttf" to R.font.literata_600,
+        "manrope_400.ttf" to R.font.manrope_400,
+        "manrope_700.ttf" to R.font.manrope_700,
+    )
 
     private var open = false
 
@@ -78,8 +102,8 @@ object Engine {
     }
 
     /**
-     * Задать каталог кэша разметки. Вызывается один раз из `EinkActivity.onCreate`:
-     * `/data/data/<пакет>` знает только `Context`.
+     * Задать каталог кэша разметки и распаковать свои шрифты. Вызывается один раз из
+     * `EinkActivity.onCreate`: `/data/data/<пакет>` и ресурсы знает только `Context`.
      */
     fun init(ctx: Context) {
         val d = File(ctx.cacheDir, "cre")
@@ -89,6 +113,39 @@ object Engine {
         } catch (t: Throwable) {
             Trace.step("reader: cache dir FAIL ${t.javaClass.simpleName}: ${t.message}")
             cacheDir = null
+        }
+        fontDir = unpackFonts(ctx)
+    }
+
+    /**
+     * Разложить начертания из `res/font/` в `filesDir/fonts`: crengine регистрирует шрифты
+     * по пути к файлу, а у ресурса APK пути нет. Файл уже того же размера — не перезаписываем
+     * (лишние 130 КБ записи на каждом старте приложения). Пустая строка — ни один не лёг.
+     */
+    private fun unpackFonts(ctx: Context): String? {
+        val dir = File(ctx.filesDir, "fonts")
+        try {
+            if (!dir.exists() && !dir.mkdirs())
+                return null
+            val res = ctx.resources
+            for ((name, id) in FONT_FILES) {
+                val f = File(dir, name)
+                // Ресурс без сжатия (ttf) отдаёт свой размер без чтения — им и сверяемся.
+                val want = try {
+                    res.openRawResourceFd(id)?.use { it.length } ?: -1L
+                } catch (t: Throwable) {
+                    -1L
+                }
+                if (want > 0 && f.length() == want) continue
+                res.openRawResource(id).use { input ->
+                    f.outputStream().use { out -> input.copyTo(out) }
+                }
+            }
+            Trace.step("reader: fonts $dir (${dir.list()?.size ?: 0})")
+            return dir.absolutePath
+        } catch (t: Throwable) {
+            Trace.step("reader: fonts FAIL ${t.javaClass.simpleName}: ${t.message}")
+            return null
         }
     }
 
@@ -134,7 +191,7 @@ object Engine {
         djvu = dj
         val t0 = SystemClock.uptimeMillis()
         val rc = try {
-            if (dj) DjvuEngine.openNative(path) else openNative(path, cacheDir, w, h)
+            if (dj) DjvuEngine.openNative(path) else openNative(path, cacheDir, fontDir, w, h)
         } catch (t: Throwable) {
             Trace.step("reader: open FAIL ${t.javaClass.simpleName}: ${t.message}")
             ERENDER
@@ -214,6 +271,49 @@ object Engine {
         } catch (t: Throwable) {
             Trace.step("reader: setFont FAIL ${t.javaClass.simpleName}: ${t.message}")
             ERENDER
+        }
+    }
+
+    /** Гарнитуры B4 «Антиква · Гротекс · Моно» — коды натива (`FACE_*` в cre_session.cpp). */
+    const val FACE_SERIF = 0
+    const val FACE_SANS = 1
+    const val FACE_MONO = 2
+
+    /**
+     * Типографика B4 разом (R3.4): гарнитура, кегль, интервал, поля и переносы.
+     * `−1` в любом поле — «не менять» (в [margin] — «не менять», 0 — поля в ноль).
+     *
+     * Понимание параметров:
+     *  - [size] кегль дизайн-px макета (в B4 показано «20», но это подпись, а не px:
+     *    кегль книги в макете — `Literata/44`);
+     *  - [interline] процент межстрочного расстояния: «Плотный» 90, «Обычный» 100,
+     *    «Свободный» 115 (список движка — 70…200 шагом 5);
+     *  - [margin] поля слева и справа в px окна: «Узкие» 0, «Средние» 60, «Широкие» 120;
+     *  - [hyphens] тумблер «Переносы слов».
+     *
+     * Возвращает число страниц после перевёрстки, `< 0` — код ошибки. Только в [worker]:
+     * перевёрстка синхронная, вызывать с UI-потока нельзя.
+     */
+    fun setTypography(face: Int, size: Int, interline: Int, margin: Int, hyphens: Int,
+                      keepPos: String?): Int {
+        if (!open) return ENOSESSION
+        if (djvu) return OK                       // у скана нет кегля и переносов (B31)
+        return try {
+            setTypographyNative(face, size, interline, margin, hyphens, keepPos)
+        } catch (t: Throwable) {
+            Trace.step("reader: setTypography FAIL ${t.javaClass.simpleName}: ${t.message}")
+            ERENDER
+        }
+    }
+
+    /** Текущая типографика движка `[face, size, interline, margin, hyphens]`; null — нет. */
+    fun typography(): IntArray? {
+        if (!open || djvu) return null
+        val out = IntArray(5)
+        return try {
+            if (typographyNative(out) == OK) out else null
+        } catch (t: Throwable) {
+            null
         }
     }
 
@@ -324,12 +424,17 @@ object Engine {
     /** Пустой `Bitmap` под страницу [w]×[h] — экран держит его весь сеанс. */
     fun newPageBitmap(w: Int, h: Int): Bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ALPHA_8)
 
-    @JvmStatic private external fun openNative(path: String, cacheDir: String?, w: Int, h: Int): Int
+    @JvmStatic private external fun openNative(path: String, cacheDir: String?, fontDir: String?,
+                                               w: Int, h: Int): Int
     @JvmStatic private external fun closeNative(): Int
     @JvmStatic private external fun pageCountNative(): Int
     @JvmStatic private external fun curPageNative(): Int
     @JvmStatic private external fun pageNative(page: Int, w: Int, h: Int, out: ByteArray): Int
     @JvmStatic private external fun setFontNative(size: Int, keepPos: String?): Int
+    @JvmStatic private external fun setTypographyNative(face: Int, size: Int, interline: Int,
+                                                        margin: Int, hyphens: Int,
+                                                        keepPos: String?): Int
+    @JvmStatic private external fun typographyNative(out: IntArray): Int
     @JvmStatic private external fun posNative(page: Int): String?
     @JvmStatic private external fun pageOfNative(pos: String): Int
     @JvmStatic private external fun gotoPosNative(pos: String): Int

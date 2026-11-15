@@ -222,7 +222,16 @@ adb shell am start -W -n ru.ogrpfsense.dexpm8/.ui.EinkActivity --es probe "'/sdc
 adb logcat -s DexpM8:V | grep probe     # «probe: <движок> rc=0 <мс>»
 # замеры crengine с листанием (30 стр.): строка «bench: …» в logcat; выключить — rm
 adb shell touch /data/local/tmp/dexp-bench   # adb shell rm /data/local/tmp/dexp-bench
+# самотест движка (R1–R3.4): открытие, кегль, оглавление, типографика B4; строки «selftest: …»
+adb shell am start -n ru.ogrpfsense.dexpm8/.ui.EinkActivity --es reader "'/sdcard/Books/r0/r0-big5.fb2'"
 ```
+
+**Грабля: имя гарнитуры в crengine — ровно как в шрифте.** `setDefaultFontFace` ищет семейство
+по `name`-таблице файла, а не по имени файла: для `/system/fonts/DroidSansMono.ttf` это
+«Droid Sans Mono» (с пробелами), для `literata_400.ttf` — «Literata». Написал без пробела —
+настройка «применилась» без ошибки, но разметка не изменилась (перевёрстка 3 мс вместо 1,2 с,
+число страниц то же). Проверять по имени:
+`python3 -c "from fontTools.ttLib import TTFont; f=TTFont('/tmp/mono.ttf'); print(f['name'].getDebugName(1))"`
 
 **Служба «DEXP M8 — выключение» (клавиша «Выключение» на шторке B5, п. 8.1).** Экрана «Спец. возможности»
 в прошивке книги нет (`cmd package resolve-activity -a android.settings.ACCESSIBILITY_SETTINGS` → `No activity found`),

@@ -122,6 +122,11 @@ object EngineSelfTest {
             }
         }
 
+        // R3.4: типографика B4 — гарнитура, кегль, интервал, поля, переносы.
+        // Каждая настройка меняет разметку, поэтому проверяется по числу страниц и по
+        // тому, осталась ли та же фраза (xpointer держится позицией в тексте).
+        typeStep(midPos, buf)
+
         // Повторное открытие — должно быть из кэша разметки (быстро).
         Engine.close()
         t0 = SystemClock.uptimeMillis()
@@ -145,6 +150,58 @@ object EngineSelfTest {
         dump(1, "first")
         Engine.close()
     }
+    /**
+     * R3.4 на книге: типографика B4 через `Engine.setTypography`. Для каждого варианта —
+     * число страниц, время перевёрстки и «та же фраза» (xpointer места чтения держится
+     * позицией в тексте, а не номером страницы). Кадр — в PNG, посмотреть глазами.
+     *
+     * Проверяется то, что у движка реально есть: гарнитура (свои Literata/Manrope против
+     * системного), кегль, интервал, поля и переносы. Тумблера «Выравнивание по ширине»
+     * здесь нет — см. вопрос в `docs/DESIGN_QUESTIONS.md`.
+     */
+    private fun typeStep(pos: String?, buf: ByteArray) {
+        var t0: Long
+
+        /** Один вариант настроек: `−1` — «не менять». */
+        fun run(name: String, face: Int = -1, size: Int = -1, inter: Int = -1,
+                margin: Int = -1, hyph: Int = -1) {
+            t0 = SystemClock.uptimeMillis()
+            val rc = Engine.setTypography(face, size, inter, margin, hyph, pos)
+            val ms = SystemClock.uptimeMillis() - t0
+            val onPage = if (pos != null) Engine.posOnPage(pos) else -1
+            Trace.step("selftest: type $name rc=$rc ${Engine.codeText(rc)} ${ms}ms " +
+                "pages=${Engine.pageCount()} posOnPage=$onPage " +
+                if (onPage == 1) "ТА ЖЕ ФРАЗА" else if (onPage == 0) "ФРАЗА УЕХАЛА" else "—")
+            val cur = Engine.typography()
+            if (cur != null) {
+                Trace.step("selftest: type $name → face=${cur[0]} size=${cur[1]} " +
+                    "inter=${cur[2]} margin=${cur[3]} hyph=${cur[4]}")
+            }
+            if (rc >= 0) {
+                Engine.page(Engine.pageCount() / 2, W, H, buf)
+                dumpBuf(buf, "type-$name")
+            }
+        }
+
+        val base = Engine.pageCount()
+        Trace.step("selftest: type база pages=$base")
+        run("гротеск", face = Engine.FACE_SANS)
+        run("моно", face = Engine.FACE_MONO)
+        run("антиква", face = Engine.FACE_SERIF)
+        run("кегль-28", size = 28)
+        run("кегль-60", size = 60)
+        run("интервал-90", inter = 90)
+        run("интервал-115", inter = 115)
+        run("поля-60", margin = 60)
+        run("поля-120", margin = 120)
+        // Переносы: выключить и включить обратно — разметка должна измениться.
+        run("без-переносов", hyph = 0)
+        run("с-переносами", hyph = 1)
+        // Вернуть макетные значения: кегль 44 (B3/B4), антиква, интервал 100, поля 0.
+        run("сброс", face = Engine.FACE_SERIF, size = 44, inter = 100, margin = 0, hyph = 1)
+        Trace.step("selftest: type итог pages=${Engine.pageCount()} (база $base)")
+    }
+
     /**
      * R2.4 на книге: прогон настроек B31 через `Engine.pageView` — «по странице»,
      * обрезка, «по ширине», свой масштаб, сдвиг до предела, контраст. Для каждого варианта

@@ -73,13 +73,17 @@ static int setup_progress(JNIEnv *env)
 
 extern "C" {
 
-DEXP_PROBE_API int dexp_reader_open(const char *path, const char *cacheDir, int w, int h);
+DEXP_PROBE_API int dexp_reader_open(const char *path, const char *cacheDir,
+                                   const char *appFontDir, int w, int h);
 DEXP_PROBE_API int dexp_reader_close();
 DEXP_PROBE_API void dexp_reader_set_progress_hook(void (*hook)(int percent));
 DEXP_PROBE_API int dexp_reader_page_count();
 DEXP_PROBE_API int dexp_reader_cur_page();
 DEXP_PROBE_API int dexp_reader_page(int page, int w, int h, unsigned char *gray);
 DEXP_PROBE_API int dexp_reader_set_font(int size, const char *keepPos);
+DEXP_PROBE_API int dexp_reader_set_typography(int face, int size, int interline, int margin,
+                                              int hyphens, const char *keepPos);
+DEXP_PROBE_API int dexp_reader_typography(int *out);
 DEXP_PROBE_API int dexp_reader_pos(int page, char *out, int outLen);
 DEXP_PROBE_API int dexp_reader_goto_pos(const char *pos);
 DEXP_PROBE_API int dexp_reader_page_of(const char *pos);
@@ -92,7 +96,7 @@ DEXP_PROBE_API int dexp_reader_pos_on_page(const char *pos);
 
 JNIEXPORT jint JNICALL
 Java_ru_ogrpfsense_dexpm8_reader_Engine_openNative(JNIEnv *env, jclass cls,
-        jstring path, jstring cacheDir, jint w, jint h)
+        jstring path, jstring cacheDir, jstring fontDir, jint w, jint h)
 {
     (void)cls;
     if (!path)
@@ -101,11 +105,14 @@ Java_ru_ogrpfsense_dexpm8_reader_Engine_openNative(JNIEnv *env, jclass cls,
     if (!p)
         return DEXP_PROBE_EARG;
     const char *c = cacheDir ? env->GetStringUTFChars(cacheDir, NULL) : NULL;
+    const char *f = fontDir ? env->GetStringUTFChars(fontDir, NULL) : NULL;
     /* Прогресс открытия (B58): переходник ставится один раз на сеанс .so. */
     if (setup_progress(env) == 0)
         dexp_reader_set_progress_hook(progress_trampoline);
-    int rc = dexp_reader_open(p, c, w, h);
+    int rc = dexp_reader_open(p, c, f, w, h);
     dexp_reader_set_progress_hook(NULL);    // вне открытия прогресса нет
+    if (f)
+        env->ReleaseStringUTFChars(fontDir, f);
     if (c)
         env->ReleaseStringUTFChars(cacheDir, c);
     env->ReleaseStringUTFChars(path, p);
@@ -167,6 +174,40 @@ Java_ru_ogrpfsense_dexpm8_reader_Engine_setFontNative(JNIEnv *env, jclass cls,
     int rc = dexp_reader_set_font(size, k);
     if (k)
         env->ReleaseStringUTFChars(keepPos, k);
+    return rc;
+}
+
+/**
+ * B4 «Типографика»: гарнитура, кегль, интервал, поля, переносы — за один проход.
+ * Возвращает число страниц после перевёрстки (`< 0` — код ошибки).
+ */
+JNIEXPORT jint JNICALL
+Java_ru_ogrpfsense_dexpm8_reader_Engine_setTypographyNative(JNIEnv *env, jclass cls,
+        jint face, jint size, jint interline, jint margin, jint hyphens, jstring keepPos)
+{
+    (void)cls;
+    const char *k = keepPos ? env->GetStringUTFChars(keepPos, NULL) : NULL;
+    int rc = dexp_reader_set_typography(face, size, interline, margin, hyphens, k);
+    if (k)
+        env->ReleaseStringUTFChars(keepPos, k);
+    return rc;
+}
+
+/** Текущая типографика в [out] (5 чисел: face, size, interline, margin, hyphens). */
+JNIEXPORT jint JNICALL
+Java_ru_ogrpfsense_dexpm8_reader_Engine_typographyNative(JNIEnv *env, jclass cls, jintArray out)
+{
+    (void)cls;
+    if (!out || env->GetArrayLength(out) < 5)
+        return DEXP_PROBE_EARG;
+    int v[5];
+    int rc = dexp_reader_typography(v);
+    if (rc != DEXP_PROBE_OK)
+        return rc;
+    jint j[5];
+    for (int i = 0; i < 5; i++)
+        j[i] = v[i];
+    env->SetIntArrayRegion(out, 0, 5, j);
     return rc;
 }
 

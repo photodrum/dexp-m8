@@ -20,6 +20,8 @@
 #include <vector>
 
 #include "crengine.h"
+#include "hyphman.h"
+#include "textlang.h"
 #include "cre_fonts.h"
 #include "cre_gray.h"
 #include "probe.h"
@@ -56,6 +58,42 @@ LVDocView *g_view = NULL;
 bool g_fontsOk = false;
 bool g_cacheOk = false;
 int g_pages = 0;
+
+/**
+ * Путь к каталогу со своими шрифтами читалки (`Engine.init` распаковывает `res/font`).
+ * Регистрация идёт один раз при первом `prepare`: `fontMan` живёт на процесс.
+ */
+const char *g_appFontDir = NULL;
+/* Инициализированы ли переносы (HyphMan::initDictionaries) — один раз на процесс. */
+bool g_hyphOk = false;
+
+/**
+ * Типографика B4, общая для всех книг (как в макете: это настройки читалки, не книги).
+ * Держим и применяем заново при каждом открытии: новый `LVDocView` начинает с умолчаний.
+ */
+enum { FACE_SERIF = 0, FACE_SANS = 1, FACE_MONO = 2 };
+
+struct Typography {
+    int size;        /* кегль, дизайн-px макета (20 в B4); 0 — умолчание движка */
+    int face;        /* FACE_* */
+    int interline;   /* процент 70…200 (100 — обычный) */
+    int margin;      /* поля слева и справа, px окна */
+    bool hyphens;    /* переносы слов */
+};
+
+Typography g_type = { 0, FACE_SERIF, 100, 0, true };
+
+/** Имя семейства в crengine для гарнитуры B4 («Антиква · Гротеск · Моно»). */
+const char *face_name(int face)
+{
+    switch (face) {
+    case FACE_SANS: return "Manrope";
+    /* В макете «Моно» — Martian Mono, файла в проекте нет; берём системный
+       (`name` table — именно «Droid Sans Mono», с пробелами). */
+    case FACE_MONO: return "Droid Sans Mono";
+    default:        return "Literata";
+    }
+}
 
 void report_progress(int percent)
 {
@@ -122,23 +160,97 @@ long now_ms()
 }
 
 /**
- * Подготовить движок: менеджер шрифтов (раз на процесс) и кэш разметки.
+ * Подготовить движок: менеджер шрифтов (раз на процесс), переносы и кэш разметки.
  * Каталог кэша передаёт Kotlin: путь `/data/data/<пакет>` знает только он.
+ * [appFontDir] — каталог со своими начертаниями (`res/font` внутри APK, распаковка в Kotlin).
  */
-bool prepare(const char *cacheDir)
+bool prepare(const char *cacheDir, const char *appFontDir)
 {
     if (!fontMan) {
         InitFontManager(lString8::empty_str);
-        g_fontsOk = dexp_register_system_fonts() > 0;
-        DEXP_LOG("reader: fontMan %s", g_fontsOk ? "ok" : "empty");
+        g_appFontDir = appFontDir;
+        g_fontsOk = dexp_register_system_fonts(g_appFontDir) > 0;
+        DEXP_LOG("reader: fontMan %s (sys + %s)", g_fontsOk ? "ok" : "empty",
+                 appFontDir && appFontDir[0] ? appFontDir : "нет своих");
     }
     if (!g_fontsOk)
         return false;
+    /*
+     * Переносы: без `HyphMan::initDictionaries` список словарей не создан (`_dictList == NULL`),
+     * и `getHyphMethodForDictionary` всегда отдаёт NO_HYPH — то есть до R3.4 переносов в
+     * читалке не было вовсе. Каталог пустой намеренно: движок заводит встроенные варианты
+     * («нет», «алгоритм», «мягкие переносы»), а алгоритм поддерживает кириллицу
+     * (`char_props` в lvstring.cpp размечен для 0x0410…0x044F).
+     * Своих .pdb-словарей не кладём: Russian_hyphen_(Alan).pdb — 63 КБ в APK ради
+     * расстановки переносов, а алгоритм на глаз не хуже (вопрос в DESIGN_QUESTIONS.md).
+     */
+    if (!g_hyphOk) {
+        g_hyphOk = HyphMan::initDictionaries(lString32::empty_str);
+        TextLangMan::setMainLang(lString32("ru"));
+        DEXP_LOG("reader: hyph %s", g_hyphOk ? "ok" : "алгоритм");
+    }
     if (!g_cacheOk && cacheDir && cacheDir[0]) {
         g_cacheOk = ldomDocCache::init(Utf8ToUnicode(cacheDir), CACHE_MAX_BYTES);
         DEXP_LOG("reader: cache %s (%s)", g_cacheOk ? "ok" : "off", cacheDir);
     }
     return true;
+}
+
+/**
+ * Применить типографику B4 к виду. Зовётся после `LoadDocument` (нужен готовый DOM для
+ * перевёрстки) и из `dexp_reader_set_typography` при смене настроек.
+ *
+ * Поля — `setPageMargins`: `Render()` считает ширину как `ширина буфера − left − right`,
+ * то есть поля действительно сжимают текст (не только отступ при отрисовке). Буфер
+ * экрана — уже область текста B3 (1199×1540), поэтому «Узкие» = 0.
+ *
+ * Переносы. Тонкость движка (проверено по коду, `textlang.cpp`/`hyphman.cpp`):
+ * `TextLangCfg::getHyphMethod()` при `_overridden_hyph_method == false` отдаёт метод
+ * по языку, а для «ru» это `Russian.pattern` из списка словарей — у нас его нет,
+ * значит NO_HYPH и переносов не будет никогда. Поэтому включаем **алгоритмический**
+ * режим (`setHyphenationForceAlgorithmic`): он ставит `_overridden_hyph_method = true`
+ * и методом становится встроенный AlgoHyph, размеченный под кириллицу
+ * (`char_props` в `lvstring.cpp`: гласные/согласные для 0x0410…0x044F).
+ * Выключение — `setHyphenationEnabled(false)`, тогда метод NO_HYPH.
+ */
+void apply_typography()
+{
+    if (!g_view)
+        return;
+    g_view->setDefaultFontFace(lString8(face_name(g_type.face)));
+    if (g_type.size > 0)
+        g_view->setFontSize(g_type.size);
+    g_view->setDefaultInterlineSpace(g_type.interline);
+    int m = g_type.margin > 0 ? g_type.margin : 0;
+    g_view->setPageMargins(lvRect(m, 0, m, 0));
+    TextLangMan::setHyphenationSoftHyphensOnly(false);
+    TextLangMan::setHyphenationForceAlgorithmic(true);
+    TextLangMan::setHyphenationEnabled(g_type.hyphens);
+}
+
+/**
+ * Переверстать после смены типографики, удержав место чтения [keepPos] (xpointer).
+ * Возвращает число страниц или `< 0`.
+ *
+ * Позицию ищем строкой ПОСЛЕ перевёрстки: xpointer, созданный на старом DOM, после
+ * новой разметки указывает в другое место (проверено на книге 2026-11-13 — место
+ * чтения уезжало с 50 % на 61 %). Условие приёмки — «та же фраза на странице», а не
+ * её первый символ (R1.2).
+ */
+int relayout(const char *keepPos)
+{
+    apply_typography();
+    g_view->checkRender();
+    g_pages = g_view->getPageCount();
+    drop_toc();   // номера страниц пунктов посчитает build_toc на новой разметке
+    if (keepPos && keepPos[0]) {
+        ldomXPointer pos = g_view->getDocument()->createXPointer(Utf8ToUnicode(keepPos));
+        if (!pos.isNull()) {
+            g_view->goToBookmark(pos);
+            g_view->checkRender();
+        }
+    }
+    return g_pages;
 }
 
 /**
@@ -198,13 +310,17 @@ void build_toc()
 
 extern "C" {
 
-/** Загрузить [path] и сверстать под окно [w]×[h]. 0 — ок, иначе код ошибки. */
-DEXP_PROBE_API int dexp_reader_open(const char *path, const char *cacheDir, int w, int h)
+/**
+ * Загрузить [path] и сверстать под окно [w]×[h]. 0 — ок, иначе код ошибки.
+ * [appFontDir] — каталог со своими начертаниями (распакованный `res/font`), может быть NULL.
+ */
+DEXP_PROBE_API int dexp_reader_open(const char *path, const char *cacheDir,
+                                    const char *appFontDir, int w, int h)
 {
     if (!path || w <= 0 || h <= 0)
         return DEXP_PROBE_EARG;
     drop_document();
-    if (!prepare(cacheDir))
+    if (!prepare(cacheDir, appFontDir))
         return DEXP_READER_EFONT;
 
     long t0 = now_ms();
@@ -213,7 +329,7 @@ DEXP_PROBE_API int dexp_reader_open(const char *path, const char *cacheDir, int 
     g_view->setCallback(&g_progressCallback);   // прогресс открытия (B58)
     g_view->setViewMode(DVM_PAGES, 1);
     g_view->setPageHeaderInfo(PGHDR_NONE);   // колонтитулы рисует оболочка (B3)
-    g_view->setDefaultFontFace(lString8("Noto Serif"));
+    g_view->setDefaultFontFace(lString8(face_name(g_type.face)));
     g_view->Resize(w, h);
     long t1 = now_ms();
 
@@ -223,6 +339,9 @@ DEXP_PROBE_API int dexp_reader_open(const char *path, const char *cacheDir, int 
         return DEXP_PROBE_EOPEN;
     }
     long t2 = now_ms();
+    /* Типографика B4 — до первой разметки: иначе книга сверстается умолчаниями и
+       переверстается повторно (на 5-МБ FB2 это лишние секунды). */
+    apply_typography();
     g_view->checkRender();
     long t3 = now_ms();
     g_pages = g_view->getPageCount();
@@ -231,8 +350,9 @@ DEXP_PROBE_API int dexp_reader_open(const char *path, const char *cacheDir, int 
         drop_document();
         return DEXP_PROBE_EPAGE;
     }
-    DEXP_LOG("reader: open ok %dx%d pages=%d setup=%ld load=%ld layout=%ld",
-             w, h, g_pages, t1 - t0, t2 - t1, t3 - t2);
+    DEXP_LOG("reader: open ok %dx%d pages=%d face=%s size=%d hyph=%d setup=%ld load=%ld layout=%ld",
+             w, h, g_pages, face_name(g_type.face), g_type.size, g_type.hyphens ? 1 : 0,
+             t1 - t0, t2 - t1, t3 - t2);
     return DEXP_PROBE_OK;
 }
 
@@ -296,25 +416,62 @@ DEXP_PROBE_API int dexp_reader_set_font(int size, const char *keepPos)
     if (size <= 0)
         return DEXP_PROBE_EARG;
     long t0 = now_ms();
-    g_view->setFontSize(size);
-    g_view->checkRender();
-    g_pages = g_view->getPageCount();
-    drop_toc();   // номера страниц пунктов посчитает build_toc на новой разметке
-    /* Позицию ищем строкой ПОСЛЕ перевёрстки: xpointer, созданный на старом DOM,
-       после новой разметки указывает в другое место (проверено на книге 2026-11-13 —
-       место чтения уезжало с 50 % на 61 %). Условие приёмки — «та же фраза на
-       странице», а не её первый символ: страница начинается раньше позиции
-       (R1.2, замер на EPUB 2026-11-13: фраза y=618338 внутри страницы 618272..619856). */
-    if (keepPos && keepPos[0]) {
-        ldomXPointer pos = g_view->getDocument()->createXPointer(Utf8ToUnicode(keepPos));
-        if (!pos.isNull()) {
-            g_view->goToBookmark(pos);
-            g_view->checkRender();
-            DEXP_LOG("reader: font %d keepPos -> page %d", size, g_view->getCurPage());
-        }
-    }
-    DEXP_LOG("reader: font %d pages=%d %ldms", size, g_pages, now_ms() - t0);
-    return g_pages > 0 ? DEXP_PROBE_OK : DEXP_PROBE_EPAGE;
+    g_type.size = size;
+    int pages = relayout(keepPos);
+    DEXP_LOG("reader: font %d pages=%d %ldms", size, pages, now_ms() - t0);
+    return pages > 0 ? DEXP_PROBE_OK : DEXP_PROBE_EPAGE;
+}
+
+/**
+ * Типографика B4 «Типографика» разом (R3.4): гарнитура, кегль, интервал, поля и переносы.
+ * Числа — из `design/v5/B04.json`; разбор того, чем каждая настройка ложится на crengine,
+ * — в `apply_typography`.
+ *
+ * [face] 0 — антиква (Literata), 1 — гротеск (Manrope), 2 — моно;
+ * [size] кегль дизайн-px, 0 — не менять;
+ * [interline] процент 70…200, 0 — не менять;
+ * [margin] поля слева и справа, px окна, `< 0` — не менять;
+ * [hyphens] 1 — переносы, 0 — без переносов, `< 0` — не менять;
+ * [keepPos] — xpointer места чтения, чтобы не уехать после перевёрстки.
+ *
+ * Возвращает число страниц после перевёрстки или код `< 0`. Свои значения настройки
+ * запоминает [g_type]: следующее открытие книги начнётся сразу с них.
+ */
+DEXP_PROBE_API int dexp_reader_set_typography(int face, int size, int interline, int margin,
+                                              int hyphens, const char *keepPos)
+{
+    if (!g_view)
+        return DEXP_READER_ENOSESSION;
+    if (face >= FACE_SERIF && face <= FACE_MONO)
+        g_type.face = face;
+    if (size > 0)
+        g_type.size = size;
+    /* Интервал: список движка `cr_interline_spaces` — 70…200 шагом 5; прочее отвергнется. */
+    if (interline > 0)
+        g_type.interline = interline < 70 ? 70 : (interline > 200 ? 200 : interline);
+    if (margin >= 0)
+        g_type.margin = margin < 400 ? margin : 400;
+    if (hyphens >= 0)
+        g_type.hyphens = hyphens != 0;
+    long t0 = now_ms();
+    int pages = relayout(keepPos);
+    DEXP_LOG("reader: type face=%s size=%d inter=%d margin=%d hyph=%d pages=%d %ldms",
+             face_name(g_type.face), g_type.size, g_type.interline, g_type.margin,
+             g_type.hyphens ? 1 : 0, pages, now_ms() - t0);
+    return pages > 0 ? pages : DEXP_PROBE_EPAGE;
+}
+
+/** Текущая типографика: в [out] 5 чисел — face, size, interline, margin, hyphens. 0 — ок. */
+DEXP_PROBE_API int dexp_reader_typography(int *out)
+{
+    if (!out)
+        return DEXP_PROBE_EARG;
+    out[0] = g_type.face;
+    out[1] = g_type.size;
+    out[2] = g_type.interline;
+    out[3] = g_type.margin;
+    out[4] = g_type.hyphens ? 1 : 0;
+    return DEXP_PROBE_OK;
 }
 
 /**
