@@ -11,7 +11,8 @@ import ru.ogrpfsense.dexpm8.reader.TypographySheet
  * Читалки ещё нет: «Переносы слов», вариант зон касаний и «Листать свайпом» хранятся в `act.prefs`
  * (шаг 4.6) и будут прочитаны читалкой. Строка «Интервал и поля» показывает значения `Prefs`
  * (те же, что ставит лист B4), но собственного экрана в макете нет — касание по ней пока ничего
- * не открывает. «Кнопки громкости» — значение по умолчанию из макета, не нажимается.
+ * не открывает. «Кнопки громкости» переключают «Листание ⇄ Громкость» (B39.2): читалка разводит
+ * пары клавиш по `Prefs.volumeKeys`, клавиши страниц листают всегда.
  * Блок «Кнопки и жесты» внизу — это и есть экран `SCR_SET_KEYS`: он открывает тот же экран.
  */
 class SetReadScreen(act: EinkActivity) : Screen(act) {
@@ -56,7 +57,7 @@ class SetReadScreen(act: EinkActivity) : Screen(act) {
         kit.section(c, "КНОПКИ И ЖЕСТЫ", 1460f)
         kit.panel(c, 1508f, 310f)
         kit.title(c, "Кнопки громкости", 1570.5f)
-        kit.valueRow(c, "Листание", 1578.5f)
+        kit.valueRow(c, Prefs.VOLUME_LABELS.getOrElse(p.volumeKeys) { "" }, 1578.5f)
         kit.next(c, 1586.5f)
         kit.divider(c, 1684f)
         kit.title(c, "Листать свайпом", 1721.5f)
@@ -114,6 +115,14 @@ class SetReadScreen(act: EinkActivity) : Screen(act) {
         if (kit.inRow(x, y, 298f, 182f)) { act.go(EinkActivity.SCR_SET_FONT); return }
         val p = act.prefs
         if (kit.inRow(x, y, 634f, 144f)) { p.hyphens = !p.hyphens; redraw(); return }
+        // «Кнопки громкости» — переключение «Листание ⇄ Громкость» (B39.2). Отдельного экрана
+        // в макете нет, а стрелка `next` нарисована — дверь ведёт в переключение.
+        if (kit.inRow(x, y, 1570.5f, 113.5f)) {
+            p.volumeKeys = if (p.volumeKeys == Prefs.VOLUME_PAGING) Prefs.VOLUME_SOUND
+                else Prefs.VOLUME_PAGING
+            redraw()
+            return
+        }
         for (i in zones.indices) {
             val z = zones[i]
             if (x >= 490f && x <= 1314f && y >= z.y && y <= z.y + 140f) {

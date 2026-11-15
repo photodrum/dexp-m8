@@ -31,7 +31,8 @@ import java.nio.ByteBuffer
  * Листание — трети экрана (левая назад, правая вперёд; центр отдан шторке B5 сверху,
  * шторке B4 и меню B9 — R3, `ShadeScreen.ZONE_READER`) и физические кнопки книги:
  * `gpio-keys` отдаёт `KEY_PAGEUP` / `KEY_PAGEDOWN`, `adc-keys` — `KEY_VOLUMEUP` /
- * `KEY_VOLUMEDOWN` (разведка на книге 2026-11-13). Клавиши приходят из
+ * `KEY_VOLUMEDOWN` (разведка на книге 2026-11-13). Клавиши страниц листают всегда, громкость —
+ * по настройке B39 «Кнопки громкости» (`Prefs.volumeKeys`, B39.2). Клавиши приходят из
  * `EinkActivity.dispatchKeyEvent` в [key].
  *
  * Память: два `ALPHA_8` (по 1,8 МБ) и один `ByteArray` — страница на экране и заранее
@@ -1188,7 +1189,10 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
 
     /**
      * Физические клавиши книги (см. шапку класса). Возвращает true, если клавиша наша.
-     * Громкость временно листает: настройка B39 «кнопки громкости» — R3.
+     *
+     * Клавиши страниц (`gpio-keys`) листают всегда. Клавиши громкости (`adc-keys`) листают,
+     * только если на B39 выбрано «Листание» (`Prefs.volumeKeys`); при «Громкость» они уходят
+     * системе — тогда закрытый лист не должен съедать их, это проверяет [handlesKey].
      */
     fun key(code: Int): Boolean {
         if (dialogOpen) return false
@@ -1197,12 +1201,25 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         if (tocOpen) return false      // B10: список листается своими кнопками
         if (gotoOpen) return false     // B29: лист с клавиатурой, страница не листается
         if (opening) return false     // B58: страниц ещё нет, клавиши листания не наши
-        val next = code == KEY_PAGEDOWN || code == KEY_VOLUME_DOWN
-        val prev = code == KEY_PAGEUP || code == KEY_VOLUME_UP
+        val next = code == KEY_PAGEDOWN || (volumePaging() && code == KEY_VOLUME_DOWN)
+        val prev = code == KEY_PAGEUP || (volumePaging() && code == KEY_VOLUME_UP)
         if (!next && !prev) return false
         if (next) forward() else back()
         return true
     }
+
+    /**
+     * Берёт ли читалка эту клавишу себе (для `ACTION_UP` в `EinkActivity`). false — клавиша
+     * наша по типу, но отдана системе: громкость при настройке «Громкость».
+     */
+    fun handlesKey(code: Int): Boolean = when (code) {
+        KEY_PAGEUP, KEY_PAGEDOWN -> true
+        KEY_VOLUME_UP, KEY_VOLUME_DOWN -> volumePaging()
+        else -> false
+    }
+
+    /** Листают ли клавиши громкости (B39). */
+    private fun volumePaging() = act.prefs.volumeKeys == ru.ogrpfsense.dexpm8.core.Prefs.VOLUME_PAGING
 
     /** Глава для страницы [page]: последний пункт оглавления, начавшийся не позже неё. */
     private fun chapter(page: Int) {

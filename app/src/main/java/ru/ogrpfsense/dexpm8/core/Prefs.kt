@@ -73,6 +73,14 @@ class Prefs(ctx: Context) {
     var swipe: Boolean
         get() = sp.getBoolean("swipe", true)
         set(v) = sp.edit().putBoolean("swipe", v).apply()
+    /**
+     * Что делают клавиши громкости (`adc-keys`) в читалке: 0 [VOLUME_PAGING] — листают,
+     * 1 [VOLUME_SOUND] — громкость. Клавиши страниц (`gpio-keys`, `KEY_PAGEUP`/`KEY_PAGEDOWN`)
+     * листают всегда: другой роли у них нет.
+     */
+    var volumeKeys: Int
+        get() = sp.getInt("volume_keys", VOLUME_PAGING)
+        set(v) = sp.edit().putInt("volume_keys", v).apply()
 
     // B40 «Сон и питание»
     var saver: Boolean
@@ -126,4 +134,13 @@ class Prefs(ctx: Context) {
 
     /** Сброс к значениям макета (B43 «Сбросить настройки оболочки» — после диалога подтверждения). */
     fun reset() = sp.edit().clear().apply()
+
+    companion object {
+        /** Клавиши громкости листают страницы (умолчание: до R3 они только это и делали). */
+        const val VOLUME_PAGING = 0
+        /** Клавиши громкости отданы системе — звук, не листание. */
+        const val VOLUME_SOUND = 1
+        /** Подписи значения строки «Кнопки громкости» на B39 — по индексу [volumeKeys]. */
+        val VOLUME_LABELS = arrayOf("Листание", "Громкость")
+    }
 }

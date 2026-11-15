@@ -519,10 +519,9 @@ class EinkActivity : Activity() {
                     if (top.key(code)) return true
                 } else if (event.action == android.view.KeyEvent.ACTION_UP) {
                     // Листание по нажатию: UP не отдаём системе, иначе громкость «щёлкнет».
-                    if (code == android.view.KeyEvent.KEYCODE_VOLUME_UP ||
-                        code == android.view.KeyEvent.KEYCODE_VOLUME_DOWN ||
-                        code == android.view.KeyEvent.KEYCODE_PAGE_UP ||
-                        code == android.view.KeyEvent.KEYCODE_PAGE_DOWN) return true
+                    // Но если читалка клавишу не берёт (B39 «Кнопки громкости» = «Громкость»),
+                    // UP идёт дальше — иначе система не увидит нажатия вовсе.
+                    if (top.handlesKey(code)) return true
                 }
             }
         }
