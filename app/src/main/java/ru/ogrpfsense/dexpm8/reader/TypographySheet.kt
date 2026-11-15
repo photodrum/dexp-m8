@@ -320,8 +320,9 @@ class TypographySheet(private val ink: Ink, private val icons: Icons) {
         private const val LABEL_HYPHENS = "Переносы слов"
 
         private val FACE_LABELS = arrayOf("Антиква", "Гротекс", "Моно", "PT Serif")
-        private val SPACING_LABELS = arrayOf("Плотный", "Обычный", "Свободный")
-        private val MARGIN_LABELS = arrayOf("Узкие", "Средние", "Широкие")
+        /** Подписи интервала и полей: их же показывает строка «Интервал и поля» на B39. */
+        val SPACING_LABELS = arrayOf("Плотный", "Обычный", "Свободный")
+        val MARGIN_LABELS = arrayOf("Узкие", "Средние", "Широкие")
 
         // Лист: группа −2.7,867.4 1408.6×1106.9 (габарит с тенью); поверхность 1404×1096.9 r 66.
         private const val SHEET_X = -2.7f

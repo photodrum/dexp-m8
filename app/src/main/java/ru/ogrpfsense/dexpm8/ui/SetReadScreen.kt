@@ -1,14 +1,17 @@
 package ru.ogrpfsense.dexpm8.ui
 
 import android.graphics.Canvas
+import ru.ogrpfsense.dexpm8.core.Prefs
 import ru.ogrpfsense.dexpm8.reader.Engine
+import ru.ogrpfsense.dexpm8.reader.TypographySheet
 
 /**
  * B39 · Настройки · Чтение по умолчанию. Числа — из design/v5/B39.json.
  *
  * Читалки ещё нет: «Переносы слов», вариант зон касаний и «Листать свайпом» хранятся в `act.prefs`
- * (шаг 4.6) и будут прочитаны читалкой. «Шрифт и размер», «Интервал и поля», «Кнопки громкости» —
- * значения по умолчанию из макета, не нажимаются (их экраны — вместе с читалкой).
+ * (шаг 4.6) и будут прочитаны читалкой. Строка «Интервал и поля» показывает значения `Prefs`
+ * (те же, что ставит лист B4), но собственного экрана в макете нет — касание по ней пока ничего
+ * не открывает. «Кнопки громкости» — значение по умолчанию из макета, не нажимается.
  * Блок «Кнопки и жесты» внизу — это и есть экран `SCR_SET_KEYS`: он открывает тот же экран.
  */
 class SetReadScreen(act: EinkActivity) : Screen(act) {
@@ -39,7 +42,7 @@ class SetReadScreen(act: EinkActivity) : Screen(act) {
         kit.next(c, 379.5f)
         kit.divider(c, 480f, 237f, 1079f)
         kit.title(c, "Интервал и поля", 531f)
-        kit.valueRow(c, "Обычный · широкие", 539f)
+        kit.valueRow(c, spacingText(p), 539f)
         kit.next(c, 547f)
         kit.divider(c, 634f)
         kit.title(c, "Переносы слов", 676.5f)
@@ -61,7 +64,7 @@ class SetReadScreen(act: EinkActivity) : Screen(act) {
     }
 
     /** Подпись строки «Шрифт и размер»: гарнитура и кегль, как они выбраны (в макете «Литерата · 20»). */
-    private fun faceText(p: ru.ogrpfsense.dexpm8.core.Prefs): String {
+    private fun faceText(p: Prefs): String {
         val name = when (p.textFace) {
             Engine.FACE_SANS -> "Manrope"
             Engine.FACE_MONO -> "Моно"
@@ -70,6 +73,17 @@ class SetReadScreen(act: EinkActivity) : Screen(act) {
             else -> "Свой шрифт"
         }
         return "$name · ${p.textSize}"
+    }
+
+    /**
+     * Подпись строки «Интервал и поля»: интервал и поля из `Prefs` (в макете «Обычный · широкие»).
+     * Значения те же, что ставит лист B4 «Типографика», — подписи берём оттуда, чтобы не разъезжались.
+     */
+    private fun spacingText(p: Prefs): String {
+        val sp = TypographySheet.SPACING_LABELS.getOrElse(p.textSpacing) { "" }
+        val mg = TypographySheet.MARGIN_LABELS.getOrElse(p.textMargins) { "" }
+        // В макете первое слово с большой буквы («Обычный · широкие»), поля — строчными.
+        return "$sp · ${mg.lowercase()}"
     }
 
     /** Схема страницы 360×480: зона «Назад» и «Меню» (вперёд — остальное поле). */
