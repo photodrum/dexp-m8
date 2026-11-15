@@ -12,8 +12,11 @@ import ru.ogrpfsense.dexpm8.ui.T
  *
  *   превью    лист 402,110 605×830: тень G10 +5,+10, блик G15, поверхность G14 600×820 (r 8);
  *             в нём кадр страницы 600×820 из 405,113 — без обрезки (решение пользователя)
- *   рамка     452,170 506×700, пунктир G3/5 r 6; ручки 44×44 (группа 49×54) в углах рамки,
- *             активная — кольцо G1 60×60 в 427.5,141 (`B31а`)
+ *   рамка     по промилле настроек (`cropL..B`) на поверхности 405,113 600×820, пунктир G3/5 r 6;
+ *             ручки 44×44 с центром на углу рамки, активная — кольцо G1 60×60 (`B31а`).
+ *             Рамка макета (452,170 506×700) — это умолчание «Вручную» ([DjvuView.manualDefault]);
+ *             касание страницы ставит выбранную ручку в это место (решение дизайна 2026-11-14,
+ *             зоны 96×96). Без выбранной ручки касание берёт ближайшую.
  *   лист      выпуклый −3,1000 1409×1002 r 66; захват 644,1025 117×11 G11
  *   заголовок «Масштаб и поля» 59,1056 60/700 G1; «Готово» тёмная 1074,1042.6 273×108
  *   масштаб   метка 59,1206 30/600 G5; желоб 56,1256 1292×95, шаг 428, подписи 32 в 60/488/916,
@@ -89,13 +92,35 @@ class DjvuViewSheet(private val ink: Ink, icons: ru.ogrpfsense.dexpm8.ui.Icons) 
         if (b != null) c.drawBitmap(b, null, PREVIEW_DST, PAGE)
         // Рамка и ручки — только «Вручную»: в других режимах режет движок (авто/никак).
         if (view.cropMode != DjvuView.CROP_MANUAL) return
-        ink.ringDashed(c, 452f, 170f, 506f, 700f, 6f, T.G3, 5f)
+        // Рамка рисуется по промилле настроек, а не по числам макета: после касания
+        // страницы ручка стоит там, куда коснулись.
+        val x0 = PREVIEW_DST.left + view.cropL * PREVIEW_DST.width() / 1000f
+        val x1 = PREVIEW_DST.left + (1000 - view.cropR) * PREVIEW_DST.width() / 1000f
+        val y0 = PREVIEW_DST.top + view.cropT * PREVIEW_DST.height() / 1000f
+        val y1 = PREVIEW_DST.top + (1000 - view.cropB) * PREVIEW_DST.height() / 1000f
+        ink.ringDashed(c, x0, y0, x1 - x0, y1 - y0, 6f, T.G3, 5f)
         for (i in 0 until 4) {
-            val hx = HANDLE_X[i]
-            val hy = HANDLE_Y[i]
-            if (i == handle) ink.ring(c, hx - 2.5f, hy - 5f, 60f, 60f, 30f, T.G1, 5f)
-            ink.convex(c, hx + 3f, hy + 3f, 44f, 44f, 22f)
+            val hx = handleX(i, view)
+            val hy = handleY(i, view)
+            if (i == handle) ink.ring(c, hx - 30f, hy - 30f, 60f, 60f, 30f, T.G1, 5f)
+            ink.convex(c, hx - 22f, hy - 22f, 44f, 44f, 22f)
         }
+    }
+
+    // ------------------------------------------------------------------ ручки рамки
+
+    /** Центр [i]-й ручки по горизонтали: левые — левый край рамки, правые — правый. */
+    private fun handleX(i: Int, view: DjvuView): Float {
+        val left = PREVIEW_DST.left + view.cropL * PREVIEW_DST.width() / 1000f
+        return if (i == DjvuView.HANDLE_LT || i == DjvuView.HANDLE_LB) left
+        else PREVIEW_DST.right - view.cropR * PREVIEW_DST.width() / 1000f
+    }
+
+    /** Центр [i]-й ручки по вертикали: верхние — верхний край рамки, нижние — нижний. */
+    private fun handleY(i: Int, view: DjvuView): Float {
+        val top = PREVIEW_DST.top + view.cropT * PREVIEW_DST.height() / 1000f
+        return if (i == DjvuView.HANDLE_LT || i == DjvuView.HANDLE_RT) top
+        else PREVIEW_DST.bottom - view.cropB * PREVIEW_DST.height() / 1000f
     }
 
     // ------------------------------------------------------------------ нижний лист
@@ -169,11 +194,21 @@ class DjvuViewSheet(private val ink: Ink, icons: ru.ogrpfsense.dexpm8.ui.Icons) 
     fun hit(x: Float, y: Float, view: DjvuView): Int {
         result = view
         if (y < 1000f) {
-            // Над листом: ручки рамки (только «Вручную»), иначе — «Готово».
-            val i = handleAt(x, y)
-            if (i >= 0 && view.cropMode == DjvuView.CROP_MANUAL) {
-                handle = i
-                return ACT_REPAINT
+            // Над листом: ручки рамки (только «Вручную»), касание страницы ставит выбранную
+            // ручку в это место (решение дизайна по B31), иначе — «Готово».
+            if (view.cropMode == DjvuView.CROP_MANUAL) {
+                val i = handleAt(x, y, view)
+                if (i >= 0) {
+                    handle = i
+                    return ACT_REPAINT
+                }
+                if (PREVIEW_DST.contains(x, y)) {
+                    // Ручка ещё не выбрана — берём ближайшую: касание по странице не должно
+                    // закрывать лист, иначе рамку не поставить с первого раза.
+                    if (handle < 0) handle = nearestHandle(x, y, view)
+                    result = view.place(handle, pmX(x), pmY(y))
+                    return ACT_CHANGED
+                }
             }
             return ACT_CLOSE
         }
@@ -182,7 +217,12 @@ class DjvuViewSheet(private val ink: Ink, icons: ru.ogrpfsense.dexpm8.ui.Icons) 
         if (y in ZOOM_Y - 12f..ZOOM_Y + 100f) return zoomHit(x, view)
         if (y in CROP_Y - 12f..CROP_Y + 100f) {
             val seg = ((x - SEG_X) / SEG_STEP).toInt().coerceIn(0, 2)
-            result = view.mode(mode = seg)
+            // Первый вход в «Вручную» — рамка из макета `B31а`: с нуля она легла бы по краю
+            // страницы, и ручки стояли бы в углах поверхности, а не по полям скана.
+            // Сдвиг сбрасывается — раскладка с новой рамкой другая.
+            val v = if (seg == DjvuView.CROP_MANUAL && !view.hasCrop && view.cropMode != DjvuView.CROP_MANUAL)
+                view.manualDefault.copy(panX = 0, panY = 0) else view.mode(mode = seg)
+            result = v
             handle = -1
             return ACT_CHANGED
         }
@@ -192,6 +232,13 @@ class DjvuViewSheet(private val ink: Ink, icons: ru.ogrpfsense.dexpm8.ui.Icons) 
         }
         return ACT_NONE
     }
+
+    /** Касание поверхности превью → промилле исходной страницы (0…1000). */
+    private fun pmX(x: Float): Int =
+        ((x - PREVIEW_DST.left) * 1000f / PREVIEW_DST.width()).toInt().coerceIn(0, 1000)
+
+    private fun pmY(y: Float): Int =
+        ((y - PREVIEW_DST.top) * 1000f / PREVIEW_DST.height()).toInt().coerceIn(0, 1000)
 
     /** Желоб масштаба: три сегмента или раскрытый «− · значение · +». */
     private fun zoomHit(x: Float, view: DjvuView): Int {
@@ -222,12 +269,26 @@ class DjvuViewSheet(private val ink: Ink, icons: ru.ogrpfsense.dexpm8.ui.Icons) 
         return ACT_NONE
     }
 
-    /** Какая ручка под касанием (−1 — мимо); зона 96×96 вокруг центра ручки. */
-    private fun handleAt(x: Float, y: Float): Int {
+    /** Ближайшая ручка к точке касания — когда ни одна не выбрана. */
+    private fun nearestHandle(x: Float, y: Float, view: DjvuView): Int {
+        var best = 0
+        var bestD = Float.MAX_VALUE
         for (i in 0 until 4) {
-            val cx = HANDLE_X[i] + 25f
-            val cy = HANDLE_Y[i] + 27f
-            if (Math.abs(x - cx) <= 48f && Math.abs(y - cy) <= 48f) return i
+            val dx = x - handleX(i, view)
+            val dy = y - handleY(i, view)
+            val d = dx * dx + dy * dy
+            if (d < bestD) {
+                bestD = d
+                best = i
+            }
+        }
+        return best
+    }
+
+    /** Какая ручка под касанием (−1 — мимо); зона 96×96 вокруг центра ручки. */
+    private fun handleAt(x: Float, y: Float, view: DjvuView): Int {
+        for (i in 0 until 4) {
+            if (Math.abs(x - handleX(i, view)) <= 48f && Math.abs(y - handleY(i, view)) <= 48f) return i
         }
         return -1
     }
@@ -255,11 +316,7 @@ class DjvuViewSheet(private val ink: Ink, icons: ru.ogrpfsense.dexpm8.ui.Icons) 
         private const val HINT_SEGMENTS = "Коснитесь ручки, затем — края страницы"
         private const val HINT_SELF = "Коснитесь значения, чтобы вернуть режимы"
 
-        /** Левые верхние углы групп ручек рамки (49×54): 430/936 × 146/846. */
-        private val HANDLE_X = floatArrayOf(430f, 936f, 430f, 936f)
-        private val HANDLE_Y = floatArrayOf(146f, 146f, 846f, 846f)
-
-        /** Куда рисуется кадр страницы: поверхность листа 405,113 600×820. */
+        /** Куда рисуется кадр страницы: поверхность листа 405,113 600×820 (и рамка «Вручную»). */
         private val PREVIEW_DST = android.graphics.RectF(405f, 113f, 1005f, 933f)
 
         /** Превью рисуется как есть: шаг палитры уже в буфере, фильтрация только мылит. */

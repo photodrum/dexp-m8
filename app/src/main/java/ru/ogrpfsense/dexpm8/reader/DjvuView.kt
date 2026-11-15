@@ -1,5 +1,7 @@
 package ru.ogrpfsense.dexpm8.reader
 
+import kotlin.math.min
+
 /**
  * Настройки страницы DjVu — лист B31 «Масштаб и поля» (R2.4/R2.5).
  *
@@ -16,6 +18,11 @@ package ru.ogrpfsense.dexpm8.reader
  * [zoom] — то, что уходит в движок: 0 «по странице», −1 «по ширине», 50…300 «Свой».
  * [self] — запомненный процент «Своего»: сегмент «Свой» возвращает его, «−/+» его же
  * и меняет. Так переключение сегментов не теряет своё значение (макет `B31б`).
+ *
+ * Рамку «Вручную» ставят касанием ([place]): ручка выбирается в листе B31, а касание
+ * страницы переводит точку в промилле и двигает свою сторону рамки. Пределы те же, что
+ * у движка (`djvu_layout.h`, [CROP_PAIR_MAX]) — ручка не переворачивает рамку, а битые
+ * настройки не дают пустую страницу.
  */
 data class DjvuView(
     /** 0 — «По странице», −1 — «По ширине», 50…300 — «Свой» в процентах. */
@@ -37,9 +44,10 @@ data class DjvuView(
 ) {
 
     /** Обрезка массивом для JNI; null — нечего резать (лишней работы не будет). */
-    fun crop(): IntArray? =
-        if (cropL == 0 && cropT == 0 && cropR == 0 && cropB == 0) null
-        else intArrayOf(cropL, cropT, cropR, cropB)
+    fun crop(): IntArray? = if (hasCrop) intArrayOf(cropL, cropT, cropR, cropB) else null
+
+    /** Поля заданы хотя бы с одной стороны. */
+    val hasCrop: Boolean get() = cropL != 0 || cropT != 0 || cropR != 0 || cropB != 0
 
     /**
      * Обрезка, которая действительно уходит в движок с учётом режима. [auto] — промилле,
@@ -82,6 +90,35 @@ data class DjvuView(
     /** Сменить сдвиг, не трогая остальное (сдвиг третями, R2.5). */
     fun pan(x: Int, y: Int): DjvuView = copy(panX = x, panY = y)
 
+    /**
+     * Поставить ручку [handle] рамки «Вручную» в точку [pmX]/[pmY] — промилле исходной
+     * страницы (0…1000). Угловая ручка двигает две свои стороны: левая верхняя — [cropL]
+     * и [cropT], правая нижняя — [cropR] и [cropB].
+     *
+     * Стороны не переворачиваются и не съедают страницу: вместе не больше [CROP_PAIR_MAX]
+     * (как в `djvu_layout.h`), то есть хотя бы 10 % стороны остаётся. Сдвиг сбрасывается:
+     * после смены рамки страница раскладывается заново, и старый сдвиг был бы за пределом.
+     */
+    fun place(handle: Int, pmX: Int, pmY: Int): DjvuView {
+        val x = pmX.coerceIn(0, 1000)
+        val y = pmY.coerceIn(0, 1000)
+        val l = min(x, CROP_PAIR_MAX - cropR).coerceAtLeast(0)
+        val r = min(1000 - x, CROP_PAIR_MAX - cropL).coerceAtLeast(0)
+        val t = min(y, CROP_PAIR_MAX - cropB).coerceAtLeast(0)
+        val b = min(1000 - y, CROP_PAIR_MAX - cropT).coerceAtLeast(0)
+        return when (handle) {
+            HANDLE_LT -> copy(cropL = l, cropT = t, panX = 0, panY = 0)
+            HANDLE_RT -> copy(cropR = r, cropT = t, panX = 0, panY = 0)
+            HANDLE_LB -> copy(cropL = l, cropB = b, panX = 0, panY = 0)
+            HANDLE_RB -> copy(cropR = r, cropB = b, panX = 0, panY = 0)
+            else -> this
+        }
+    }
+
+    /** Рамка «Вручную» из макета `B31а` (452,170 506×700 на поверхности 405,113 600×820). */
+    val manualDefault: DjvuView
+        get() = copy(cropMode = CROP_MANUAL, cropL = 78, cropT = 69, cropR = 78, cropB = 77)
+
     /** Шаг «Своего» масштаба: 10 % (решение дизайна); запоминается для сегмента «Свой». */
     fun zoomSelf(percent: Int): DjvuView {
         val p = percent.coerceIn(ZOOM_MIN, ZOOM_MAX)
@@ -109,6 +146,15 @@ data class DjvuView(
         const val CROP_AUTO = 0
         const val CROP_MANUAL = 1
         const val CROP_NONE = 2
+
+        /** Сколько промилле страницы можно отрезать с двух сторон вместе (как `CROP_PAIR_MAX`). */
+        const val CROP_PAIR_MAX = 900
+
+        /** Ручки рамки «Вручную» в том же порядке, что `DjvuViewSheet.HANDLE_X/Y`. */
+        const val HANDLE_LT = 0
+        const val HANDLE_RT = 1
+        const val HANDLE_LB = 2
+        const val HANDLE_RB = 3
 
         /** Обрезка по умолчанию — «Авто» (R2.5, последний пункт желобов). */
         val DEFAULT = DjvuView()
