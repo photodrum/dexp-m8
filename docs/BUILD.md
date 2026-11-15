@@ -307,6 +307,21 @@ GIT_ASKPASS=$PWD/tools/git-askpass.sh GIT_TERMINAL_PROMPT=0 \
   git -c credential.helper= ls-remote origin
 ```
 
+## Режимы и модели
+
+Переключение модели — только человек: Cline → API Configuration → Act Mode → Model ID.
+Кто что берёт — `.clinerules/02-modes.md`; здесь — готовые тексты ответа.
+
+Задача не для Sonnet (натив, движки, E-Ink, права, архитектура; или ошибка, не исправленная
+за 2 захода):
+
+> СТОП. Поставь claude-opus-5.5 на вкладке Act (Cline → API Configuration → Act Mode → Model ID)
+> и напиши «продолжай». Причина: <…>. С чего продолжить: <файл / запись DEVLOG>.
+
+Сложное на Opus сделано, осталась рутина (план уже в «СЛЕДУЮЩИЙ ШАГ» `docs/CONTEXT.md`):
+
+> СТОП. Сложное сделано. Верни claude-sonnet-5.5 на вкладке Act.
+
 ## Частые ошибки
 
 | Симптом | Причина |
