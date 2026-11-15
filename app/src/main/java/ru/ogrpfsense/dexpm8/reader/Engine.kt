@@ -53,8 +53,9 @@ object Engine {
 
     /**
      * Что распаковать движку из `res/font/`: имя файла в каталоге шрифтов → ресурс.
-     * Гарнитуры B4: «Антиква» — Literata, «Гротекс» — Manrope; начертания 400/700,
-     * потому что движок подбирает вес сам (курсив и полужирный синтезирует, если нет).
+     * Гарнитуры B4/B70: «Антиква» — Literata, «Гротекс» — Manrope, «PT Serif» — вторая
+     * антиква B70; начертания 400/700, потому что движок подбирает вес сам (курсив
+     * и полужирный синтезирует, если нет).
      * «Моно» своего файла не имеет: в макете Martian Mono, в проекте его нет —
      * движок берёт системный DroidSansMono (вопрос в `docs/DESIGN_QUESTIONS.md`).
      */
@@ -63,6 +64,8 @@ object Engine {
         "literata_600.ttf" to R.font.literata_600,
         "manrope_400.ttf" to R.font.manrope_400,
         "manrope_700.ttf" to R.font.manrope_700,
+        "ptserif_400.ttf" to R.font.ptserif_400,
+        "ptserif_700.ttf" to R.font.ptserif_700,
     )
 
     private var open = false
@@ -274,10 +277,14 @@ object Engine {
         }
     }
 
-    /** Гарнитуры B4 «Антиква · Гротекс · Моно» — коды натива (`FACE_*` в cre_session.cpp). */
+    /** Гарнитуры B4/B70 — коды натива (`FACE_*` в cre_session.cpp). Порядок = сохранённые `Prefs`. */
     const val FACE_SERIF = 0
     const val FACE_SANS = 1
     const val FACE_MONO = 2
+    /** B70: PT Serif — вторая антиква, свои начертания в `res/font`. */
+    const val FACE_PTSERIF = 3
+    /** B70 «Открыть шрифт…»: первый шрифт из папки `Fonts`; дальше `FACE_USER + n`. */
+    const val FACE_USER = 100
 
     /**
      * Типографика B4 разом (R3.4): гарнитура, кегль, интервал, поля и переносы.
@@ -313,6 +320,21 @@ object Engine {
         return try {
             if (typographyNative(out) == OK) out else null
         } catch (t: Throwable) {
+            null
+        }
+    }
+
+    /**
+     * B70 «Шрифт и размер», строка «Открыть шрифт…»: зарегистрировать файл `.ttf`/`.otf`
+     * из папки `Fonts` и получить его код гарнитуры (`FACE_USER + индекс`).
+     * `null` — файл не открылся или шрифтов в нём нет. Только в [worker].
+     */
+    fun registerFont(path: String): Int? {
+        return try {
+            val rc = registerFontNative(path)
+            if (rc >= 0) rc else null
+        } catch (t: Throwable) {
+            Trace.step("reader: registerFont FAIL ${t.javaClass.simpleName}: ${t.message}")
             null
         }
     }
@@ -463,6 +485,7 @@ object Engine {
                                                         margin: Int, hyphens: Int,
                                                         keepPos: String?): Int
     @JvmStatic private external fun typographyNative(out: IntArray): Int
+    @JvmStatic private external fun registerFontNative(path: String): Int
     @JvmStatic private external fun posNative(page: Int): String?
     @JvmStatic private external fun pageOfNative(pos: String): Int
     @JvmStatic private external fun gotoPosNative(pos: String): Int

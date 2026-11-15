@@ -132,6 +132,17 @@ object T {
         }
     }
 
+    /** Ключ PT Serif в кэше: своя сотня, чтобы не пересечься с Manrope и Literata. */
+    private const val PTSERIF_KEY = 2000
+
+    /** PT Serif (B70): только 400 и 700 — файлов других начертаний в проекте нет. */
+    fun ptserif(res: Resources, weight: Int = 400): Typeface {
+        val w = if (weight >= 700) 700 else 400
+        return cache.getOrPut(PTSERIF_KEY + w) {
+            res.getFont(if (w == 700) R.font.ptserif_700 else R.font.ptserif_400)
+        }
+    }
+
     // --- Базовая линия текста по рамке Penpot ---
     // Рамка текста: top, кегль fs, межстрочный lh (множитель). Строка по центру рамки, поэтому
     //   baseline = top + (fs·lh − fs·(asc+desc))/2 + fs·asc = top + fs·(lh/2 + k),
@@ -139,6 +150,8 @@ object T {
     //   Literata (1177, −308 / 1000) → 0.4345.
     const val BASE_K_MANROPE = 0.383f
     const val BASE_K_LITERATA = 0.4345f
+    /** PT Serif: hhea (1039, −286 / 1000) → 0.3765. */
+    const val BASE_K_PTSERIF = 0.3765f
 
     /** Базовая линия однострочного текста по верху рамки в макете (дизайн-px). */
     fun base(top: Float, fs: Float, lh: Float, literata: Boolean = false): Float =

@@ -84,6 +84,8 @@ DEXP_PROBE_API int dexp_reader_set_font(int size, const char *keepPos);
 DEXP_PROBE_API int dexp_reader_set_typography(int face, int size, int interline, int margin,
                                               int hyphens, const char *keepPos);
 DEXP_PROBE_API int dexp_reader_typography(int *out);
+/** B70 «Открыть шрифт…»: регистрация файла из папки `Fonts`; код гарнитуры или `< 0`. */
+DEXP_PROBE_API int dexp_reader_register_font(const char *path);
 DEXP_PROBE_API int dexp_reader_pos(int page, char *out, int outLen);
 DEXP_PROBE_API int dexp_reader_goto_pos(const char *pos);
 DEXP_PROBE_API int dexp_reader_page_of(const char *pos);
@@ -208,6 +210,22 @@ Java_ru_ogrpfsense_dexpm8_reader_Engine_typographyNative(JNIEnv *env, jclass cls
     for (int i = 0; i < 5; i++)
         j[i] = v[i];
     env->SetIntArrayRegion(out, 0, 5, j);
+    return rc;
+}
+
+/**
+ * B70 «Шрифт и размер», строка «Открыть шрифт…»: зарегистрировать файл из папки `Fonts`.
+ * Возвращает код гарнитуры (`Engine.FACE_USER + индекс`) или `< 0`.
+ */
+JNIEXPORT jint JNICALL
+Java_ru_ogrpfsense_dexpm8_reader_Engine_registerFontNative(JNIEnv *env, jclass cls, jstring path)
+{
+    (void)cls;
+    if (!path)
+        return DEXP_PROBE_EARG;
+    const char *p = env->GetStringUTFChars(path, NULL);
+    int rc = dexp_reader_register_font(p);
+    env->ReleaseStringUTFChars(path, p);
     return rc;
 }
 

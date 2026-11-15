@@ -42,7 +42,7 @@ export PATH=$JAVA_HOME/bin:$PATH
 
 | Что | Команда | Результат |
 |---|---|---|
-| Debug APK | `~/.local/gradle-8.7/bin/gradle -p ~/projects/dexp-m8 assembleDebug` | `app/build/outputs/apk/debug/app-debug.apk` (4,9 МиБ, 5 157 572 б; внутри `libdexp_core.so`, `libdexp_cre.so`, `libdexp_djvu.so`) |
+| Debug APK | `~/.local/gradle-8.7/bin/gradle -p ~/projects/dexp-m8 assembleDebug` | `app/build/outputs/apk/debug/app-debug.apk` (5,8 МиБ, 5 815 104 б; внутри `libdexp_core.so`, `libdexp_cre.so`, `libdexp_djvu.so`; +73 КБ шрифтов PT Serif) |
 | Release APK | `... assembleRelease` | `app/build/outputs/apk/release/app-release-unsigned.apk` (145 КБ) |
 | Быстро, без Gradle | `~/projects/dexp-m8/tools/build.sh` | `build/app-debug.apk` (~0,9 МБ) — **без `.so`**; Kotlin stdlib в dex, подпись как у Gradle (ставится поверх без удаления) |
 | Только типы Kotlin | `~/projects/dexp-m8/tools/typecheck.sh` | ~10 сек |
@@ -225,6 +225,17 @@ adb shell touch /data/local/tmp/dexp-bench   # adb shell rm /data/local/tmp/dexp
 # самотест движка (R1–R3.4): открытие, кегль, оглавление, типографика B4; строки «selftest: …»
 adb shell am start -n ru.ogrpfsense.dexpm8/.ui.EinkActivity --es reader "'/sdcard/Books/r0/r0-big5.fb2'"
 ```
+
+**Шрифты читалки (B4/B70).** В APK четыре гарнитуры: Literata и Manrope — срезы из вариативных
+файлов, PT Serif — статические файлы из `ofl/ptserif` (B70, 2026-11-15), «Моно» — системный
+`Droid Sans Mono`. Исходники `.ttf` в git не лежат (`.gitignore`), их кладут в `tools/fonts/`
+и режут через `python3 tools/make_fonts.py`; набор символов сверяется с `literata_400.ttf`
+(у PT Serif допущены `Ѝ`/`ѝ` — в файле их нет). Свои шрифты пользователя — `.ttf`/`.otf`
+в папке `Fonts` в корне памяти; регистрируются в рантайме (`dexp_reader_register_font`),
+имя семейства берётся сравнением списка `getFaceList` до и после регистрации.
+**Грабля:** `make_fonts.py` пересобирает весь список `JOBS` и перезаписывает уже лежащие
+начертания (`literata_500/600`, `manrope_200/300/500`) — они те же по размеру, но в git
+висят как изменённые; после прогона вернуть их `git checkout -- app/src/main/res/font/`.
 
 **Грабля: имя гарнитуры в crengine — ровно как в шрифте.** `setDefaultFontFace` ищет семейство
 по `name`-таблице файла, а не по имени файла: для `/system/fonts/DroidSansMono.ttf` это

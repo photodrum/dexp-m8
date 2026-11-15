@@ -1,6 +1,7 @@
 package ru.ogrpfsense.dexpm8.ui
 
 import android.graphics.Canvas
+import ru.ogrpfsense.dexpm8.reader.Engine
 
 /**
  * B39 · Настройки · Чтение по умолчанию. Числа — из design/v5/B39.json.
@@ -34,7 +35,7 @@ class SetReadScreen(act: EinkActivity) : Screen(act) {
         kit.key(c, 88f, 332.5f)
         icons.draw(c, "font@39.8x33.1", 127.2f, 375f, 39.8f, 33.1f)
         kit.title(c, "Шрифт и размер", 342f, 237f)
-        kit.desc(c, "Литерата · 20", 395f, 237f)
+        kit.desc(c, faceText(p), 395f, 237f)
         kit.next(c, 379.5f)
         kit.divider(c, 480f, 237f, 1079f)
         kit.title(c, "Интервал и поля", 531f)
@@ -57,6 +58,18 @@ class SetReadScreen(act: EinkActivity) : Screen(act) {
         kit.divider(c, 1684f)
         kit.title(c, "Листать свайпом", 1721.5f)
         kit.toggle(c, 1712f, p.swipe)
+    }
+
+    /** Подпись строки «Шрифт и размер»: гарнитура и кегль, как они выбраны (в макете «Литерата · 20»). */
+    private fun faceText(p: ru.ogrpfsense.dexpm8.core.Prefs): String {
+        val name = when (p.textFace) {
+            Engine.FACE_SANS -> "Manrope"
+            Engine.FACE_MONO -> "Моно"
+            Engine.FACE_PTSERIF -> "PT Serif"
+            Engine.FACE_SERIF -> "Литерата"
+            else -> "Свой шрифт"
+        }
+        return "$name · ${p.textSize}"
     }
 
     /** Схема страницы 360×480: зона «Назад» и «Меню» (вперёд — остальное поле). */
@@ -83,6 +96,8 @@ class SetReadScreen(act: EinkActivity) : Screen(act) {
 
     override fun onUp(x: Float, y: Float) {
         if (kit.isBack(x, y)) { act.pop(); return }
+        // «Шрифт и размер» — экран B70 (R3): значения те же `Prefs`, что у листа B4.
+        if (kit.inRow(x, y, 298f, 182f)) { act.go(EinkActivity.SCR_SET_FONT); return }
         val p = act.prefs
         if (kit.inRow(x, y, 634f, 144f)) { p.hyphens = !p.hyphens; redraw(); return }
         for (i in zones.indices) {

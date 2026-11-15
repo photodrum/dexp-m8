@@ -68,10 +68,17 @@ const char *g_appFontDir = NULL;
 bool g_hyphOk = false;
 
 /**
- * Типографика B4, общая для всех книг (как в макете: это настройки читалки, не книги).
+ * Типографика B4/B70, общая для всех книг (как в макете: это настройки читалки, не книги).
  * Держим и применяем заново при каждом открытии: новый `LVDocView` начинает с умолчаний.
+ *
+ * Коды гарнитур. 0…3 — встроенные в APK (Literata, Manrope, системный моно) и PT Serif;
+ * 100 и выше — шрифт, выбранный пользователем строкой «Открыть шрифт…» в B70: файл лежит
+ * в папке `Fonts` на карте, регистрируется в рантайме и нумеруется [g_userFonts] по порядку.
+ *
+ * Порядок кодов — часть сохранённых настроек (`Prefs.textFace`, B4/B39/B70): новые только
+ * дописываются в конец, переставлять нельзя (пользователь уже выбрал «Гротекс» = 1).
  */
-enum { FACE_SERIF = 0, FACE_SANS = 1, FACE_MONO = 2 };
+enum { FACE_SERIF = 0, FACE_SANS = 1, FACE_MONO = 2, FACE_PTSERIF = 3, FACE_USER = 100 };
 
 struct Typography {
     int size;        /* кегль, дизайн-px макета (20 в B4); 0 — умолчание движка */
@@ -83,16 +90,40 @@ struct Typography {
 
 Typography g_type = { 0, FACE_SERIF, 100, 0, true };
 
-/** Имя семейства в crengine для гарнитуры B4 («Антиква · Гротеск · Моно»). */
-const char *face_name(int face)
-{
-    switch (face) {
-    case FACE_SANS: return "Manrope";
+/**
+ * Шрифты, добавленные пользователем (строка «Открыть шрифт…» B70), в порядке регистрации:
+ * код гарнитуры `FACE_USER + индекс`. [family] — имя из name-таблицы файла (его ищет crengine),
+ * [path] — файл на карте: по нему не регистрируем один и тот же шрифт дважды.
+ */
+struct UserFont {
+    lString8 family;
+    lString8 path;
+};
+
+std::vector<UserFont> g_userFonts;
+
+/** Имена встроенных семейств: порядок = FACE_SERIF, FACE_SANS, FACE_MONO, FACE_PTSERIF. */
+static const char *const FACE_NAMES[] = {
+    "Literata",        /* FACE_SERIF   — антиква по умолчанию (B4/B70 «Литерата») */
+    "Manrope",         /* FACE_SANS    — гротеск B4/B70 */
     /* В макете «Моно» — Martian Mono, файла в проекте нет; берём системный
        (`name` table — именно «Droid Sans Mono», с пробелами). */
-    case FACE_MONO: return "Droid Sans Mono";
-    default:        return "Literata";
+    "Droid Sans Mono", /* FACE_MONO */
+    "PT Serif"         /* FACE_PTSERIF — вторая антиква B70 (свои начертания в APK) */
+};
+
+/** Сколько встроенных гарнитур (коды 0…FACE_PTSERIF); дальше — `FACE_USER + индекс`. */
+static const int FACE_COUNT = 4;
+
+/** Имя семейства в crengine для гарнитуры B4/B70 (код или `FACE_USER + индекс`). */
+const char *face_name(int face)
+{
+    if (face >= FACE_USER) {
+        int i = face - FACE_USER;
+        return (size_t) i < g_userFonts.size() ? g_userFonts[i].family.c_str()
+                                               : FACE_NAMES[FACE_SERIF];
     }
+    return face >= 0 && face < FACE_COUNT ? FACE_NAMES[face] : FACE_NAMES[FACE_SERIF];
 }
 
 void report_progress(int percent)
@@ -427,7 +458,8 @@ DEXP_PROBE_API int dexp_reader_set_font(int size, const char *keepPos)
  * Числа — из `design/v5/B04.json`; разбор того, чем каждая настройка ложится на crengine,
  * — в `apply_typography`.
  *
- * [face] 0 — антиква (Literata), 1 — гротеск (Manrope), 2 — моно;
+ * [face] 0 — антиква (Literata), 1 — гротекс (Manrope), 2 — моно, 3 — PT Serif (B70),
+ *         100+N — шрифт из папки `Fonts`, зарегистрированный [dexp_reader_register_font];
  * [size] кегль дизайн-px, 0 — не менять;
  * [interline] процент 70…200, 0 — не менять;
  * [margin] поля слева и справа, px окна, `< 0` — не менять;
@@ -442,7 +474,7 @@ DEXP_PROBE_API int dexp_reader_set_typography(int face, int size, int interline,
 {
     if (!g_view)
         return DEXP_READER_ENOSESSION;
-    if (face >= FACE_SERIF && face <= FACE_MONO)
+    if (face >= 0 && (face < FACE_COUNT || face - FACE_USER < (int) g_userFonts.size()))
         g_type.face = face;
     if (size > 0)
         g_type.size = size;
@@ -472,6 +504,63 @@ DEXP_PROBE_API int dexp_reader_typography(int *out)
     out[3] = g_type.margin;
     out[4] = g_type.hyphens ? 1 : 0;
     return DEXP_PROBE_OK;
+}
+
+/**
+ * Зарегистрировать шрифт из папки `Fonts` на карте — строка «Открыть шрифт…» B70.
+ * [path] — файл .ttf/.otf.
+ *
+ * Имя семейства приходится вычислять сравнением: crengine умеет только отдать список
+ * зарегистрированных семейств (`getFaceList`), а имени из файла наружу не отдаёт.
+ * Поэтому запоминаем список до регистрации, регистрируем файл и ищем появившееся имя —
+ * именно оно и подставляется в `setDefaultFontFace`. Своё имя («Мой шрифт») не годится:
+ * движок ищет по name-таблице файла — та же грабля, что с `DroidSansMono.ttf` (BUILD.md).
+ *
+ * Возвращает код гарнитуры (`FACE_USER + индекс`) или `< 0`: файл не открылся, шрифтов
+ * в нём нет или имя не появилось в списке.
+ */
+DEXP_PROBE_API int dexp_reader_register_font(const char *path)
+{
+    if (!fontMan || !path || !path[0])
+        return DEXP_PROBE_EARG;
+
+    /* Уже регистрировали этот файл — отдаём прежний код, второй раз не читаем. */
+    for (size_t i = 0; i < g_userFonts.size(); i++) {
+        if (g_userFonts[i].path == path)
+            return FACE_USER + (int) i;
+    }
+
+    lString32Collection before;
+    fontMan->getFaceList(before);
+    if (!fontMan->RegisterFont(lString8(path)))
+        return DEXP_READER_EFONT;
+    lString32Collection after;
+    fontMan->getFaceList(after);
+    lString8 family;
+    for (int i = 0; i < after.length(); i++) {
+        if (!before.contains(after[i])) {
+            family = UnicodeToUtf8(after[i]);
+            break;
+        }
+    }
+    if (family.empty())
+        return DEXP_READER_EFONT;
+
+    /* Одно начертание — уже семейство; остальные (курсив, полужирный) движок подберёт
+       сам или синтезирует. */
+    UserFont uf;
+    uf.family = family;
+    uf.path = path;
+    g_userFonts.push_back(uf);
+    int code = FACE_USER + (int) g_userFonts.size() - 1;
+    DEXP_LOG("reader: font +%s (%s) code=%d", family.c_str(), path, code);
+    return code;
+}
+
+/** Забыть шрифты из папки `Fonts` (сброс настроек B43): следующий старт регистрирует заново. */
+DEXP_PROBE_API void dexp_reader_forget_user_fonts()
+{
+    g_userFonts.clear();
 }
 
 /**

@@ -54,6 +54,9 @@ class EinkActivity : Activity() {
         const val SCR_CATALOG_BOOK = 23
         const val SCR_DOWNLOADS = 24
 
+        /** B70 «Шрифт и размер» — настройки чтения по умолчанию; дверь — строка на B39. */
+        const val SCR_SET_FONT = 25
+
         private const val REQ_STORAGE = 1
         private const val REQ_WRITE_SETTINGS = 2
         private const val REQ_ADMIN = 3
@@ -757,6 +760,7 @@ class EinkActivity : Activity() {
             SCR_SET_SCREEN -> SetScreenScreen(this)
             SCR_SET_NET -> SetNetScreen(this)
             SCR_SET_READ, SCR_SET_KEYS -> SetReadScreen(this)
+            SCR_SET_FONT -> FontSizeScreen(this)
             SCR_SET_SLEEP -> SetSleepScreen(this)
             SCR_SET_LANG -> SetLangScreen(this)
             SCR_SET_STORAGE -> SetStorageScreen(this)

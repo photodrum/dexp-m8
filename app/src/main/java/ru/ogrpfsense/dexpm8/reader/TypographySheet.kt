@@ -17,7 +17,8 @@ import ru.ogrpfsense.dexpm8.ui.T
  *             «−» Ø117 в 55.8,1108.8 (иконка `minus`); индикатор 204.8,1111.5 175.5×117,
  *             число 66/300 по центру; ползунок 416.8,1159 753.2×21.9 (заполнение G3), ручка Ø65.8;
  *             «+» Ø117 в 1225.8,1108.8 — тёмная (G3), иконка `plus`
- *   гарнитура метка 58.5,1259.6; три клавиши 409.5×138.9 в 58.5 / 494.5 / 933.3;
+ *   гарнитура метка 58.5,1259.6; клавиши 409.5×138.9 в 58.5 / 494.5 / 933.3 (в макете — три);
+ *             в коде их четыре (с PT Serif, B70) по 301.9 шириной, зазор 26.5;
  *             выбранная — вдавленная; «Аа» 66/500 своей гарнитурой, название 36/600
  *   интервал  метка 58.5,1478.9; желоб 58.5,1528.3 614.2×102.4, три подписи 28/600
  *   поля      метка 731.3,1478.9; желоб 731.3,1528.3 614.2×102.4
@@ -113,7 +114,12 @@ class TypographySheet(private val ink: Ink, private val icons: Icons) {
 
     // ------------------------------------------------------------------ гарнитура
 
-    /** Три клавиши: «Аа» своей гарнитурой и название. Выбранная — вдавленная. */
+    /**
+     * Четыре клавиши: «Аа» своей гарнитурой и название. Выбранная — вдавленная.
+     * В макете B4 клавиш три (409.5 шириной); с PT Serif их четыре, поэтому ширина
+     * делится поровну при тех же зазорах — 300.8. Порядок подписей совпадает с кодами
+     * натива (0 Антиква · 1 Гротекс · 2 Моно · 3 PT Serif), так что индекс = код.
+     */
     private fun faces(c: Canvas, face: Int) {
         ink.text(c, LABEL_FACE, LABEL_X, T.base(LABEL_FACE_TOP, T.TS_BODY_S, 1.25f),
             T.TS_BODY_S, 600, T.G4)
@@ -177,9 +183,11 @@ class TypographySheet(private val ink: Ink, private val icons: Icons) {
     }
 
     /** Шрифт образца «Аа»: своя гарнитура клавиши (у «Моно» — системный, см. KDoc). */
+    /** Шрифт для «Аа»: каждая клавиша показывает свою гарнитуру. */
     private fun faceFont(i: Int): Typeface = when (i) {
         FACE_SANS -> T.manrope(ink.res, 500)
         FACE_MONO -> Typeface.MONOSPACE
+        FACE_PTSERIF -> T.ptserif(ink.res, 400)
         else -> T.literata(ink.res, 500)
     }
 
@@ -280,12 +288,13 @@ class TypographySheet(private val ink: Ink, private val icons: Icons) {
 
         /**
          * Гарнитуры — коды натива (`Engine.FACE_*`); здесь только имена для чтения кода листа.
-         * Значения совпадают с [Engine.FACE_SERIF], [Engine.FACE_SANS], [Engine.FACE_MONO] —
-         * второй набор нужен, чтобы `companion` листа не зависел от `Engine`.
+         * Значения совпадают с [Engine.FACE_SERIF], [Engine.FACE_SANS], [Engine.FACE_MONO],
+         * [Engine.FACE_PTSERIF] — второй набор нужен, чтобы `companion` листа не зависел от `Engine`.
          */
         const val FACE_SERIF = Engine.FACE_SERIF
         const val FACE_SANS = Engine.FACE_SANS
         const val FACE_MONO = Engine.FACE_MONO
+        const val FACE_PTSERIF = Engine.FACE_PTSERIF
 
         /**
          * Диапазон кегля 8…72 — предел движка (`m_min_font_size`/`m_max_font_size`
@@ -308,7 +317,7 @@ class TypographySheet(private val ink: Ink, private val icons: Icons) {
         private const val LABEL_MARGIN = "Поля"
         private const val LABEL_HYPHENS = "Переносы слов"
 
-        private val FACE_LABELS = arrayOf("Антиква", "Гротекс", "Моно")
+        private val FACE_LABELS = arrayOf("Антиква", "Гротекс", "Моно", "PT Serif")
         private val SPACING_LABELS = arrayOf("Плотный", "Обычный", "Свободный")
         private val MARGIN_LABELS = arrayOf("Узкие", "Средние", "Широкие")
 
@@ -379,21 +388,21 @@ class TypographySheet(private val ink: Ink, private val icons: Icons) {
         private const val TRACK_HIT_Y0 = 1130f
         private const val TRACK_HIT_Y1 = 1204f
 
-        // Гарнитура: метка 58.5,1259.6; клавиши 409.5×138.9 в 58.5 / 494.5 / 933.3,
-        // верх поверхности 1312.6 r 40.22; «Аа» 66/500 в 95.1/533.8/972.6 от 1341.3;
-        // название 36/600 в 234/672.8/1111.5 от 1369.7.
+        // Гарнитура: метка 58.5,1259.6; в макете три клавиши 409.5×138.9 в 58.5 / 494.5 / 933.3
+        // (правый край 1342.8). С PT Serif их четыре: 301.9 шириной, зазор 26.5 —
+        // 58.5 / 386.9 / 715.2 / 1043.6. «Аа» 66/500 в +36.6, название 36/600 в +175.5.
         private const val LABEL_FACE_TOP = 1259.6f
         private const val FACE_Y = 1312.6f
         /** Ненажатая клавиша — обычная выпуклая: габарит группы 1309.9, блик 1312.6. */
         private const val FACE_Y_CONVEX = 1309.9f
-        private const val FACE_W = 409.5f
+        private const val FACE_W = 301.9f
         private const val FACE_H = 138.9f
         private const val R_FACE = 40.2188f
-        private val FACE_X = floatArrayOf(58.5f, 494.5f, 933.3f)
-        private val FACE_AA_X = floatArrayOf(95.1f, 533.8f, 972.6f)
+        private val FACE_X = floatArrayOf(58.5f, 386.9f, 715.2f, 1043.6f)
+        private val FACE_AA_X = floatArrayOf(95.1f, 423.5f, 751.8f, 1080.2f)
         private const val FACE_AA_TOP = 1341.3f
         private const val TS_AA = 66f
-        private val FACE_NAME_X = floatArrayOf(234f, 672.8f, 1111.5f)
+        private val FACE_NAME_X = floatArrayOf(234f, 562.4f, 890.7f, 1219.1f)
         private const val FACE_NAME_TOP = 1369.7f
         private const val TS_FACE_NAME = 36f
 
