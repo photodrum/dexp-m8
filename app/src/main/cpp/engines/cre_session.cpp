@@ -19,6 +19,12 @@
 
 #include <vector>
 
+/* FreeType уже слинкован в dexp_cre (cre.cmake) — им и читаем имя семейства из файла шрифта. */
+#include <ft2build.h>
+#include FT_FREETYPE_H
+#include FT_SFNT_NAMES_H
+#include FT_TRUETYPE_IDS_H
+
 #include "crengine.h"
 #include "hyphman.h"
 #include "textlang.h"
@@ -507,17 +513,68 @@ DEXP_PROBE_API int dexp_reader_typography(int *out)
 }
 
 /**
+ * Имя семейства из файла шрифта: запись name ID 1 в кодировке Windows Unicode BMP —
+ * именно это имя crengine кладёт в `_faceName` при регистрации (`familyName` в lvfntman.cpp).
+ * Пишет в [out], если помещается. Возвращает длину имени или 0.
+ *
+ * Читаем самим FreeType, а не сравнением `getFaceList`: шрифт с уже зарегистрированным
+ * семейством (например, копия PT Serif) нового имени в списке не даёт, и разница пустая
+ * (проверено на книге 2026-11-15).
+ */
+static int read_family_name(const char *path, char *out, int cap)
+{
+    FT_Library lib = NULL;
+    FT_Face face = NULL;
+    if (FT_Init_FreeType(&lib) != 0)
+        return 0;
+    int n = 0;
+    if (FT_New_Face(lib, path, 0, &face) == 0) {
+        FT_SfntName sn;
+        for (FT_UInt i = 0; i < FT_Get_Sfnt_Name_Count(face); i++) {
+            if (FT_Get_Sfnt_Name(face, i, &sn) != 0)
+                continue;
+            if (sn.name_id != TT_NAME_ID_FONT_FAMILY && sn.name_id != TT_NAME_ID_PREFERRED_FAMILY)
+                continue;
+            if (sn.platform_id != TT_PLATFORM_MICROSOFT || sn.encoding_id != TT_MS_ID_UNICODE_CS)
+                continue;
+            /* UTF-16BE → ASCII/UTF-8: имена семейств латиницей; кириллица не встречалась. */
+            int k = 0;
+            for (FT_UInt j = 0; j + 1 < sn.string_len && k < cap - 1; j += 2) {
+                unsigned hi = sn.string[j], lo = sn.string[j + 1];
+                if (hi != 0)
+                    break;                       /* не BMP-латиница — это не наше имя */
+                out[k++] = (char) lo;
+            }
+            out[k] = 0;
+            n = k;
+            break;
+        }
+        FT_Done_Face(face);
+    }
+    FT_Done_FreeType(lib);
+    return n;
+}
+
+/**
+ * Подготовить шрифты без открытия книги (B70 «Открыть шрифт…»): настройки читалки
+ * открываются и без книги, а менеджер шрифтов создаётся в [prepare]. Идемпотентно.
+ * 0 — шрифты есть, `< 0` — нет.
+ */
+DEXP_PROBE_API int dexp_reader_prepare_fonts(const char *cacheDir, const char *appFontDir)
+{
+    return prepare(cacheDir, appFontDir) ? DEXP_PROBE_OK : DEXP_READER_EFONT;
+}
+
+/**
  * Зарегистрировать шрифт из папки `Fonts` на карте — строка «Открыть шрифт…» B70.
  * [path] — файл .ttf/.otf.
  *
- * Имя семейства приходится вычислять сравнением: crengine умеет только отдать список
- * зарегистрированных семейств (`getFaceList`), а имени из файла наружу не отдаёт.
- * Поэтому запоминаем список до регистрации, регистрируем файл и ищем появившееся имя —
- * именно оно и подставляется в `setDefaultFontFace`. Своё имя («Мой шрифт») не годится:
- * движок ищет по name-таблице файла — та же грабля, что с `DroidSansMono.ttf` (BUILD.md).
+ * Имя семейства читается из файла ([read_family_name]) и подставляется в `setDefaultFontFace`.
+ * Своё имя («Мой шрифт») не годится: движок ищет по name-таблице — та же грабля,
+ * что с `DroidSansMono.ttf` (BUILD.md).
  *
  * Возвращает код гарнитуры (`FACE_USER + индекс`) или `< 0`: файл не открылся, шрифтов
- * в нём нет или имя не появилось в списке.
+ * в нём нет или имени не нашлось.
  */
 DEXP_PROBE_API int dexp_reader_register_font(const char *path)
 {
@@ -530,30 +587,25 @@ DEXP_PROBE_API int dexp_reader_register_font(const char *path)
             return FACE_USER + (int) i;
     }
 
-    lString32Collection before;
-    fontMan->getFaceList(before);
-    if (!fontMan->RegisterFont(lString8(path)))
+    char family[128];
+    int famLen = read_family_name(path, family, sizeof(family));
+    if (famLen <= 0) {
+        DEXP_LOG("reader: font name FAIL (%s)", path);
         return DEXP_READER_EFONT;
-    lString32Collection after;
-    fontMan->getFaceList(after);
-    lString8 family;
-    for (int i = 0; i < after.length(); i++) {
-        if (!before.contains(after[i])) {
-            family = UnicodeToUtf8(after[i]);
-            break;
-        }
     }
-    if (family.empty())
+    if (!fontMan->RegisterFont(lString8(path))) {
+        DEXP_LOG("reader: RegisterFont FAIL %s [%s]", path, family);
         return DEXP_READER_EFONT;
+    }
 
     /* Одно начертание — уже семейство; остальные (курсив, полужирный) движок подберёт
        сам или синтезирует. */
     UserFont uf;
-    uf.family = family;
+    uf.family = lString8(family);
     uf.path = path;
     g_userFonts.push_back(uf);
     int code = FACE_USER + (int) g_userFonts.size() - 1;
-    DEXP_LOG("reader: font +%s (%s) code=%d", family.c_str(), path, code);
+    DEXP_LOG("reader: font +%s (%s) code=%d", family, path, code);
     return code;
 }
 

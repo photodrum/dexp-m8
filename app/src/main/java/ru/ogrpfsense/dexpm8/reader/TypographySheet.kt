@@ -130,7 +130,9 @@ class TypographySheet(private val ink: Ink, private val icons: Icons) {
                 FACE_H + T.SHADOW_DY, R_FACE)
             ink.text(c, "Аа", FACE_AA_X[i], T.base(FACE_AA_TOP, TS_AA, 1.25f, i == FACE_SERIF),
                 TS_AA, 500, T.G1, faceFont(i))
-            ink.text(c, FACE_LABELS[i], FACE_NAME_X[i],
+            // Название обрезается по правому краю клавиши: «PT Serif» шире 301.9.
+            ink.text(c, ink.ellipsize(FACE_LABELS[i], FACE_W - 124f, TS_FACE_NAME,
+                if (i == face) 800 else 600), FACE_NAME_X[i],
                 T.base(FACE_NAME_TOP, TS_FACE_NAME, 1.25f), TS_FACE_NAME,
                 if (i == face) 800 else 600, if (i == face) T.G1 else T.G4)
         }
@@ -390,7 +392,8 @@ class TypographySheet(private val ink: Ink, private val icons: Icons) {
 
         // Гарнитура: метка 58.5,1259.6; в макете три клавиши 409.5×138.9 в 58.5 / 494.5 / 933.3
         // (правый край 1342.8). С PT Serif их четыре: 301.9 шириной, зазор 26.5 —
-        // 58.5 / 386.9 / 715.2 / 1043.6. «Аа» 66/500 в +36.6, название 36/600 в +175.5.
+        // 58.5 / 386.9 / 715.2 / 1043.6. «Аа» 66/500 в +36.6; название — в макете 36/600
+        // в +175.5, но в клавишу 301.9 оно не влезает, поэтому 30/600 в +140 (после «Аа»).
         private const val LABEL_FACE_TOP = 1259.6f
         private const val FACE_Y = 1312.6f
         /** Ненажатая клавиша — обычная выпуклая: габарит группы 1309.9, блик 1312.6. */
@@ -402,9 +405,9 @@ class TypographySheet(private val ink: Ink, private val icons: Icons) {
         private val FACE_AA_X = floatArrayOf(95.1f, 423.5f, 751.8f, 1080.2f)
         private const val FACE_AA_TOP = 1341.3f
         private const val TS_AA = 66f
-        private val FACE_NAME_X = floatArrayOf(234f, 562.4f, 890.7f, 1219.1f)
-        private const val FACE_NAME_TOP = 1369.7f
-        private const val TS_FACE_NAME = 36f
+        private val FACE_NAME_X = floatArrayOf(198.5f, 526.9f, 855.2f, 1183.6f)
+        private const val FACE_NAME_TOP = 1372.7f
+        private const val TS_FACE_NAME = 30f
 
         // Желоба «Интервал» и «Поля»: 58.5 / 731.3, y 1528.3, 614.2×102.4 r 51.19;
         // метки 58.5 / 731.3 от 1478.9. Активный сегмент — плашка 199.9×87.7 в 265.7,1535.6.

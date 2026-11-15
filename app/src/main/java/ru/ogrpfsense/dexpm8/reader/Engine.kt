@@ -328,9 +328,18 @@ object Engine {
      * B70 «Шрифт и размер», строка «Открыть шрифт…»: зарегистрировать файл `.ttf`/`.otf`
      * из папки `Fonts` и получить его код гарнитуры (`FACE_USER + индекс`).
      * `null` — файл не открылся или шрифтов в нём нет. Только в [worker].
+     *
+     * Настройки открываются и без книги, а `.so` и менеджер шрифтов создаются при открытии
+     * книги — поэтому здесь библиотека загружается и шрифты готовятся сами.
      */
     fun registerFont(path: String): Int? {
+        val err = load("cre")
+        if (err != null) {
+            Trace.step("reader: registerFont — .so не загрузилась: $err")
+            return null
+        }
         return try {
+            prepareFontsNative(cacheDir, fontDir)
             val rc = registerFontNative(path)
             if (rc >= 0) rc else null
         } catch (t: Throwable) {
@@ -486,6 +495,7 @@ object Engine {
                                                         keepPos: String?): Int
     @JvmStatic private external fun typographyNative(out: IntArray): Int
     @JvmStatic private external fun registerFontNative(path: String): Int
+    @JvmStatic private external fun prepareFontsNative(cacheDir: String?, fontDir: String?): Int
     @JvmStatic private external fun posNative(page: Int): String?
     @JvmStatic private external fun pageOfNative(pos: String): Int
     @JvmStatic private external fun gotoPosNative(pos: String): Int

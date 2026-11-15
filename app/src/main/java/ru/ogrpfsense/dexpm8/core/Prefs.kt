@@ -53,6 +53,14 @@ class Prefs(ctx: Context) {
     var textMargins: Int
         get() = sp.getInt("text_margins", 0)
         set(v) = sp.edit().putInt("text_margins", v).apply()
+    /**
+     * Файл своего шрифта (B70 «Открыть шрифт…»), код гарнитуры `Engine.FACE_USER + n`.
+     * Код живёт только в процессе, путь — здесь: при следующем старте шрифт регистрируется
+     * заново, и `textFace` снова значит то же самое. Пусто — своего шрифта нет.
+     */
+    var userFontPath: String
+        get() = sp.getString("user_font_path", "") ?: ""
+        set(v) = sp.edit().putString("user_font_path", v).apply()
 
     // B39 «Чтение»
     var hyphens: Boolean

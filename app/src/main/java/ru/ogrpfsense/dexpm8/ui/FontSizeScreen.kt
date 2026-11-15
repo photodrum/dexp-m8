@@ -40,15 +40,55 @@ class FontSizeScreen(act: EinkActivity) : Screen(act) {
     /** Строки панели «ШРИФТ» на этот кадр. */
     private var faces = ArrayList<Face>()
 
+    /**
+     * Шаг строк панели. В макете он 152 при четырёх строках; своих шрифтов и «Моно» может
+     * стать больше, и тогда 5 × 152 = 760 не влезает в панель 616 — шаг подстраивается.
+     */
+    private var rowStep = ROW_STEP
+
     /** Открыт лист выбора файла шрифта. */
     private var pickerOpen = false
 
     /** Свои шрифты, уже зарегистрированные в этом сеансе: код гарнитуры → короткое имя. */
     private val userFonts = LinkedHashMap<Int, String>()
 
+    /** Идёт ли восстановление своего шрифта из `Prefs` (после старта приложения). */
+    private var restoring = false
+
+    /**
+     * Код своего шрифта (`FACE_USER + n`) живёт только в процессе: после старта приложения
+     * `textFace` указывает на ничто, и книга верстается Литератой. Здесь путь из `Prefs`
+     * регистрируется заново — код получается прежним, если файл тот же.
+     */
+    private fun restoreUserFont() {
+        if (restoring || userFonts.isNotEmpty()) return
+        val p = act.prefs
+        val path = p.userFontPath
+        if (path.isEmpty()) return
+        restoring = true
+        Engine.worker.execute {
+            val code = Engine.registerFont(path)
+            post {
+                restoring = false
+                if (!isAttachedToWindow) return@post
+                if (code == null) {
+                    // Файл убрали с карты — возвращаемся к Литерате, иначе текст не отрисуется.
+                    p.userFontPath = ""
+                    if (p.textFace >= Engine.FACE_USER) p.textFace = Engine.FACE_SERIF
+                    redraw()
+                    return@post
+                }
+                userFonts[code] = java.io.File(path).name.substringBeforeLast('.')
+                if (p.textFace >= Engine.FACE_USER && code != p.textFace) p.textFace = code
+                redraw()
+            }
+        }
+    }
+
     override fun render(c: Canvas) {
         val p = act.prefs
-        buildRows()
+        buildRows(p.textFace)
+
         ink.rect(c, 0f, 0f, W, H, T.BG)
         status.draw(c)
         // Под листом выбора шрифта экран приглушён — как под [ShelfPicker] на B12.
@@ -59,13 +99,13 @@ class FontSizeScreen(act: EinkActivity) : Screen(act) {
         kit.panel(c, 608f, 616f)
         for (i in faces.indices) {
             val f = faces[i]
-            val y = ROW_Y0 + i * ROW_STEP
+            val y = ROW_Y0 + i * rowStep
             ink.text(c, f.title, 88f, T.base(y, 42f, 1.25f), 42f,
                 if (f.code == p.textFace) 700 else 600, T.G1, faceFont(f.code))
             ink.text(c, f.desc, 88f, T.base(y + 53.5f, T.TS_BODY_S, 1.25f),
                 T.TS_BODY_S, 600, T.G4)
             if (f.code == p.textFace) icons.draw(c, ICON_CHECK, 1282.7f, y + 27.1f, 42f, 43.9f)
-            if (!f.open) ink.rect(c, 88f, y + 124f, 1228f, 2f, T.G11)
+            if (!f.open) ink.rect(c, 88f, y + rowStep - 28f, 1228f, 2f, T.G11)
         }
         kit.section(c, "РАЗМЕР", 1264f)
         size(c, p.textSize)
@@ -95,21 +135,26 @@ class FontSizeScreen(act: EinkActivity) : Screen(act) {
     private class Face(val code: Int, val title: String, val desc: String, val open: Boolean)
 
     /**
-     * Строки панели. Встроенные — в порядке B70 (Литерата, PT Serif, Manrope), затем «Моно»
-     * из B4, затем свои шрифты из папки `Fonts`; последняя строка — «Открыть шрифт…».
+     * Строки панели. Встроенные — в порядке B70 (Литерата, PT Serif, Manrope). «Моно» есть
+     * только в листе B4 и в макете B70 его нет — показываем строку лишь когда она выбрана,
+     * чтобы список не расходился с макетом (иначе он 5 строк и теснее, чем B70.json).
+     * Затем свои шрифты из папки `Fonts`; последняя строка — «Открыть шрифт…».
      */
-    private fun buildRows() {
+    private fun buildRows(face: Int) {
         faces = ArrayList(6)
         faces.add(Face(Engine.FACE_SERIF, "Литерата", "С засечками · по умолчанию", false))
         faces.add(Face(Engine.FACE_PTSERIF, "PT Serif", "С засечками", false))
         faces.add(Face(Engine.FACE_SANS, "Manrope", "Без засечек", false))
-        faces.add(Face(Engine.FACE_MONO, "Моно", "Без засечек · для таблиц", false))
+        if (face == Engine.FACE_MONO) faces.add(Face(Engine.FACE_MONO, "Моно", "Без засечек · для таблиц", false))
         var n = 0
         for ((code, name) in userFonts) {
             faces.add(Face(code, name, "Свой шрифт из папки ${FontPicker.DIR}", false))
             if (++n >= USER_MAX) break
         }
         faces.add(Face(FACE_OPEN, "Открыть шрифт…", "TTF или OTF из папки ${FontPicker.DIR}", true))
+        // Четыре строки — шаг макета (152); больше — теснее, иначе последняя наезжает
+        // на раздел «РАЗМЕР» (проверено на книге 2026-11-15).
+        rowStep = Math.min(ROW_STEP, PANEL_INNER_H / faces.size)
     }
 
     /** Шрифт строки и образца: у каждой гарнитуры своё начертание. */
@@ -136,8 +181,8 @@ class FontSizeScreen(act: EinkActivity) : Screen(act) {
             if (x in 1216f..1370f) { setSize(p.textSize + TypographySheet.SIZE_STEP); return }
         }
         // Строки «ШРИФТ»: касание всей строки, вместе с подписями.
-        if (y >= ROW_Y0 - HIT_PAD && y < ROW_Y0 + faces.size * ROW_STEP) {
-            val i = ((y - ROW_Y0 + HIT_PAD) / ROW_STEP).toInt().coerceIn(0, faces.size - 1)
+        if (y >= ROW_Y0 - HIT_PAD && y < ROW_Y0 + faces.size * rowStep) {
+            val i = ((y - ROW_Y0 + HIT_PAD) / rowStep).toInt().coerceIn(0, faces.size - 1)
             val f = faces[i]
             if (f.open) { openPicker(); return }
             if (f.code != p.textFace) { p.textFace = f.code; redraw() }
@@ -182,6 +227,7 @@ class FontSizeScreen(act: EinkActivity) : Screen(act) {
             post {
                 if (!isAttachedToWindow) return@post
                 userFonts[code] = name.substringBeforeLast('.')
+                act.prefs.userFontPath = path
                 act.prefs.textFace = code
                 redraw()
             }
@@ -197,6 +243,7 @@ class FontSizeScreen(act: EinkActivity) : Screen(act) {
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         status.attach()
+        restoreUserFont()
     }
 
     override fun onDetachedFromWindow() {
@@ -212,6 +259,8 @@ class FontSizeScreen(act: EinkActivity) : Screen(act) {
         /** Строки панели «ШРИФТ»: первая название в 88,637, шаг 152 (разделитель в +124). */
         private const val ROW_Y0 = 637f
         private const val ROW_STEP = 152f
+        /** Внутренняя высота панели «ШРИФТ» от первой строки до низа (608 + 616 − 637). */
+        private const val PANEL_INNER_H = 587f
         private const val HIT_PAD = 8f
 
         /** Образец: кегль книги 8…72, но в панель 250 px больше трёх строк не влезет. */

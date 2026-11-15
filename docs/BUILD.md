@@ -237,6 +237,14 @@ adb shell am start -n ru.ogrpfsense.dexpm8/.ui.EinkActivity --es reader "'/sdcar
 начертания (`literata_500/600`, `manrope_200/300/500`) — они те же по размеру, но в git
 висят как изменённые; после прогона вернуть их `git checkout -- app/src/main/res/font/`.
 
+**Грабля: `install -r` не перезапускает процесс.** Новая `.so` лежит в APK, но приложение
+осталось с загруженной старой — новый JNI-метод не находится (`UnsatisfiedLinkError: No
+implementation found ...`), хотя в APK символ есть. После `adb install -r` нужен
+`adb shell am force-stop ru.ogrpfsense.dexpm8` (и только потом запуск). Проверка символа
+в APK: `unzip -o -q app-debug.apk 'lib/*'` и `llvm-readelf --dyn-syms -W lib/armeabi-v7a/libdexp_cre.so | grep <метод>`.
+Ещё замечание: `assembleDebug` собирает натив в свою папку, и отдельная сборка `ninja -C /tmp/r0-build`
+на APK не влияет — для установки нужен именно Gradle.
+
 **Грабля: имя гарнитуры в crengine — ровно как в шрифте.** `setDefaultFontFace` ищет семейство
 по `name`-таблице файла, а не по имени файла: для `/system/fonts/DroidSansMono.ttf` это
 «Droid Sans Mono» (с пробелами), для `literata_400.ttf` — «Literata». Написал без пробела —

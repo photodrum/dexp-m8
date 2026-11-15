@@ -86,6 +86,8 @@ DEXP_PROBE_API int dexp_reader_set_typography(int face, int size, int interline,
 DEXP_PROBE_API int dexp_reader_typography(int *out);
 /** B70 «Открыть шрифт…»: регистрация файла из папки `Fonts`; код гарнитуры или `< 0`. */
 DEXP_PROBE_API int dexp_reader_register_font(const char *path);
+/** Подготовить шрифты без открытия книги; 0 — ок, `< 0` — шрифтов нет. */
+DEXP_PROBE_API int dexp_reader_prepare_fonts(const char *cacheDir, const char *appFontDir);
 DEXP_PROBE_API int dexp_reader_pos(int page, char *out, int outLen);
 DEXP_PROBE_API int dexp_reader_goto_pos(const char *pos);
 DEXP_PROBE_API int dexp_reader_page_of(const char *pos);
@@ -216,6 +218,9 @@ Java_ru_ogrpfsense_dexpm8_reader_Engine_typographyNative(JNIEnv *env, jclass cls
 /**
  * B70 «Шрифт и размер», строка «Открыть шрифт…»: зарегистрировать файл из папки `Fonts`.
  * Возвращает код гарнитуры (`Engine.FACE_USER + индекс`) или `< 0`.
+ *
+ * Менеджер шрифтов создаётся при открытии книги (`prepare`); в настройках книги может
+ * не быть — поэтому перед регистрацией его готовит Kotlin ([prepareFontsNative]).
  */
 JNIEXPORT jint JNICALL
 Java_ru_ogrpfsense_dexpm8_reader_Engine_registerFontNative(JNIEnv *env, jclass cls, jstring path)
@@ -226,6 +231,22 @@ Java_ru_ogrpfsense_dexpm8_reader_Engine_registerFontNative(JNIEnv *env, jclass c
     const char *p = env->GetStringUTFChars(path, NULL);
     int rc = dexp_reader_register_font(p);
     env->ReleaseStringUTFChars(path, p);
+    return rc;
+}
+
+/** Подготовить шрифты без открытия книги (B70 без книги): 0 — ок, `< 0` — шрифтов нет. */
+JNIEXPORT jint JNICALL
+Java_ru_ogrpfsense_dexpm8_reader_Engine_prepareFontsNative(JNIEnv *env, jclass cls,
+        jstring cacheDir, jstring fontDir)
+{
+    (void)cls;
+    const char *c = cacheDir ? env->GetStringUTFChars(cacheDir, NULL) : NULL;
+    const char *f = fontDir ? env->GetStringUTFChars(fontDir, NULL) : NULL;
+    int rc = dexp_reader_prepare_fonts(c, f);
+    if (c)
+        env->ReleaseStringUTFChars(cacheDir, c);
+    if (f)
+        env->ReleaseStringUTFChars(fontDir, f);
     return rc;
 }
 
