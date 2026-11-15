@@ -47,9 +47,12 @@ import java.nio.ByteBuffer
  * ставит движок на сохранённую строку; при листании, уходе в фон и закрытии экрана позиция
  * пишется обратно вместе с прогрессом ([LibraryDb.setPlace]).
  *
- * Поверх страницы живут: лист B31 (DjVu), меню B9, список B10 и лист B29 «Переход на страницу»
- * (R3.3) — он открывается касанием шкалы меню B9 (и подписи «Стр. N из M» под ней).
+ * Поверх страницы живут: лист B31 (DjVu), меню B9, список B10, лист B29 «Переход на страницу»
+ * (R3.3) — он открывается касанием шкалы меню B9 (и подписи «Стр. N из M» под ней) — и лист
+ * B4 «Типографика» (R3.5): кнопка «Текст» меню B9 у crengine (у DjVu там «Масштаб» → B31).
+ * Настройки B4 хранятся в `Prefs` (общие с экраном B39) и применяются при каждом открытии книги.
  */
+
 class ReaderScreen(act: EinkActivity) : Screen(act) {
 
     private val pagePaint = Paint().apply {
@@ -123,6 +126,18 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
     private val goto = GotoSheet(ink, icons)
     /** Открыт лист B29. */
     private var gotoOpen = false
+    // --- B4 «Типографика» (R3.5): нижний лист настроек текста поверх приглушённой страницы
+    private val typo = TypographySheet(ink, icons)
+    /** Открыт лист B4. */
+    private var typoOpen = false
+    /**
+     * Типографика B4 на листе: значения из `Prefs`, пока лист открыт — его
+     * [TypographySheet.result]. Пишется и из потока движка (применение), читается в [render] —
+     * поэтому `volatile`, как `pages` и `cur`.
+     */
+    @Volatile private var typing = TypographySheet.State()
+    /** Перевёрстка после смены настроек идёт: касания листа ждут (нельзя менять на ходу). */
+    @Volatile private var relayouting = false
     /** Настройки страницы DjVu этой книги; для crengine не используется. */
     @Volatile private var view = DjvuView.DEFAULT
     /** Предел сдвига последнего отрисованного кадра `[maxX, maxY]` — для третей (пишет worker). */
@@ -190,7 +205,9 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
 
     /** Читалка: шторка B5 открывается касанием центральной трети в верхней части страницы. */
     override val shadeZone: Float
-        get() = if (sheetOpen || menuOpen || tocOpen || gotoOpen) 0f else ShadeScreen.ZONE_READER
+        get() = if (sheetOpen || menuOpen || tocOpen || gotoOpen || typoOpen) 0f
+        else ShadeScreen.ZONE_READER
+
 
     // ------------------------------------------------------------------ кадр
 
@@ -220,6 +237,17 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
             goto.draw(c, pages, target, cur + 1, chapterOf(target), pctOf(target))
             return
         }
+        // B4 «Типографика» (R3.5): страница тоже приглушена (в макете текст и колонтитул G10),
+        // сверху нижний лист с настройками. Затемнения нет — как B29 и B31.
+        if (typoOpen) {
+            ink.rect(c, 0f, 0f, W, H, T.BG_READ)
+            header(c, T.G10)
+            val tb = if (shownB) bmpB else bmpA
+            if (tb != null) c.drawBitmap(tb, null, dst, pagePaintDim)
+            typo.draw(c, typing)
+            return
+        }
+
         val dim = if (opening) dimBegin(c) else -1
         ink.rect(c, 0f, 0f, W, H, T.BG_READ)
         header(c)
@@ -317,6 +345,87 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         if (target < 0) return
         Trace.step("b3: goto page ${target + 1}/$pages")
         show(target, if (target > cur) 1 else if (target < cur) -1 else 0)
+    }
+
+    // ------------------------------------------------------------------ B4 «Типографика» (R3.5)
+
+    /**
+     * Открыть лист B4 «Типографика» (кнопка «Текст» меню B9). Значения — из `Prefs`:
+     * лист и экран настроек B39 пишут в одни и те же ключи (READER_SPEC, «жесты касания»).
+     * У DjVu листа нет: у скана нет кегля — там «Масштаб» (B31, решение 2026-11-15).
+     */
+    private fun openTypo() {
+        if (typoOpen || Engine.djvu || loading || pages <= 0) return
+        val p = act.prefs
+        typing = TypographySheet.State(
+            face = p.textFace, size = p.textSize, spacing = p.textSpacing,
+            margins = p.textMargins, hyphens = p.hyphens,
+        )
+        typo.open(typing)
+        typoOpen = true
+        redraw()
+        Trace.step("b3: B4 open ${typing}")
+    }
+
+    private fun closeTypo() {
+        if (!typoOpen) return
+        typoOpen = false
+        redraw()
+        Trace.step("b3: B4 close")
+    }
+
+    /**
+     * Значения листа изменились: записать в `Prefs` и переверстать книгу с удержанием места.
+     * Перевёрстка на 5-МБ книге — 4,2–4,4 с (R3.4), поэтому идёт в `Engine.worker`, а лист
+     * на это время не принимает касаний ([relayouting]) и показывает новые числа сразу.
+     */
+    private fun applyTypo(s: TypographySheet.State) {
+        val before = typing
+        typing = s
+        val p = act.prefs
+        p.textFace = s.face
+        p.textSize = s.size
+        p.textSpacing = s.spacing
+        p.textMargins = s.margins
+        p.hyphens = s.hyphens
+        redraw()
+        if (relayouting) return                  // применяется — по завершении возьмёт [typing]
+        relayouting = true
+        val my = ++epoch
+        Engine.worker.execute {
+            val pos = Engine.pos(cur)
+            val np = Engine.setTypography(s.face, s.size, TypographySheet.INTERLINE[s.spacing],
+                TypographySheet.MARGIN[s.margins], if (s.hyphens) 1 else 0, pos)
+            Trace.step("b3: setTypography ${before} → $s pages=$np " +
+                "${if (pos == null) "позиции нет" else "позиция есть"}")
+            if (np <= 0) {
+                relayouting = false
+                post { if (attached) fail(if (np == 0) Engine.EPAGE else np, Engine.codeText(np)) }
+                return@execute
+            }
+            pages = np
+            // Место чтения — по xpointer: номер страницы после перевёрстки другой.
+            val page = if (pos != null) Engine.pageOf(pos) else -1
+            val target = if (page >= 0) page else cur.coerceIn(0, np - 1)
+            cur = target
+            nextPage = -1                    // заготовка нарисована старым кеглем
+            shownPage = -1                   // кадр на экране тоже
+            toc = Engine.toc()
+            chapter(target)
+            relayouting = false
+            post {
+                if (!attached || my != epoch) return@post
+                // Пока верстали, на листе могли поменять ещё раз — сначала доводим до
+                // последнего значения, иначе страница осталась бы от промежуточного.
+                if (typing != s) {
+                    applyTypo(typing)
+                    return@post
+                }
+                Trace.step("b3: после типографики стр.${target + 1}/$np")
+                show(target, 0)
+                redraw()
+            }
+        }
     }
 
     /** Индекс пункта оглавления для текущей страницы — тот же, что даёт главу в колонтитуле. */
@@ -476,6 +585,13 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         val w = D.px(TW)
         val h = D.px(TH)
         if (w <= 0 || h <= 0) return
+        // Типографика B4 из `Prefs` (R3.5): читаем здесь, на UI-потоке, — `SharedPreferences`
+        // в поток движка не тащим. Движок держит свои настройки на процесс, но `Prefs` могли
+        // сбросить или изменить на экране B39 — тогда перевёрстка (см. `Engine.applyTypography`).
+        val pr = act.prefs
+        val tp = TypographySheet.State(pr.textFace, pr.textSize, pr.textSpacing,
+            pr.textMargins, pr.hyphens)
+        typing = tp
         // Экран один на всё приложение и живёт в кэше: при новой книге старые поля
         // (номер страницы, буферы, глава) не должны попасть в кадр до первой отрисовки.
         reset()
@@ -516,8 +632,19 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
                 Engine.close()
                 return@execute
             }
+            // Типографика B4 — сразу после открытия: движок применил свои настройки на
+            // `LoadDocument`, а [tp] могла измениться, пока книга открывалась. Место чтения
+            // передаётся позицией: номер страницы после перевёрстки другой.
+            val trc = Engine.applyTypography(tp.face, tp.size,
+                TypographySheet.INTERLINE[tp.spacing],
+                TypographySheet.MARGIN[tp.margins], tp.hyphens, e.pos)
+            if (trc < 0) {
+                // Книга открыта — читать можно: типографика не применилась, страницы как есть.
+                Trace.step("b3: applyTypography FAIL $trc ${Engine.codeText(trc)}")
+            }
             pages = Engine.pageCount()
             toc = Engine.toc()
+
             // Место чтения — позицией движка, а не номером страницы (READER_SPEC, раздел 4).
             // Не нашлась (книга переверстана, файл заменён) — начинаем с начала.
             val saved = Engine.gotoPos(e.pos)
@@ -556,6 +683,9 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         menuOpen = false
         tocOpen = false
         gotoOpen = false
+        typoOpen = false
+        relayouting = false
+
         tocPage = 0
         prevPage = -1
         prevShown = null
@@ -906,7 +1036,19 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
             }
             return
         }
+        // B4 «Типографика»: касания только листа (кегль, гарнитура, интервал, поля, переносы).
+        // Пока идёт перевёрстка, лист касаний не принимает — иначе она встанет в очередь
+        // движка и человек решит, что клавиша не работает.
+        if (typoOpen) {
+            if (relayouting) return
+            when (typo.hit(x, y, typing)) {
+                TypographySheet.ACT_CLOSE -> closeTypo()
+                TypographySheet.ACT_CHANGED -> applyTypo(typo.result)
+            }
+            return
+        }
         // B29 «Переход на страницу»: касания только листа (клавиатура, шкала, кнопки).
+
         if (gotoOpen) {
             when (goto.hit(x, y, pages, chapterStart)) {
                 GotoSheet.ACT_CLOSE -> closeGoto()
@@ -923,6 +1065,9 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
                 ReaderMenu.ACT_NEXT -> { closeMenu(); forward() }
                 ReaderMenu.ACT_TOC -> { closeMenu(); openToc() }
                 ReaderMenu.ACT_SCALE -> { closeMenu(); openSheet() }
+                // «Текст» у crengine — лист B4 «Типографика» (R3.5); у DjVu это «Масштаб».
+                ReaderMenu.ACT_TEXT -> { closeMenu(); openTypo() }
+
                 // Шкала и подпись «Стр. N из M» на нижней панели — дверь в B29 (R3.3).
                 ReaderMenu.ACT_GOTO -> { closeMenu(); openGoto() }
                 // Мимо меню — закрыть. «Текст» у crengine (B4), «Контраст», «Вслух» и «Ещё»
@@ -991,8 +1136,12 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         return true
     }
 
-    /** «Назад»: сначала B10 и меню B9, лист B31, диалоги, потом уход из книги ([EinkActivity.onBackPressed]). */
+    /** «Назад»: сначала B10 и меню B9, листы B4 и B31, диалоги, потом уход из книги. */
     override fun backPressed(): Boolean {
+        if (typoOpen) {
+            closeTypo()
+            return true
+        }
         if (gotoOpen) {
             closeGoto()
             return true

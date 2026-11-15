@@ -33,6 +33,27 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean("wifi_sleep_off", true)
         set(v) = sp.edit().putBoolean("wifi_sleep_off", v).apply()
 
+    // B4 «Типографика» / B39 «Чтение» — одни и те же значения (READER_SPEC: настройки общие).
+    // Гарнитура — коды натива `Engine.FACE_SERIF/SANS/MONO`: читалка берёт их отсюда при
+    // открытии книги и пишет сюда из листа B4 (R3.5). Умолчания — макет B3/B4 и умолчание
+    // движка: антиква, кегль 32, интервал «Обычный», поля «Узкие» (вопрос 3 в DESIGN_QUESTIONS).
+    /** Гарнитура: 0 «Антиква», 1 «Гротекс», 2 «Моно». */
+    var textFace: Int
+        get() = sp.getInt("text_face", 0)
+        set(v) = sp.edit().putInt("text_face", v).apply()
+    /** Кегль книги в дизайн-px (`TypographySheet.SIZE_MIN`…`SIZE_MAX`). */
+    var textSize: Int
+        get() = sp.getInt("text_size", 32)
+        set(v) = sp.edit().putInt("text_size", v).apply()
+    /** Интервал: 0 «Плотный», 1 «Обычный», 2 «Свободный» (`TypographySheet.INTERLINE`). */
+    var textSpacing: Int
+        get() = sp.getInt("text_spacing", 1)
+        set(v) = sp.edit().putInt("text_spacing", v).apply()
+    /** Поля: 0 «Узкие», 1 «Средние», 2 «Широкие» (`TypographySheet.MARGIN`). */
+    var textMargins: Int
+        get() = sp.getInt("text_margins", 0)
+        set(v) = sp.edit().putInt("text_margins", v).apply()
+
     // B39 «Чтение»
     var hyphens: Boolean
         get() = sp.getBoolean("hyphens", true)

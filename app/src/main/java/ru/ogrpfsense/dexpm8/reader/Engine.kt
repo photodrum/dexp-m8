@@ -317,6 +317,34 @@ object Engine {
         }
     }
 
+    /**
+     * Привести типографику движка к [face]…[hyphens] и вернуть число страниц.
+     *
+     * Движок держит настройки на процесс (`g_type` в `cre_session.cpp`) и применяет их сам
+     * при каждом открытии книги, поэтому перевёрстка нужна только при расхождении — на 5-МБ
+     * книге это 4,2–4,4 с (R3.4). Её и ловит сравнение с [typography]: кегль `0` у движка
+     * значит «умолчание» (32, `m_requested_font_size`), поэтому сравниваем его как 32.
+     *
+     * Возвращает число страниц; `< 0` — код ошибки. Только в [worker].
+     */
+    fun applyTypography(face: Int, size: Int, interline: Int, margin: Int, hyphens: Boolean,
+                        keepPos: String?): Int {
+        if (!open) return ENOSESSION
+        if (djvu) return OK                       // у скана нет кегля (B31)
+        val n = typography()
+        if (n != null) {
+            val engineSize = if (n[1] > 0) n[1] else FONT_SIZE_DEFAULT
+            if (n[0] == face && engineSize == size && n[2] == interline && n[3] == margin &&
+                (n[4] != 0) == hyphens) {
+                return pageCount()                // уже эти настройки — только число страниц
+            }
+        }
+        return setTypography(face, size, interline, margin, if (hyphens) 1 else 0, keepPos)
+    }
+
+    /** Кегль по умолчанию у движка (`m_requested_font_size`), если настройка не задана. */
+    const val FONT_SIZE_DEFAULT = 32
+
     /** Позиция страницы строкой xpointer; null — не получилась. Только в [worker]. */
     fun pos(page: Int): String? {
         if (!open) return null
