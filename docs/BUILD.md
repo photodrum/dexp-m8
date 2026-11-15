@@ -299,6 +299,7 @@ GIT_ASKPASS=$PWD/tools/git-askpass.sh GIT_TERMINAL_PROMPT=0 \
 | crengine `lvimg.cpp`: `undeclared identifier 'JCS_EXT_BGRX'` | нужен libjpeg-turbo, а не IJG. Решено в 7.1а: цель `cre_jpeg` (libjpeg-turbo 3.2.1); если ошибка вернулась — в `CRE_INC` перед `jpeglib.h` IJG стоит другой каталог |
 | ld: `undefined symbol: png_init_filter_functions_neon` | libpng 1.6 на ARM ждёт `arm/*.c`; задано `PNG_ARM_NEON_OPT=0` |
 | Терминал Cline зависает на длинном heredoc | писать скрипт файлом (редактором), затем запускать |
+| `git push` → `HTTP Basic: Access denied`, хотя `git ls-remote` тем же токеном проходит | в терминале VS Code переменная `GIT_ASKPASS` из VS Code перекрывает проектный `core.askpass` — уходит не тот пароль. **2026-11-15:** `GIT_ASKPASS=$PWD/tools/git-askpass.sh GIT_TERMINAL_PROMPT=0 git push origin main` (рецепт из «Токены git», стр. 269) |
 | В терминале Cline нет вывода долгих команд (`typecheck.sh`, Gradle) | `cmd > /tmp/x.log 2>&1`, затем читать файл |
 | `adb: command not found` в терминале Cline | в PATH его нет: `~/.local/android-sdk/platform-tools/adb` (2026-11-14) |
 | `screencap` отдаёт чёрный кадр | экран погас по таймауту: `adb shell input keyevent KEYCODE_WAKEUP`; сразу после запуска E-Ink ещё не обновилась — снимать через 10–15 с |
