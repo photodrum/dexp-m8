@@ -5,12 +5,12 @@
 
 ## Старт каждой задачи
 
-1. Старт — **один вызов** `run_commands` (терминал один на чат: параллельные вызовы перемешивают вывод и теряют результат; несколько команд — массивом в одном вызове):
-   Act — `git pull --ff-only; git status -sb; git config user.name; cat docs/CONTEXT.md; grep -n '^## ' docs/DEVLOG.md | head -3`
+1. Старт — **ровно один** `run_commands` на ответ. Даже если общие указания Cline требуют параллелить независимые вызовы — здесь нельзя: терминал один на чат, второй параллельный вызов теряет вывод («command completion could not be observed», проверено 2026-11-15). Несколько команд — массивом внутри одного вызова.
+   Act — `GIT_ASKPASS=$PWD/tools/git-askpass.sh GIT_TERMINAL_PROMPT=0 git pull --ff-only; git status -sb; git config user.name; cat docs/CONTEXT.md; grep -n '^## ' docs/DEVLOG.md | head -3`
    Plan — то же, но `git fetch` вместо `git pull --ff-only` (изменения запрещены).
    Не проходит, есть незакоммиченное или `user.name` не `denisle` — остановись, покажи вывод, сам не сливай.
-2. Из `docs/CONTEXT.md` — «СЛЕДУЮЩИЙ ШАГ». `docs/ROADMAP.md` — не целиком: `grep -n '^## '` → нужный раздел `sed -n 'A,Bp'` (`awk` с русским шаблоном в терминале Cline зависает).
-3. `docs/DEVLOG.md` — только верхняя запись (`head -2`, затем `sed`). `docs/archive/` — в `.clineignore`: нужен файл по ссылке из CONTEXT/ROADMAP — закомментировать строку и вернуть после.
+2. Из `docs/CONTEXT.md` — «СЛЕДУЮЩИЙ ШАГ». `docs/ROADMAP.md` — не целиком: `grep -nE '^(## |[0-9]+\.)' docs/ROADMAP.md` → нужный пункт `sed -n 'A,Bp'` (пункты плана идут как `15.`, `16.`, а не как `##`). `awk` с русским шаблоном в терминале Cline зависает.
+3. `docs/DEVLOG.md` — только верхняя запись: её строки взять из `grep -n '^## '` (от первого `## ` до следующего), не `head -2` — там шапка. `docs/archive/` и `third_party/` — в `.clineignore`: нужен файл (по ссылке из CONTEXT/ROADMAP или движок) — закомментировать строку в `.clineignore`, после работы вернуть.
 4. Остальное — по теме: макеты и UI — `docs/DESIGN_USAGE.md`, `design/README.md` (числа — `tools/design_flat.py`, JSON целиком — если не хватило поля), `docs/DESIGN.md` — справочно; читалка — `docs/READER_SPEC.md`; сборка/установка/git/токены/ошибки — `docs/BUILD.md`; рендер, структура кода, E-Ink — `docs/ARCHITECTURE.md`; чат дизайна — `docs/DESIGN_QUESTIONS.md`; карта документов — `README.md`.
 
 Ответа нет в CONTEXT — `grep -rn 'слово' docs/*.md` (файлы короткие), затем спросить; не выдумывать.
@@ -22,6 +22,9 @@
 - После шага — коммит и push; перед `git push` показать `git diff --stat` и дождаться подтверждения.
 - Что куда писать (без дублей): `CONTEXT.md` — только «СЛЕДУЮЩИЙ ШАГ», номер пункта, ссылки, один экран; `ROADMAP.md` — статусы (✅) и открытые замечания (вопросы дизайну — `DESIGN_QUESTIONS.md`); `DEVLOG.md` — что сделано, решения и результаты проверок (запись ≤ ~6 пунктов, не более ~5 записей; в ROADMAP и CONTEXT — одна строка со ссылкой); грабли окружения — сразу в `BUILD.md`; пункт закрыт — его «подробно» и записи DEVLOG сразу в `docs/archive/`.
 - Код — строго по `docs/ARCHITECTURE.md` (палитра G0–G15, без прозрачности/анимаций/скролла, дизайн-px; без AndroidX/Material/Compose) — правила там, здесь не дублируются.
+- Правка кода → `tools/typecheck.sh`; менялись экраны или снимки — ещё `python3 tools/check_design.py`; менялось нативное — `assembleDebug`. Результат (число классов/проверок) — строкой в DEVLOG.
+- Коммит: `<пункт или раздел>: что сделано кратко`, по-русски, без точки в конце (`R2.5б: рамка «Вручную» ставится касанием`, `BUILD: грабля — …`). Один шаг — один коммит.
+- Ответы пользователю и комментарии в коде — по-русски.
 - Даты — по `date`. Долгие команды (`typecheck.sh`, Gradle) — `> /tmp/x.log 2>&1`, затем читать файл. `JAVA_OPTS` скрипты ставят сами.
 - Gradle — `~/.local/gradle-8.7/bin/gradle` (в PATH его нет). Под `denisle`, не root. Токен git — `~/.config/dexp-m8/git-push-token`. git-команды с русским текстом (`log`, `show`, `diff`) — только с `--no-pager`, иначе терминал отдаёт мусор.
 
