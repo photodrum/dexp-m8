@@ -46,11 +46,23 @@ import java.nio.ByteBuffer
  * страницы — она переживает смену кегля и повторную разметку. При открытии [Engine.gotoPos]
  * ставит движок на сохранённую строку; при листании, уходе в фон и закрытии экрана позиция
  * пишется обратно вместе с прогрессом ([LibraryDb.setPlace]).
+ *
+ * Поверх страницы живут: лист B31 (DjVu), меню B9, список B10 и лист B29 «Переход на страницу»
+ * (R3.3) — он открывается касанием шкалы меню B9 (и подписи «Стр. N из M» под ней).
  */
 class ReaderScreen(act: EinkActivity) : Screen(act) {
 
     private val pagePaint = Paint().apply {
         color = T.G0          // альфа из буфера: 0 → G15 фона, 255 → G0
+        isFilterBitmap = false
+        isDither = false
+    }
+    /**
+     * B29: под листом страница «приглушена» — в макете её текст и колонтитул G10, а не G0/G4.
+     * Это не фильтр и не прозрачность: цвет точки меняется на одну ступень палитры.
+     */
+    private val pagePaintDim = Paint().apply {
+        color = T.G10
         isFilterBitmap = false
         isDither = false
     }
@@ -66,6 +78,8 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
     // --- Оглавление (`toc()`, R1.2): глава на экране и её последняя страница
     @Volatile private var chapterTitle = ""
     @Volatile private var chapterEnd = -1
+    /** Первая страница текущей главы (для клавиши «Начало главы» на B29); −1 — главы нет. */
+    @Volatile private var chapterStart = -1
 
     // --- Буферы: один показывается, второй пишется в фоне; nextPage — что в нём лежит
     private var bmpA: Bitmap? = null
@@ -105,6 +119,10 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
     private var tocOpen = false
     /** Страница списка B10 (по 7 пунктов). */
     private var tocPage = 0
+    // --- B29 «Переход на страницу» (R3.3): нижний лист с клавиатурой поверх страницы
+    private val goto = GotoSheet(ink, icons)
+    /** Открыт лист B29. */
+    private var gotoOpen = false
     /** Настройки страницы DjVu этой книги; для crengine не используется. */
     @Volatile private var view = DjvuView.DEFAULT
     /** Предел сдвига последнего отрисованного кадра `[maxX, maxY]` — для третей (пишет worker). */
@@ -171,7 +189,8 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
     }
 
     /** Читалка: шторка B5 открывается касанием центральной трети в верхней части страницы. */
-    override val shadeZone: Float get() = if (sheetOpen || menuOpen || tocOpen) 0f else ShadeScreen.ZONE_READER
+    override val shadeZone: Float
+        get() = if (sheetOpen || menuOpen || tocOpen || gotoOpen) 0f else ShadeScreen.ZONE_READER
 
     // ------------------------------------------------------------------ кадр
 
@@ -188,6 +207,17 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         if (tocOpen) {
             ink.rect(c, 0f, 0f, W, H, T.BG)
             tocView.draw(c, "Оглавление", menuSub(), toc, tocPage, hereOf())
+            return
+        }
+        // B29 «Переход на страницу»: та же страница, но приглушённая (макет: текст G10),
+        // сверху нижний лист с клавиатурой. Затемнения нет — как B31.
+        if (gotoOpen) {
+            ink.rect(c, 0f, 0f, W, H, T.BG_READ)
+            header(c, T.G10)
+            val gb = if (shownB) bmpB else bmpA
+            if (gb != null) c.drawBitmap(gb, null, dst, pagePaintDim)
+            val target = goto.page(pages)
+            goto.draw(c, pages, target, cur + 1, chapterOf(target), pctOf(target))
             return
         }
         val dim = if (opening) dimBegin(c) else -1
@@ -261,15 +291,55 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         Trace.step("b3: toc close")
     }
 
+    /** Открыть B29 «Переход на страницу» (шкала меню B9): поле сразу с номером текущей страницы. */
+    private fun openGoto() {
+        if (gotoOpen || loading || pages <= 0) return
+        gotoOpen = true
+        goto.open(cur + 1)
+        redraw()
+        Trace.step("b3: goto open page=${cur + 1}/$pages chapter=$chapterStart")
+    }
+
+    private fun closeGoto() {
+        if (!gotoOpen) return
+        gotoOpen = false
+        redraw()
+        Trace.step("b3: goto close")
+    }
+
+    /**
+     * «Перейти» на B29: страница берётся из поля листа и листается как обычная ([show]).
+     * Номер в книге ограничивает сам лист (`GotoSheet.page`); пустое поле — просто закрыть.
+     */
+    private fun gotoPage() {
+        val target = goto.page(pages)
+        closeGoto()
+        if (target < 0) return
+        Trace.step("b3: goto page ${target + 1}/$pages")
+        show(target, if (target > cur) 1 else if (target < cur) -1 else 0)
+    }
+
     /** Индекс пункта оглавления для текущей страницы — тот же, что даёт главу в колонтитуле. */
-    private fun hereOf(): Int {
+    private fun hereOf(): Int = tocIndex(cur)
+
+    /** Индекс пункта оглавления, который начинается на странице [page] или раньше её. */
+    private fun tocIndex(page: Int): Int {
         if (toc.isEmpty()) return -1
         var idx = -1
         for (i in toc.indices) {
             val p = toc[i].page
-            if (p in 0..cur) idx = i else if (p > cur) break
+            if (p in 0..page) idx = i else if (p > page) break
         }
         return idx
+    }
+
+    /**
+     * Название главы для страницы [page] — строка справа от поля B29 («Часть 2, глава V»).
+     * У листа она про **целевую** страницу, а не про текущую: человек видит, куда попадает.
+     */
+    private fun chapterOf(page: Int): String {
+        val i = tocIndex(page)
+        return if (i >= 0) toc[i].title else ""
     }
 
     /** Перейти по пункту оглавления: позиция движка, а не номер страницы (переживает смену кегля). */
@@ -292,16 +362,22 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         Trace.step("b3: toc goto $i «${toc[i].title}» pos=${if (pos == null) "нет" else "ok"} page=$page")
     }
 
-    private fun header(c: Canvas) {
+    /**
+     * Колонтитулы B3: книга 73.1,37.9 и глава справа (правый край 1330.8), Manrope 30/600.
+     * [color] — G4 обычно и G10 под листом B29, где в макете страница приглушена.
+     * Полосы не пересекаются: у каждой половина ширины строки (73.1…1330.8) минус зазор,
+     * иначе длинная глава налезает на название книги.
+     */
+    private fun header(c: Canvas, color: Int = T.G4) {
         if (title.isNotEmpty()) {
-            val name = ink.ellipsize(title, 780f, T.TS_META, 600)
-            ink.text(c, name, 73.1f, T.base(37.9f, T.TS_META, 1.25f), T.TS_META, 600, T.G4)
+            val name = ink.ellipsize(title, HEAD_W, T.TS_META, 600)
+            ink.text(c, name, 73.1f, T.base(37.9f, T.TS_META, 1.25f), T.TS_META, 600, color)
         }
         val ch = chapterTitle
         if (ch.isEmpty()) return
-        val s = ink.ellipsize(ch, 780f, T.TS_META, 600)
+        val s = ink.ellipsize(ch, HEAD_W, T.TS_META, 600)
         ink.text(c, s, 1330.8f - ink.measure(s, T.TS_META, 600),
-            T.base(37.9f, T.TS_META, 1.25f), T.TS_META, 600, T.G4)
+            T.base(37.9f, T.TS_META, 1.25f), T.TS_META, 600, color)
     }
 
     private fun footer(c: Canvas) {
@@ -465,6 +541,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         cur = 0
         chapterTitle = ""
         chapterEnd = -1
+        chapterStart = -1
         shownB = false
         nextPage = -1
         shownPage = -1
@@ -478,6 +555,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         sheetOpen = false
         menuOpen = false
         tocOpen = false
+        gotoOpen = false
         tocPage = 0
         prevPage = -1
         prevShown = null
@@ -828,6 +906,15 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
             }
             return
         }
+        // B29 «Переход на страницу»: касания только листа (клавиатура, шкала, кнопки).
+        if (gotoOpen) {
+            when (goto.hit(x, y, pages, chapterStart)) {
+                GotoSheet.ACT_CLOSE -> closeGoto()
+                GotoSheet.ACT_GO -> gotoPage()
+                GotoSheet.ACT_REPAINT -> redraw()
+            }
+            return
+        }
         // B9 «Меню чтения»: пока открыто, касания только его.
         if (menuOpen) {
             when (menu.hit(x, y, Engine.djvu)) {
@@ -836,6 +923,8 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
                 ReaderMenu.ACT_NEXT -> { closeMenu(); forward() }
                 ReaderMenu.ACT_TOC -> { closeMenu(); openToc() }
                 ReaderMenu.ACT_SCALE -> { closeMenu(); openSheet() }
+                // Шкала и подпись «Стр. N из M» на нижней панели — дверь в B29 (R3.3).
+                ReaderMenu.ACT_GOTO -> { closeMenu(); openGoto() }
                 // Мимо меню — закрыть. «Текст» у crengine (B4), «Контраст», «Вслух» и «Ещё»
                 // ждут своих этапов: кнопки нарисованы, касание пока только закрывает меню.
                 else -> closeMenu()
@@ -904,6 +993,10 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
 
     /** «Назад»: сначала B10 и меню B9, лист B31, диалоги, потом уход из книги ([EinkActivity.onBackPressed]). */
     override fun backPressed(): Boolean {
+        if (gotoOpen) {
+            closeGoto()
+            return true
+        }
         if (tocOpen) {
             closeToc()
             return true
@@ -953,6 +1046,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         if (sheetOpen) return false    // B31: пока лист открыт, страница не листается
         if (menuOpen) return false     // B9: меню закрывается касанием или «Назад»
         if (tocOpen) return false      // B10: список листается своими кнопками
+        if (gotoOpen) return false     // B29: лист с клавиатурой, страница не листается
         if (opening) return false     // B58: страниц ещё нет, клавиши листания не наши
         val next = code == KEY_PAGEDOWN || code == KEY_VOLUME_DOWN
         val prev = code == KEY_PAGEUP || code == KEY_VOLUME_UP
@@ -966,6 +1060,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         if (toc.isEmpty()) {
             chapterTitle = ""
             chapterEnd = -1
+            chapterStart = -1
             return
         }
         var idx = -1
@@ -976,6 +1071,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         if (idx < 0) {
             chapterTitle = ""
             chapterEnd = -1
+            chapterStart = -1
             return
         }
         val level = toc[idx].level
@@ -989,6 +1085,8 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         }
         chapterTitle = toc[idx].title
         chapterEnd = end
+        // Клавиша «Начало главы» (B29): если номер пункта не пришёл от движка — берём эту страницу.
+        chapterStart = if (toc[idx].page >= 0) toc[idx].page else page
     }
 
     companion object {
@@ -1008,6 +1106,12 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
 
         /** Полная перерисовка каждые N страниц (READER_SPEC, раздел 6; в B37 пока нет). */
         private const val FULL_EVERY = 6
+
+        /**
+         * Ширина половины колонтитула B3: строка 73.1…1330.8 (1257.7) делится пополам с зазором 40.
+         * Раньше обе половины были по 780 и налезали друг на друга у длинных глав.
+         */
+        private const val HEAD_W = 600f
 
         /**
          * Нижняя граница зоны «Меню чтения» B9 (решение 2026-11-12): ниже начинается шторка

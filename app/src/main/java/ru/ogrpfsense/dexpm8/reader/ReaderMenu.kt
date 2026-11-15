@@ -74,7 +74,8 @@ class ReaderMenu(private val ink: Ink, private val icons: Icons) {
     /**
      * Шкала прогресса: желоб вдавленный (G15 / G10 / дно G12 r 14.6), заполнение G3 высотой 21
      * и ручка Ø73.1 на его правом краю. Значение берётся по странице на экране, как трек B3, —
-     * поэтому ручка показывает, а не перетаскивается (перетаскивание по страницам — B29).
+     * ручка показывает, а не перетаскивается: касание шкалы (и подписи под ней) открывает
+     * B29 «Переход на страницу», где номер набирается клавишами (R3.3).
      */
     private fun scale(c: Canvas, pages: Int, cur: Int) {
         ink.inset(c, SCALE_X, SCALE_Y, SCALE_W, SCALE_H, T.R_TRACK, T.G12)
@@ -129,7 +130,9 @@ class ReaderMenu(private val ink: Ink, private val icons: Icons) {
         if (y <= PLACE_Y0) {
             if (x >= 20f && x <= 160f) return ACT_PREV
             if (x >= 1240f && x <= 1384f) return ACT_NEXT
-            return ACT_NONE
+            // Шкала и подпись «Стр. N из M» — дверь в B29 «Переход на страницу» (R3.3):
+            // ручка не перетаскивается, набирать номер надо на листе.
+            return ACT_GOTO
         }
         if (y < BTN_HIT_Y0) return ACT_NONE       // подпись «Стр. N из M» — касание закрывает
         for (i in 0 until BTN_COUNT) {
@@ -159,6 +162,8 @@ class ReaderMenu(private val ink: Ink, private val icons: Icons) {
         const val ACT_TEXT = 5
         /** B31 «Масштаб и поля» (DjVu). */
         const val ACT_SCALE = 6
+        /** B29 «Переход на страницу» — шкала и подпись «Стр. N из M» нижней панели. */
+        const val ACT_GOTO = 7
 
         // Полосы: макет −10.1,−10.1 1423.2×222.1 и −10.1,1423.2 1423.2×463.4 (габарит с тенью).
         private const val PANEL_X = -10.1f
