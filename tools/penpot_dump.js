@@ -22,7 +22,7 @@
 //   c дочерние узлы
 // Цвета палитры пишутся токеном "G0".."G15", остальные — hex (их быть не должно).
 
-const BOARDS = ['B1', 'B2'];      // какие борды снять; [] — только tokens.json
+const BOARDS = ['B9', 'B10', 'B29'];   // какие борды снять; [] — только tokens.json
 const PAGE = 'v5';
 
 const page = penpotUtils.getPageByName(PAGE);
