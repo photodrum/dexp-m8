@@ -527,6 +527,9 @@ class EinkActivity : Activity() {
     }
 
     override fun onBackPressed() {
+        // Сначала экран: у читалки поверх страницы бывает лист B31 — «Назад» закрывает его,
+        // а не уводит из книги.
+        if (current()?.onBack() == true) return
         if (shadeOpen) {
             closeShade()
             return

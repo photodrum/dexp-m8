@@ -135,6 +135,15 @@ abstract class Screen(protected val act: EinkActivity) : View(act) {
     /** Обработка завершённого нажатия в дизайн-координатах. */
     protected open fun onUp(x: Float, y: Float) {}
 
+    /**
+     * Кнопка «Назад» системы. true — экран сам её обработал (закрыл свой лист или диалог),
+     * и уходить со экрана не нужно. По умолчанию не перехватывает: `EinkActivity` снимает экран.
+     * Порядок: сначала экран (лист поверх него), потом шторка B5, потом стек экранов.
+     */
+    fun onBack(): Boolean = backPressed()
+
+    protected open fun backPressed(): Boolean = false
+
     /** Полная перерисовка экрана — единственный «анимационный» приём, который допустим. */
     fun redraw() = invalidate()
 

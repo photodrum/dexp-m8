@@ -95,7 +95,9 @@ object Engine {
     /**
      * Открытый документ — DjVu (R2, [DjvuEngine], `libdexp_djvu.so`), иначе crengine.
      * Ставится в [open] по расширению файла и не меняется до следующего [open].
+     * `volatile`: по нему UI-поток решает, открывать ли лист B31 и сдвигать ли страницу.
      */
+    @Volatile
     var djvu = false
         private set
 

@@ -100,6 +100,29 @@ class Ink(ctx: Context) {
         c.drawRoundRect(r, rad, rad, stroke)
     }
 
+    /**
+     * Пунктирная рамка — рамка обрезки полей на листе B31 (R2.5). Не анимация: `DashPathEffect`
+     * с постоянным шагом, как слой «Рамка обрезки» в макете (`st: dashed`, G3, 5).
+     */
+    fun ringDashed(c: Canvas, x: Float, y: Float, w: Float, h: Float, rad: Float, color: Int,
+                   width: Float, on: Float = 12f, off: Float = 9f) {
+        if (w <= 0f || h <= 0f) return
+        val old = stroke.pathEffect
+        stroke.pathEffect = android.graphics.DashPathEffect(floatArrayOf(on, off), 0f)
+        stroke.color = color
+        stroke.strokeWidth = width
+        r.set(x, y, x + w, y + h)
+        c.drawRoundRect(r, rad, rad, stroke)
+        stroke.pathEffect = old
+    }
+
+    fun ellipsoid(c: Canvas, x: Float, y: Float, w: Float, h: Float, color: Int) {
+        if (w <= 0f || h <= 0f) return
+        fill.color = color
+        r.set(x, y, x + w, y + h)
+        c.drawOval(r, fill)
+    }
+
     /** Отрезок толщиной [width] с круглыми концами (деления шкалы контраста B5). */
     fun line(c: Canvas, x1: Float, y1: Float, x2: Float, y2: Float, width: Float, color: Int) {
         stroke.color = color

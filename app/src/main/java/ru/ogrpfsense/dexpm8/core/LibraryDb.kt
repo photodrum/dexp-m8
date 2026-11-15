@@ -42,6 +42,7 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
     /**
      * Строка таблицы. [progress] 0..100, [status] — `STATUS_*`, [added]/[opened] — мс, 0 — не открывалась.
      * [pos] — место чтения (позиция движка, версия 8): xpointer для CREngine; null — не читали.
+     * [view] — настройки страницы DjVu (версия 9, лист B31): строка `DjvuView.encode()`; null — умолчания.
      */
     class Entry(
         val id: Long,
@@ -60,6 +61,7 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         val added: Long,
         val opened: Long,
         val pos: String? = null,
+        val view: String? = null,
     )
 
     class Stamp(val size: Long, val mtime: Long)
@@ -89,7 +91,8 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
                 "status INTEGER NOT NULL DEFAULT 0," +
                 "added INTEGER NOT NULL," +
                 "opened INTEGER NOT NULL DEFAULT 0," +
-                "pos TEXT)"
+                "pos TEXT," +
+                "view TEXT)"
         )
         db.execSQL("CREATE INDEX books_title ON books (title_sort)")
         db.execSQL("CREATE INDEX books_author ON books (author_sort, title_sort)")
@@ -166,6 +169,9 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         // Версия 8: место чтения (R1.4). Пустая колонка = «начинать с начала»;
         // прогресс у уже читанных книг остаётся, экран откроет первую страницу.
         if (oldVersion < 8) db.execSQL("ALTER TABLE books ADD COLUMN pos TEXT")
+        // Версия 9: настройки страницы DjVu — лист B31 «Масштаб и поля» (R2.5). Строка
+        // формата `DjvuView.encode()`; пусто = умолчания (по странице, авто-обрезка, без контраста).
+        if (oldVersion < 9) db.execSQL("ALTER TABLE books ADD COLUMN view TEXT")
     }
 
     /**
@@ -710,6 +716,17 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         writableDatabase.update("books", cv, "_id = ?", arrayOf(id.toString()))
     }
 
+    /**
+     * Настройки страницы DjVu (R2.5, база v9): строка `DjvuView.encode()` — масштаб, обрезка,
+     * сдвиг и контраст книги. Пишется с UI-потока по [id]: в отличие от места чтения движок
+     * для этого не нужен. Пустая строка — вернуть умолчания (пишется как NULL).
+     */
+    fun setView(id: Long, view: String) {
+        val cv = ContentValues(1)
+        if (view.isEmpty()) cv.putNull("view") else cv.put("view", view)
+        writableDatabase.update("books", cv, "_id = ?", arrayOf(id.toString()))
+    }
+
     private fun entry(c: Cursor) = Entry(
         id = c.getLong(0), path = c.getString(1), size = c.getLong(2), mtime = c.getLong(3),
         format = c.getString(4), title = c.getString(5),
@@ -720,16 +737,18 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         coverId = if (c.isNull(10)) null else c.getString(10),
         progress = c.getInt(11), status = c.getInt(12), added = c.getLong(13), opened = c.getLong(14),
         pos = if (c.isNull(15)) null else c.getString(15),
+        view = if (c.isNull(16)) null else c.getString(16),
     )
 
     companion object {
         const val NAME = "library.db"
         /**
+         * Версия 9 (R2.5): настройки страницы DjVu — колонка `view` (строка `DjvuView.encode()`).
          * Версия 8 (R1.4): место чтения — колонка `pos` (позиция движка, xpointer).
          * Версия 7: пароль каталога в базе шифруется ключом из `AndroidKeyStore`
          * ([Pass], п. 10.12). Старые открытые пароли перешифровываются при обновлении.
          */
-        const val VERSION = 8
+        const val VERSION = 9
 
         /** Автоматические полки: `_id` отрицательные, в таблице `shelves` их нет. */
         const val SHELF_READING = -1L
@@ -762,7 +781,7 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         val FORMAT_LABELS = arrayOf("FB2", "EPUB", "DjVu", "MOBI", "TXT")
 
         private const val COLUMNS = "_id, path, size, mtime, format, title, author, series, " +
-            "series_num, lang, cover_id, progress, status, added, opened, pos"
+            "series_num, lang, cover_id, progress, status, added, opened, pos, view"
 
         /** Ключ сортировки: нижний регистр, «ё» как «е», без пробелов по краям. */
         fun sortKey(s: String): String =

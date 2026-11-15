@@ -91,6 +91,26 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
     /** B59: какая страница не декодировалась (−1 — диалог B45 или его нет). */
     private var badPage = -1
 
+    // --- B31 «Масштаб и поля» (R2.5): настройки DjVu живут в экране, лист — только рисует
+    private val sheet = DjvuViewSheet(ink, icons)
+    /** Открыт лист B31 поверх страницы. */
+    private var sheetOpen = false
+    /** Настройки страницы DjVu этой книги; для crengine не используется. */
+    @Volatile private var view = DjvuView.DEFAULT
+    /** Предел сдвига последнего отрисованного кадра `[maxX, maxY]` — для третей (пишет worker). */
+    @Volatile private var panLast: IntArray? = null
+    /** Предел сдвига от движка по странице `[maxX, maxY]`: трети сдвигают или листают. */
+    private val pan = HashMap<Int, IntArray>(CACHE_MAX)
+    /** Промилле авто-обрезки: страница → промилле (пустой массив = полей нет). Только worker. */
+    private val auto = HashMap<Int, IntArray>(CACHE_MAX)
+    /** Превью для листа: кадр 600×820 без обрезки и его страница. Только worker. */
+    private val prevBuf = ByteArray(PREVIEW_W * PREVIEW_H)
+    /** Два `Bitmap` превью: worker пишет в непоказанный, экран переключает по `post`. */
+    private var prevA: Bitmap? = null
+    private var prevB: Bitmap? = null
+    @Volatile private var prevShown: Bitmap? = null
+    private var prevPage = -1
+
     // --- B58 «Открываем книгу»: первое открытие длиннее SHOW_AFTER_MS
     private val openDialog = OpenBookDialog(ink, icons)
     /** Диалог на экране: загрузка идёт и порог ожидания уже прошёл. */
@@ -141,11 +161,19 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
     }
 
     /** Читалка: шторка B5 открывается касанием центральной трети в верхней части страницы. */
-    override val shadeZone: Float get() = ShadeScreen.ZONE_READER
+    override val shadeZone: Float get() = if (sheetOpen) 0f else ShadeScreen.ZONE_READER
 
     // ------------------------------------------------------------------ кадр
 
     override fun render(c: Canvas) {
+        // B31: на макете под листом только фон и превью — страницу и колонтитулы книги не рисуем
+        // (иначе они просвечивают за превью и колонтитул листа). Затемнения нет, как решено.
+        if (sheetOpen) {
+            ink.rect(c, 0f, 0f, W, H, T.BG_READ)
+            sheet.draw(c, view)
+            if (dialogOpen) dialog.draw(c)
+            return
+        }
         val dim = if (opening) dimBegin(c) else -1
         ink.rect(c, 0f, 0f, W, H, T.BG_READ)
         header(c)
@@ -211,6 +239,10 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         attached = false
         gen++                 // результат уже идущей отрисовки выбрасываем
         stopOpenDialog()
+        sheetOpen = false
+        prevShown = null
+        prevA = null
+        prevB = null
         Engine.setProgressListener(null)
         // Очередь движка: сначала сохранить место чтения (позиция берётся у движка),
         // потом закрыть документ — он держит DOM и разметку (PSS).
@@ -266,10 +298,15 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         reset()
         title = e.title
         entry = e
+        // B31: настройки страницы DjVu — на книгу, база v9. Для crengine не используются.
+        view = DjvuView.parse(e.view)
         pw = w
         ph = h
         bmpA = Engine.newPageBitmap(w, h)
         bmpB = Engine.newPageBitmap(w, h)
+        prevA = Bitmap.createBitmap(PREVIEW_W, PREVIEW_H, Bitmap.Config.ALPHA_8)
+        prevB = Bitmap.createBitmap(PREVIEW_W, PREVIEW_H, Bitmap.Config.ALPHA_8)
+        prevShown = null
         buf = ByteArray(w * h)
         val my = ++gen
         cancelled = false
@@ -330,6 +367,13 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         badPage = -1
         stopOpenDialog()
         cancelled = false
+        // B31: лист и всё, что живёт вокруг него, — от прошлой книги.
+        sheetOpen = false
+        prevPage = -1
+        prevShown = null
+        panLast = null
+        auto.clear()
+        pan.clear()
     }
 
     /**
@@ -439,7 +483,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         val h = ph
         val out = buf ?: return
         val t0 = SystemClock.uptimeMillis()
-        val rc = Engine.page(page, w, h, out)
+        val rc = draw(page, w, h, out)
         val ms = SystemClock.uptimeMillis() - t0
         if (rc != Engine.OK) {
             Trace.step("b3: page $page rc=$rc ${Engine.codeText(rc)}")
@@ -465,6 +509,147 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         }
         prefetch(dir)
     }
+
+    /**
+     * Страница [page] в буфер [out]: DjVu — с настройками листа B31 (`Engine.pageView`),
+     * crengine — обычным `Engine.page`. Только в `Engine.worker`.
+     *
+     * Обрезка берётся по режиму листа: «Вручную» — промилле из настроек, «Авто» — найденные
+     * по превью этой страницы ([autoOf]), «Без обрезки» — никакой. Предел сдвига движок
+     * возвращает в `panOut` — он запоминается для страницы, чтобы трети знали, сколько
+     * ещё можно сдвинуть.
+     */
+    private fun draw(page: Int, w: Int, h: Int, out: ByteArray): Int {
+        if (!Engine.djvu) return Engine.page(page, w, h, out)
+        val v = view
+        val crop = when (v.cropMode) {
+            DjvuView.CROP_NONE -> null
+            DjvuView.CROP_AUTO -> autoOf(page)
+            else -> v.crop()
+        }
+        val ve = if (crop == null) v.copy(cropL = 0, cropT = 0, cropR = 0, cropB = 0)
+        else v.copy(cropL = crop[0], cropT = crop[1], cropR = crop[2], cropB = crop[3])
+        val panOut = PAN_OUT
+        val rc = Engine.pageView(page, w, h, out, ve, panOut)
+        if (rc == Engine.OK) {
+            val lim = intArrayOf(panOut[2], panOut[3])
+            panLast = lim
+            if (pan.size >= CACHE_MAX) pan.clear()
+            pan[page] = lim
+        }
+        return rc
+    }
+
+    // ------------------------------------------------------------------ авто-обрезка (R2.5)
+
+    /**
+     * Промилле авто-обрезки для страницы [page]; null — не режем. Считается по превью
+     * 600×820 ([ensurePreview]) и запоминается: страница листается туда-сюда, а рендер
+     * превью — лишний кадр движка. Кэш маленький ([AUTO_MAX]) — память 1 ГБ.
+     */
+    private fun autoOf(page: Int): IntArray? {
+        val known = auto[page] ?: computeAuto(page)
+        return if (known.isEmpty()) null else known
+    }
+
+    /** Посчитать авто-обрезку страницы [page] и запомнить; пустой массив — полей нет. */
+    private fun computeAuto(page: Int): IntArray {
+        val c = if (ensurePreview(page)) DjvuAuto.measure(prevBuf, PREVIEW_W, PREVIEW_H) else null
+        val v = c ?: NO_CROP
+        if (auto.size >= CACHE_MAX) auto.clear()     // страниц много, держим только свежие
+        auto[page] = v
+        return v
+    }
+
+    /**
+     * Отрисовать превью страницы [page] (600×820, без обрезки и сдвига) в [prevBuf] —
+     * тот самый кадр, что видит человек на листе B31. Только в `Engine.worker`.
+     * false — движок не отдал кадр (тогда и резать не по чему).
+     */
+    private fun ensurePreview(page: Int): Boolean {
+        if (prevPage == page) return true
+        val rc = Engine.pageView(page, PREVIEW_W, PREVIEW_H, prevBuf, DjvuView(), null)
+        if (rc != Engine.OK) {
+            Trace.step("b3: preview $page rc=$rc ${Engine.codeText(rc)}")
+            return false
+        }
+        prevPage = page
+        showPreview()
+        return true
+    }
+
+    /** Превью из рабочего буфера в `Bitmap` листа — по правилу «писать в worker, показывать по post». */
+    private fun showPreview() {
+        val shown = prevShown
+        val b = if (shown === prevA) prevB else prevA
+        if (b == null) return
+        b.copyPixelsFromBuffer(ByteBuffer.wrap(prevBuf, 0, PREVIEW_W * PREVIEW_H))
+        val page = prevPage
+        post {
+            if (!attached || prevPage != page) return@post    // уже отрисовано другое
+            prevShown = b
+            sheet.setPreview(b)
+            if (sheetOpen) redraw()
+        }
+    }
+
+    /** Лист B31 ждёт превью текущей страницы: дверь — касание колонтитула (R2.5). */
+    private fun openSheet() {
+        if (!Engine.djvu || pages <= 0) return
+        sheetOpen = true
+        sheet.open(sheetHeader())
+        // Кадр текущей страницы уже мог быть отрисован ради авто-обрезки — показываем его,
+        // иначе лист сначала пустой и превью приходит из worker.
+        sheet.setPreview(if (prevPage == cur) prevShown else null)
+        redraw()
+        val page = cur
+        Engine.worker.execute {
+            ensurePreview(page)
+            post { if (attached && sheetOpen) redraw() }
+        }
+    }
+
+    /** Колонтитул листа: «Атлас мира.djvu · стр. 12 из 240» (в макете B31). */
+    private fun sheetHeader(): String {
+        val name = entry?.path?.substringAfterLast('/') ?: title
+        return "$name · стр. ${cur + 1} из $pages"
+    }
+
+    private fun closeSheet() {
+        if (!sheetOpen) return
+        sheetOpen = false
+        sheet.setPreview(null)
+        redraw()
+    }
+
+    /**
+     * Настройки листа изменились: страницу перерисовать и записать строку в базу.
+     * Перерисовка идёт через [epoch]: ранний выход `page == shownPage && nextPage == -1`
+     * в [showLocked] не дал бы нарисовать ту же страницу заново.
+     */
+    private fun applyView(v: DjvuView) {
+        view = v
+        sheet.setPreview(sheetPreviewOrNull())
+        val e = entry
+        if (e != null && e.id > 0) {
+            try {
+                act.db.setView(e.id, v.encode())
+            } catch (t: Throwable) {
+                Trace.step("b3: setView FAIL ${t.javaClass.simpleName}: ${t.message}")
+            }
+        }
+        redraw()
+        if (!Engine.djvu || pages <= 0) return
+        val page = cur
+        val my = ++epoch
+        Engine.worker.execute {
+            nextPage = -1                     // заготовка нарисована старыми настройками
+            showLocked(page, 0, my)
+        }
+        Trace.step("b3: view ${v.encode()}")
+    }
+
+    private fun sheetPreviewOrNull(): Bitmap? = if (prevPage >= 0) prevShown else null
 
     /** Буфер движка → непоказанный `Bitmap`, показ переключается на него. */
     private fun copyToHidden(page: Int) {
@@ -492,7 +677,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         Engine.worker.execute {
             if (my != epoch) return@execute
             val t0 = SystemClock.uptimeMillis()
-            val rc = Engine.page(p, w, h, out)
+            val rc = draw(p, w, h, out)      // те же настройки B31, что и у показанной страницы
             if (rc != Engine.OK || my != epoch) return@execute
             // В непоказанный буфер, но экран на него не переключаем: это заготовка.
             val b = (if (shownB) bmpA else bmpB) ?: return@execute
@@ -514,15 +699,86 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
             }
             return
         }
+        // B31 поверх страницы: касания только его (и «Готово» — закрыть).
+        if (sheetOpen) {
+            when (sheet.hit(x, y, view)) {
+                DjvuViewSheet.ACT_CHANGED -> applyView(sheet.result)
+                DjvuViewSheet.ACT_REPAINT -> redraw()
+                DjvuViewSheet.ACT_CLOSE -> closeSheet()
+            }
+            return
+        }
         // B58: пока книга открывается, касания только на «Отмену» — страниц ещё нет.
         if (opening) {
             if (openDialog.hitCancel(x, y)) cancelOpen()
             return
         }
-        when {
-            x < W / 3f -> back()
-            x > W * 2f / 3f -> forward()
+        // R2.5: дверь в лист B31 — левая часть колонтитула (до меню B9 в R3).
+        if (x < 468f && y < 117f && Engine.djvu) {
+            openSheet()
+            return
         }
+        // Трети: сначала сдвиг увеличенной страницы, листание — когда сдвигать нечего.
+        val dir = when {
+            x < W / 3f -> -1
+            x > W * 2f / 3f -> 1
+            else -> 0
+        }
+        if (dir != 0 && panPage(dir)) return
+        if (dir < 0) back() else if (dir > 0) forward()
+    }
+
+    /**
+     * Сдвиг страницы третями (решение дизайна по B31, `B31б`): касание левой/правой трети
+     * сдвигает кадр на треть окна, пока есть что сдвигать. false — сдвигать некуда,
+     * экран листает страницу как обычно.
+     *
+     * Условие — настройки DjVu и запас сдвига у страницы, который вернул движок
+     * (`panOut[2]`/`panOut[3]`). Сначала идёт горизонталь, потом вертикаль: у скана
+     * обычно крупнее только одна сторона.
+     */
+    private fun panPage(dir: Int): Boolean {
+        if (!Engine.djvu) return false
+        val v = view
+        // Предел — от последнего кадра: страница на экране, настройки текущие.
+        val lim = panLast ?: return false
+        val mx = lim[0]
+        val my = lim[1]
+        if (mx <= 0 && my <= 0) return false
+        val stepX = (pw / 3).coerceAtLeast(1)
+        val stepY = (ph / 3).coerceAtLeast(1)
+        // Крупнее по вертикали (свой масштаб на длинную страницу) — вертикаль первой.
+        val vFirst = my > mx
+        var dx = 0
+        var dy = 0
+        if (vFirst) {
+            dy = if (dir > 0) Math.min(v.panY + stepY, my) else v.panY - stepY
+            if (dy == v.panY) dx = if (dir > 0) Math.min(v.panX + stepX, mx) else v.panX - stepX
+        } else {
+            dx = if (dir > 0) Math.min(v.panX + stepX, mx) else v.panX - stepX
+            if (dx == v.panX) dy = if (dir > 0) Math.min(v.panY + stepY, my) else v.panY - stepY
+        }
+        val nx = dx.coerceIn(0, mx)
+        val ny = dy.coerceIn(0, my)
+        if (nx == v.panX && ny == v.panY) return false     // двигать некуда — листаем
+        applyView(v.pan(nx, ny))
+        Trace.step("b3: pan ${nx},${ny} max ${mx},${my}")
+        return true
+    }
+
+    /** «Назад»: сначала лист B31, диалоги, потом уход из книги ([EinkActivity.onBackPressed]). */
+    override fun backPressed(): Boolean {
+        if (sheetOpen) {
+            closeSheet()
+            return true
+        }
+        if (dialogOpen) {
+            dialogOpen = false
+            badPage = -1
+            redraw()
+            return true
+        }
+        return false
     }
 
     /**
@@ -550,6 +806,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
      */
     fun key(code: Int): Boolean {
         if (dialogOpen) return false
+        if (sheetOpen) return false    // B31: пока лист открыт, страница не листается
         if (opening) return false     // B58: страниц ещё нет, клавиши листания не наши
         val next = code == KEY_PAGEDOWN || code == KEY_VOLUME_DOWN
         val prev = code == KEY_PAGEUP || code == KEY_VOLUME_UP
@@ -605,6 +862,17 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
 
         /** Полная перерисовка каждые N страниц (READER_SPEC, раздел 6; в B37 пока нет). */
         private const val FULL_EVERY = 6
+
+        // --- B31 «Масштаб и поля» (R2.5)
+        /** Размер превью листа: 600×820 — слой «Страница DjVu» макета, без обрезки. */
+        private const val PREVIEW_W = 600
+        private const val PREVIEW_H = 820
+        /** Сколько страниц помнить в кэше авто-обрезки и по каким настроить трети. */
+        private const val CACHE_MAX = 64
+        /** Пометка «полей нет» в кэше авто-обрезки (пустой массив короче любого результата). */
+        private val NO_CROP = IntArray(0)
+        /** Выход движка `[panX, panY, maxX, maxY]` — свой на каждый запрос, чтобы не делиться. */
+        private val PAN_OUT = IntArray(4)
 
         /**
          * Место чтения в базу каждые N перевёрнутых страниц: если книгу выключить на середине,
