@@ -4,11 +4,15 @@
 // `execute_code` (сервер «Penpot_Motion», файл «UI»). Перед запуском поправить BOARDS.
 // Скрипт ничего не меняет в макете — только читает.
 //
-// Результат: { files: { "design/v5/B01.json": "...", "design/v5/icons/wifi~xxxx.json": "...", ... } }
-// Каждую строку записать в файл с этим именем как есть и закоммитить.
+// Два режима (флаг INLINE ниже):
+//   INLINE = false (по умолчанию) — снимок остаётся в `storage` плагина, в ответ приходит только
+//     опись: имена файлов, длина, djb2 и число кусков. Так снимаются пачки бордов: ответ MCP
+//     обрезается на ~20 КБ, а 30 бордов — это сотни килобайт. Файлы чат забирает по одному,
+//     вторым фрагментом кода (см. «Как забрать файл» в design/README.md).
+//   INLINE = true — файлы возвращаются прямо в ответе: только для 1–3 бордов.
 //
-// Почему по нескольку бордов: полный снимок 76 бордов ~1 МБ — через ответ MCP
-// его не прогнать. Снимаем те экраны, которые сейчас делаем, и обновляем их при правках.
+// Результат INLINE:   { files: { "design/v5/B01.json": "...", "design/v5/icons/wifi~xxxx.json": "..." } }
+// Результат пачки:    { count, bytes, index: [{ k, len, h, parts }] }
 //
 // Формат узла (короткие ключи, координаты в дизайн-px относительно борда, 0.1 px):
 //   n имя слоя · t тип (rectangle|ellipse|text|path|group|board|icon) · x y w h
@@ -22,8 +26,19 @@
 //   c дочерние узлы
 // Цвета палитры пишутся токеном "G0".."G15", остальные — hex (их быть не должно).
 
-const BOARDS = ['B9', 'B10', 'B29'];   // какие борды снять; [] — только tokens.json
+// Все борды, которых ещё нет в design/v5 (2026-11-15): снимаем разом, чтобы больше к Penpot не ходить.
+const BOARDS = [
+  'B7', 'B8', 'B9', 'B10', 'B19', 'B20', 'B27', 'B28', 'B29', 'B30',
+  'B32', 'B33', 'B34', 'B35', 'B47', 'B50', 'B51', 'B52', 'B56',
+  'B60', 'B61', 'B62', 'B63', 'B70', 'B71', 'B72', 'B73', 'B74', 'B75', 'B76',
+];                                // какие борды снять; [] — только tokens.json
 const PAGE = 'v5';
+/**
+ * true — вернуть файлы прямо в ответе (годится для 1–3 бордов).
+ * false — сложить снимок в `storage` плагина и вернуть только опись (имя, длина, djb2):
+ * на 30 бордов ответ в чат не пролезает — его обрезают на ~20 КБ.
+ */
+const INLINE = false;
 
 const page = penpotUtils.getPageByName(PAGE);
 if (!page) throw new Error('Нет страницы ' + PAGE);
@@ -149,8 +164,50 @@ for (const p of BOARDS) {
   });
 }
 // одна иконка — один файл: снимки разных бордов складываются без слияния
+// уже снятые иконки не переписываем: у них те же ключи (имя+хеш геометрии), содержимое не меняется
 for (const k of Object.keys(icons)) {
-  files['design/v5/icons/' + k.replace(/[^\w~.-]/g, '_') + '.json'] = pretty(icons[k]);
+  const name = 'design/v5/icons/' + k.replace(/[^\w~.-]/g, '_') + '.json';
+  if (files[name]) continue;
+  files[name] = pretty(icons[k]);
 }
 
-return { boards: BOARDS, missing, files };
+/** djb2 по UTF-16 — тот же, что в `hash()`, но по всему тексту: для сверки файла после переноса. */
+const djb2 = s => {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
+};
+
+if (INLINE) {
+  return { boards: BOARDS, missing, files };
+}
+
+// --- Забор файла из снимка (второй вызов `execute_code`, БЕЗ этого файла) ---------------
+// storage.snapshot уже лежит в плагине. Вернуть один кусок файла:
+//
+//   const k = 'design/v5/B09.json', part = 0;        // имя и номер куска из описи
+//   const s = storage.snapshot.files[k], CHUNK = 18000;
+//   return { k, len: s.length, part, txt: s.slice(part * CHUNK, (part + 1) * CHUNK) };
+//
+// `txt` записывается в файл `k` как есть; куски склеиваются по порядку. Сверка — длина в
+// символах UTF-16 равна `len`, хеш `h` из описи. Подробно — design/README.md, «Как снять пачку».
+// ----------------------------------------------------------------------------------------
+
+// Снимок в storage плагина: чат забирает файлы по одному и сверяет длину и djb2.
+// tokens.json в снимок не кладём: палитра и текстовые стили не менялись, переписывать их незачем
+// (если палитра в макете поменяется — снять отдельно: BOARDS = [] и INLINE = true).
+const snap = Object.fromEntries(Object.entries(files).filter(([k]) => k !== 'design/v5/tokens.json'));
+storage.snapshot = { boards: BOARDS, missing, files: snap };
+storage.snapshotIndex = Object.keys(snap).sort();
+return {
+  boards: BOARDS,
+  missing,
+  count: storage.snapshotIndex.length,
+  bytes: Object.values(snap).reduce((n, s) => n + s.length, 0),
+  index: storage.snapshotIndex.map(k => ({
+    k, len: snap[k].length, h: djb2(snap[k]),
+    parts: Math.ceil(snap[k].length / 18000),   // сколько кусков по 18 000 символов
+  })),
+};
+
+
