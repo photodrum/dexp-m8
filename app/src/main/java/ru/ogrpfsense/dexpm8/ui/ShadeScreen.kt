@@ -47,8 +47,6 @@ class ShadeScreen(act: EinkActivity) : Screen(act) {
         private const val TICK_R1 = 191.95f
         private const val ARC_START = 150f
         private const val ARC_STEP = 16f
-        /** Деление, которое считаем текущим, если свойство не прочиталось. */
-        private const val GAMMA_DEFAULT = 7
 
         // Яркость: дно трека.
         private const val TRACK_X = 141.7f
@@ -83,7 +81,10 @@ class ShadeScreen(act: EinkActivity) : Screen(act) {
     private val status = StatusBar(act, this, ink, icons)
 
     private var brightness = 62
-    /** Номер деления контраста 0…15; −1 — свойство не прочитано. */
+    /**
+     * Номер деления контраста 0…15; −1 — свойство ещё не прочитано или система его не отдала.
+     * На экране «−1» не показывается: шкала рисуется по [Prefs.gammaLevel] ([readGamma]).
+     */
     private var gamma = -1
     /**
      * Подпись под быстрой клавишей вместо названия на [SAVED_MS]: «Снимок сохранён» / «Не сохранён»,
@@ -135,21 +136,19 @@ class ShadeScreen(act: EinkActivity) : Screen(act) {
 
     private fun contrast(c: Canvas) {
         ink.text(c, "Контраст", 51.2f, T.base(307.9f, T.TS_LABEL_L, 1.25f), T.TS_LABEL_L, 700, T.G1)
-        val cur = gamma
+        val cur = if (gamma >= 0) gamma else act.prefs.gammaLevel
         for (i in 0 until 16) {
             if (i != cur) tick(c, i, TICK_R0, TICK_R1, 1.6f, T.G4)
         }
         convexRound(c, 183.7f, 457.9f, 241.3f)
-        if (cur >= 0) {
-            // Активное деление длиннее и толще (r 164.5…193.8, 3 px, G1); указатель Ø18.3 на r 95.
-            tick(c, cur, 164.5f, 193.8f, 3f, T.G1)
-            val a = Math.toRadians((ARC_START + ARC_STEP * cur).toDouble())
-            val px = DIAL_CX + Math.cos(a).toFloat() * 95f
-            val py = DIAL_CY + Math.sin(a).toFloat() * 95f
-            ink.roundRect(c, px - 9.15f, py - 9.15f, 18.3f, 18.3f, 9.15f, T.G1)
-        }
-        val v = if (cur >= 0) "${Math.round(cur * 100f / 15f)}%" else "—"
-        ink.textCenter(c, v, 215.7f, 182.8f, T.base(556.4f, T.TS_LABEL_L, 1.25f), T.TS_LABEL_L, 700, T.G1)
+        // Активное деление длиннее и толще (r 164.5…193.8, 3 px, G1); указатель Ø18.3 на r 95.
+        tick(c, cur, 164.5f, 193.8f, 3f, T.G1)
+        val a = Math.toRadians((ARC_START + ARC_STEP * cur).toDouble())
+        val px = DIAL_CX + Math.cos(a).toFloat() * 95f
+        val py = DIAL_CY + Math.sin(a).toFloat() * 95f
+        ink.roundRect(c, px - 9.15f, py - 9.15f, 18.3f, 18.3f, 9.15f, T.G1)
+        ink.textCenter(c, "${Math.round(cur * 100f / 15f)}%", 215.7f, 182.8f,
+            T.base(556.4f, T.TS_LABEL_L, 1.25f), T.TS_LABEL_L, 700, T.G1)
         ink.textCenter(c, "Мягкий", 85.9f, 110f, T.base(693.1f, T.TS_META, 1.25f), T.TS_META, 600, T.G4)
         ink.textCenter(c, "Чёткий", 420.3f, 106f, T.base(693.1f, T.TS_META, 1.25f), T.TS_META, 600, T.G4)
     }
@@ -240,7 +239,7 @@ class ShadeScreen(act: EinkActivity) : Screen(act) {
         val dx = x - DIAL_CX
         val dy = y - DIAL_CY
         if (dx * dx + dy * dy < 40f * 40f) return
-        val cur = if (gamma >= 0) gamma else GAMMA_DEFAULT
+        val cur = if (gamma >= 0) gamma else act.prefs.gammaLevel
         val ang = Math.toDegrees(Math.atan2(dy.toDouble(), dx.toDouble())).toFloat()
         val t = ((ang - ARC_START) % 360f + 360f) % 360f
         val i = when {
@@ -250,7 +249,10 @@ class ShadeScreen(act: EinkActivity) : Screen(act) {
         }
         val ok = act.sys.setGamma(Sys.GAMMA_STEPS[i])
         val read = act.sys.gamma()
-        gamma = if (read >= 0) Sys.gammaIndex(read) else -1
+        // Прочиталось — берём деление системы; не прочиталось (пустое свойство или отказ) —
+        // оставляем то, что человек выбрал: гаснуть обратно в «—» после касания незачем.
+        gamma = if (read >= 0) Sys.gammaIndex(read) else i
+        act.prefs.gammaLevel = gamma
         Trace.step("shade: gamma ${Sys.GAMMA_STEPS[i]} write=${if (ok) "OK" else "FAIL"} read=$read")
         redraw()
     }
@@ -293,6 +295,24 @@ class ShadeScreen(act: EinkActivity) : Screen(act) {
         redraw()
     }
 
+    /**
+     * Номер деления контраста для шкалы. Свойство `sys.gray.gammalevel` прошивка до первой
+     * записи не задаёт, а `sys.*` вообще сбрасываются при каждой загрузке книги — на книге
+     * 2026-11-16 `getprop` вернул пустую строку, и на B05 в круге стояло «—» (пользователь
+     * читает это как поломку). Порядок: система → последнее выставленное ([Prefs.gammaLevel]).
+     * Как только человек тронет деление, в систему ляжет настоящее значение.
+     */
+    private fun readGamma(): Int {
+        val v = act.sys.gamma()
+        if (v >= 0) {
+            val i = Sys.gammaIndex(v)
+            act.prefs.gammaLevel = i
+            return i
+        }
+        Trace.step("shade: gamma пусто -> деление ${act.prefs.gammaLevel}")
+        return act.prefs.gammaLevel
+    }
+
     // --------------------------------------------------------------- данные
 
     override fun onAttachedToWindow() {
@@ -300,8 +320,7 @@ class ShadeScreen(act: EinkActivity) : Screen(act) {
         status.attach()
         val b = act.sys.brightness()
         if (b >= 0) brightness = b
-        val g = act.sys.gamma()
-        gamma = if (g >= 0) Sys.gammaIndex(g) else -1
+        gamma = readGamma()
         notes.fill(null)
     }
 

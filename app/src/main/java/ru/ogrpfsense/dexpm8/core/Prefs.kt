@@ -27,6 +27,15 @@ class Prefs(ctx: Context) {
     var contrast: Boolean
         get() = sp.getBoolean("contrast", false)
         set(v) = sp.edit().putBoolean("contrast", v).apply()
+    /**
+     * Последнее выставленное деление контраста (B5/B37, 0…15). Само значение живёт в системном
+     * свойстве `sys.gray.gammalevel`, а `sys.*` сбрасываются при каждой загрузке книги — здесь
+     * же оно переживает перезагрузку и остаётся запасным, пока шторка не прочитала систему.
+     * Умолчание — деление 7 (47 %), как «50 %» в макете B05.
+     */
+    var gammaLevel: Int
+        get() = sp.getInt("gamma_level", 7)
+        set(v) = sp.edit().putInt("gamma_level", v.coerceIn(0, 15)).apply()
 
     // B38 «Сеть»
     var wifiSleepOff: Boolean
