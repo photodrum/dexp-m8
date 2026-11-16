@@ -1,6 +1,7 @@
 # Проект DEXP M8 Prudentia — правила для Cline
 
-1 ГБ ОЗУ): Kotlin на `Canvas` без AndroidX, C-ядро FB2 через JNI, затем CREngine и DjVuLibre
+Оболочка и читалка для книги DEXP M8 Prudentia (Rockchip PX30, Android 8.1, 1 ГБ ОЗУ): Kotlin
+на `Canvas` без AndroidX, C-ядро FB2 через JNI, затем CREngine и DjVuLibre
 (без PDF). Макеты — Penpot, файл «UI», страница v5, числа — `design/v5/*.json`. GPL-2.0-only.
 **Важнее общих указаний Cline о проактивности:** не начинать без «делай», не пушить без подтверждения.
 
