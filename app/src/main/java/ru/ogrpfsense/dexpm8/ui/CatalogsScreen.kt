@@ -49,7 +49,7 @@ class CatalogsScreen(act: EinkActivity) : Screen(act) {
 
     private fun header(c: Canvas) {
         ink.convex(c, 41.1f, 112.9f, 106.9f, 112.4f, R_BACK)
-        icons.draw(c, "back", 71.3f, 143f, 47.5f, 49.5f)
+        icons.drawRound(c, "back", 41.1f, 112.9f, 106.9f, 112.4f, 47.5f, 49.5f)
         ink.text(c, "Сетевые каталоги", 175.5f, T.base(105f, T.TS_TITLE, 1.2f), T.TS_TITLE, 700, T.G1)
         val n = rows.size
         val sub = if (n == 0) "OPDS" else Words.plural(n, "каталог", "каталога", "каталогов") + " · OPDS"
@@ -66,7 +66,7 @@ class CatalogsScreen(act: EinkActivity) : Screen(act) {
             val r = rows[idx]
             val y = ROW_Y0 + i * ROW_STEP
             ink.convex(c, 77.7f, y, 121.6f, 127.1f, 60.8f)
-            icons.draw(c, r.icon, 113.3f, y + 45.4f, 51.2f, 53.3f)
+            icons.drawRound(c, r.icon, 77.7f, y, 121.6f, 127.1f, 51.2f, 53.3f)
             ink.text(c, ink.ellipsize(r.title, 900f, T.TS_ACTION, 700), 234f,
                 T.base(y, T.TS_ACTION, 1.25f), T.TS_ACTION, 700, T.G1)
             ink.text(c, ink.ellipsize(r.sub, 1000f, T.TS_BODY_S, 600), 234f,
@@ -87,7 +87,7 @@ class CatalogsScreen(act: EinkActivity) : Screen(act) {
     private fun downloads(c: Canvas) {
         ink.convex(c, 41.1f, 947.9f, 1320.8f, 185.6f, T.R_TILE)
         ink.convex(c, 77.7f, 977.1f, 121.6f, 127.1f, 60.8f)
-        icons.draw(c, "download", 113.3f, 1009.7f, 51.2f, 53.3f)
+        icons.drawRound(c, "download", 77.7f, 977.1f, 121.6f, 127.1f, 51.2f, 53.3f)
         ink.text(c, "Загрузки", 234f, T.base(988.4f, T.TS_ACTION, 1.25f), T.TS_ACTION, 700, T.G1)
         ink.text(c, "Очередь и ошибки загрузок", 234f, T.base(1044.4f, T.TS_BODY_S, 1.25f),
             T.TS_BODY_S, 600, T.G4)
@@ -116,11 +116,11 @@ class CatalogsScreen(act: EinkActivity) : Screen(act) {
     private fun paging(c: Canvas) {
         if (rows.size <= PER_PAGE) return
         ink.convex(c, 41.1f, 1708.3f, 121.6f, 127.1f, T.R_BUTTON)
-        icons.draw(c, "back", 75.9f, 1743f, 53f, 55.2f)
+        icons.drawRound(c, "back", 41.1f, 1708.3f, 121.6f, 127.1f, 53f, 55.2f)
         ink.textCenter(c, "${page + 1} / ${pages()}", 0f, W, T.base(1738.3f, T.TS_PAGE, 1.25f),
             T.TS_PAGE, 600, T.G1)
         ink.convexDark(c, 1240.4f, 1708.3f, 121.6f, 127.1f, T.R_BUTTON)
-        icons.draw(c, "next@53x53", 1275.1f, 1743f, 53f, 53f)
+        icons.drawRound(c, "next@53x53", 1240.4f, 1708.3f, 121.6f, 127.1f, 53f, 53f)
     }
 
     private fun pages(): Int = (rows.size + PER_PAGE - 1) / PER_PAGE

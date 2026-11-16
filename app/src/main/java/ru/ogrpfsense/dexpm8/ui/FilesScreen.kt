@@ -172,11 +172,11 @@ class FilesScreen(act: EinkActivity) : Screen(act) {
 
     private fun header(c: Canvas) {
         ink.convex(c, 41f, 113.5f, 107f, 112f, ROUND)
-        icons.draw(c, "back@12.3x26.6", 87.9f, 155.3f, 12.3f, 26.6f)
+        icons.drawRound(c, "back@12.3x26.6", 41f, 113.5f, 107f, 112f, 12.3f, 26.6f)
         ink.text(c, "Файлы", 176f, T.base(105f, T.TS_TITLE, 1.25f), T.TS_TITLE, 700, T.G1)
         ink.text(c, freeText(), 176f, T.base(181f, T.TS_BODY_S, 1.25f), T.TS_BODY_S, 600, T.G4)
         ink.convex(c, 1255f, 113.5f, 107f, 112f, ROUND)
-        icons.draw(c, "sort", 1290.6f, 153.2f, 36.8f, 30.6f)
+        icons.drawRound(c, "sort", 1255f, 113.5f, 107f, 112f, 36.8f, 30.6f)
     }
 
     /** «Свободно 6,9 из 16 ГБ» — как на B42: свободно из заявленного объёма накопителя. */
@@ -188,7 +188,7 @@ class FilesScreen(act: EinkActivity) : Screen(act) {
     private fun crumb(c: Canvas) {
         ink.inset(c, 44f, 249f, 1316f, 102f, 44f)
         ink.convex(c, 51f, 255f, 89f, 94f, R_UP)
-        icons.draw(c, "up", 86f, 295f, 20f, 11.7f)
+        icons.drawRound(c, "up", 51f, 255f, 89f, 94f, 20f, 11.7f)
 
         crumbHits.clear()
         val segs = segments()

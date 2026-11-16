@@ -70,7 +70,7 @@ class AppsScreen(act: EinkActivity) : Screen(act) {
 
     private fun header(c: Canvas) {
         ink.convex(c, 41.1f, 112.9f, 106.9f, 112.4f, 51.2f)
-        icons.draw(c, "back", 72.2f, 144.9f, 45.7f, 47.6f)
+        icons.drawRound(c, "back", 41.1f, 112.9f, 106.9f, 112.4f, 45.7f, 47.6f)
         ink.text(c, if (hiddenMode) "Скрытые" else "Приложения", 175.5f,
             T.base(105f, T.TS_TITLE, 1.2f), T.TS_TITLE, 700, T.G1)
         var sub = if (hiddenMode) {
@@ -83,7 +83,7 @@ class AppsScreen(act: EinkActivity) : Screen(act) {
         if (!hiddenMode && hiddenCount > 0) sub += " · скрыто $hiddenCount"
         ink.text(c, sub, 175.5f, T.base(181f, T.TS_BODY_S, 1.25f), T.TS_BODY_S, 600, T.G4)
         ink.convex(c, 1255f, 112.9f, 106.9f, 112.4f, 51.2f)
-        icons.draw(c, "searchDark", 1286.1f, 142.3f, 45.7f, 47.6f)
+        icons.drawRound(c, "searchDark", 1255f, 112.9f, 106.9f, 112.4f, 45.7f, 47.6f)
     }
 
     private fun grid(c: Canvas) {
@@ -144,7 +144,7 @@ class AppsScreen(act: EinkActivity) : Screen(act) {
         ink.roundRect(c, 644f, 695f, 117f, 11f, 5f, T.G11)
  ink.inset(c, 59f, 730f, 150f, 150f, 44f, T.G12)
  if (a.icon == "dict") {
-     icons.draw(c, "dict@42.5x56.7", 115.8f, 778.1f, 42.5f, 56.7f)
+     icons.drawInset(c, "dict@42.5x56.7", 59f, 730f, 150f, 150f, 42.5f, 56.7f)
  } else {
      icons.draw(c, a.icon, 102f, 773f, 64f, 64f)
         }

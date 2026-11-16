@@ -322,7 +322,7 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
 
     private fun header(c: Canvas) {
         ink.convex(c, 41.1f, 112.3f, 106.9f, 112.4f, R_ROUND_BACK)
-        icons.draw(c, "back", 72.2f, 144.3f, 45.7f, 47.6f)
+        icons.drawRound(c, "back", 41.1f, 112.3f, 106.9f, 112.4f, 45.7f, 47.6f)
 
         ink.text(c, "Библиотека", 175.5f, T.base(104f, T.TS_TITLE, 1.2f), T.TS_TITLE, 700, T.G1)
         // B46: подзаголовок «Нет доступа к памяти» (на макете библиотеки — число книг и размер).
@@ -333,12 +333,12 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
 
         // «Полки»: круглая клавиша левее переключателя вида (в макете B2/B11 её нет, решение DEVLOG 9.3).
         ink.convex(c, 1030f, 112.3f, 106.9f, 112.4f, R_ROUND_BACK)
-        icons.draw(c, "library", 1057f, 142f, 52f, 54.2f)
+        icons.drawRound(c, "library", 1030f, 112.3f, 106.9f, 112.4f, 52f, 54.2f)
         // «Сетевые каталоги» (п. 10): третья клавиша — в макете B2 её нет, вход задуман только
         // с пустой библиотеки B44, но при 530 книгах B44 недостижим. Место выбрано между
         // «Полками» и переключателем вида, шаг 106.9 как у остальных круглых клавиш.
         ink.convex(c, 920.2f, 112.3f, 106.9f, 112.4f, R_ROUND_BACK)
-        icons.draw(c, "download", 947f, 141.5f, 52f, 54.2f)
+        icons.drawRound(c, "download", 920.2f, 112.3f, 106.9f, 112.4f, 52f, 54.2f)
         // Переключатель вида: желоб 204.8×87.7, активный сегмент сдвигается на 95.1.
         ink.inset(c, 1155.4f, 122.3f, 204.8f, 87.7f, T.R_GROOVE)
         ink.convex(c, 1159.9f + viewMode * 95.1f, 126.9f, 99.6f, 83.2f, T.R_SEGMENT)
@@ -354,13 +354,13 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
             ink.text(c, "Название, автор или серия", 154f, T.base(275.3f, T.TS_LABEL_L, 1.3f),
                 T.TS_LABEL_L, 500, T.G6)
             ink.convex(c, 1262.3f, 256.9f, 85f, 90.5f, R_ROUND_FILTER)
-            icons.draw(c, "filter", 1286.1f, 281.5f, 38.4f, 40.2f)
+            icons.drawRound(c, "filter", 1262.3f, 256.9f, 85f, 90.5f, 38.4f, 40.2f)
         } else {
             icons.draw(c, "search", 86.8f, 275.1f, 45.7f, 47.6f)
             ink.text(c, "Название, автор или серия", 153.6f, T.base(274.4f, T.TS_LABEL_L, 1.3f),
                 T.TS_LABEL_L, 500, T.G6)
             ink.convex(c, 1262.3f, 256.9f, 85f, 90.5f, R_ROUND_FILTER)
-            icons.draw(c, "filter", 1282.4f, 277.9f, 45.7f, 47.6f)
+            icons.drawRound(c, "filter", 1262.3f, 256.9f, 85f, 90.5f, 45.7f, 47.6f)
         }
     }
 
@@ -445,11 +445,11 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
         if (viewMode == 1) {
             // B11: back 75,1743.2 54.8×57.1; next 1275.1,1743 53×53 — стрелка белая (G15):
             // на тёмной клавише G6-стрелка сливалась с поверхностью G3 (замечание 16).
-            icons.draw(c, "back", 75f, 1743.2f, 54.8f, 57.1f)
-            icons.draw(c, "next@53x53", 1275.1f, 1743f, 53f, 53f)
+            icons.drawRound(c, "back", 41.1f, 1708.3f, 121.6f, 127.1f, 54.8f, 57.1f)
+            icons.drawRound(c, "next@53x53", 1240.4f, 1708.3f, 121.6f, 127.1f, 53f, 53f)
         } else {
-            icons.draw(c, "back", 79.5f, 1747.6f, 45.7f, 47.6f)
-            icons.draw(c, "nextLight", 1279.7f, 1747.6f, 43.9f, 43.9f)
+            icons.drawRound(c, "back", 41.1f, 1708.3f, 121.6f, 127.1f, 45.7f, 47.6f)
+            icons.drawRound(c, "nextLight", 1240.4f, 1708.3f, 121.6f, 127.1f, 43.9f, 43.9f)
         }
         ink.textCenter(c, "${page + 1} / ${totalPages()}", 0f, W,
             T.base(1745.3f, T.TS_PAGE, 1.2f), T.TS_PAGE, 600, T.G1)

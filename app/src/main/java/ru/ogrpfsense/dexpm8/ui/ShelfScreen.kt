@@ -127,14 +127,14 @@ class ShelfScreen(act: EinkActivity) : Screen(act) {
 
     private fun header(c: Canvas) {
         ink.convex(c, 41f, 113.5f, 107f, 112f, R_ROUND)
-        icons.draw(c, "back@12.3x26.6", 87.9f, 155.3f, 12.3f, 26.6f)
+        icons.drawRound(c, "back@12.3x26.6", 41f, 113.5f, 107f, 112f, 12.3f, 26.6f)
         ink.text(c, ink.ellipsize(name, 1000f, T.TS_TITLE, 700), 176f,
             T.base(105f, T.TS_TITLE, 1.25f), T.TS_TITLE, 700, T.G1)
         val sub = (if (auto) "Автоматическая полка · " else "Своя полка · ") + Words.books(total)
         ink.text(c, sub, 176f, T.base(181f, T.TS_BODY_S, 1.25f), T.TS_BODY_S, 600, T.G4)
         if (!auto) {
             ink.convex(c, 1255f, 113.5f, 107f, 112f, R_ROUND)
-            icons.draw(c, "more@53x55.2", 1282f, 142f, 53f, 55.2f)
+            icons.drawRound(c, "more@53x55.2", 1255f, 113.5f, 107f, 112f, 53f, 55.2f)
         }
     }
 
@@ -194,8 +194,8 @@ class ShelfScreen(act: EinkActivity) : Screen(act) {
     private fun pager(c: Canvas) {
         ink.convex(c, 41.1f, 1708.3f, 121.6f, 127.1f, R_PAGE)
         ink.convexDark(c, 1240.4f, 1708.3f, 121.6f, 127.1f, R_PAGE)
-        icons.draw(c, "back@54.8x57.1", 75f, 1743.2f, 54.8f, 57.1f)
-        icons.draw(c, "next@53x53", 1275.1f, 1743f, 53f, 53f)
+        icons.drawRound(c, "back@54.8x57.1", 41.1f, 1708.3f, 121.6f, 127.1f, 54.8f, 57.1f)
+        icons.drawRound(c, "next@53x53", 1240.4f, 1708.3f, 121.6f, 127.1f, 53f, 53f)
         ink.textCenter(c, "${page + 1} / ${totalPages()}", 0f, W,
             T.base(1738.3f, T.TS_PAGE, 1.25f), T.TS_PAGE, 600, T.G1)
     }

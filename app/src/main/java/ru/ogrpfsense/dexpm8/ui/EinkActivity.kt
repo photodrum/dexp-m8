@@ -386,6 +386,9 @@ class EinkActivity : Activity() {
                 storageChanged(ok)
             }
         }
+        // Экран в кеше переживает выключение экрана: дата и приветствие B1 к утру устарели.
+        // Перерисовка внутри — только при смене строки.
+        (screens[SCR_HOME] as? HomeScreen)?.refreshTime()
     }
 
     override fun onPause() {

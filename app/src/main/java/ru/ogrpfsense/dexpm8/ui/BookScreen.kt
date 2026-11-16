@@ -67,11 +67,11 @@ class BookScreen(act: EinkActivity) : Screen(act) {
 
     private fun header(c: Canvas) {
         ink.convex(c, 41.1f, 112.3f, 106.9f, 112.4f, 51.2f)
-        icons.draw(c, "back", 73.1f, 144.3f, 43.9f, 45.7f)
+        icons.drawRound(c, "back", 41.1f, 112.3f, 106.9f, 112.4f, 43.9f, 45.7f)
         ink.text(c, "О книге", 175.5f, T.base(104f, T.TS_TITLE, 1.2f), T.TS_TITLE, 700, T.G1)
         ink.text(c, "Библиотека", 175f, T.base(180f, T.TS_BODY_S, 1.3f), T.TS_BODY_S, 600, T.G4)
         ink.convex(c, 1255f, 112.3f, 106.9f, 112.4f, 51.2f)
-        icons.draw(c, "more", 1284.3f, 142.5f, 49.4f, 51.4f)
+        icons.drawRound(c, "more", 1255f, 112.3f, 106.9f, 112.4f, 49.4f, 51.4f)
     }
 
     private fun cover(c: Canvas, e: LibraryDb.Entry) {

@@ -91,7 +91,7 @@ class ShelvesScreen(act: EinkActivity) : Screen(act) {
 
     private fun header(c: Canvas) {
         ink.convex(c, 41f, 113.5f, 107f, 112f, R_ROUND)
-        icons.draw(c, "back@12.3x26.6", 87.9f, 155.3f, 12.3f, 26.6f)
+        icons.drawRound(c, "back@12.3x26.6", 41f, 113.5f, 107f, 112f, 12.3f, 26.6f)
         ink.text(c, "Полки", 176f, T.base(105f, T.TS_TITLE, 1.25f), T.TS_TITLE, 700, T.G1)
         val sub = Words.shelves(rows.size) + " · " + Words.books(allBooks)
         ink.text(c, sub, 176f, T.base(181f, T.TS_BODY_S, 1.25f), T.TS_BODY_S, 600, T.G4)
@@ -101,8 +101,8 @@ class ShelvesScreen(act: EinkActivity) : Screen(act) {
         ink.convex(c, 78f, y, 115f, 120f, R_ROUND + 4f)
         when (r.icon) {
             I_MARK -> bookmark(c, 125f, y + 37f)
-            I_CHECK -> icons.draw(c, "check@25.7x19.3", 120.5f, y + 44.1f, 30.9f, 23.2f)
-            else -> icons.draw(c, "library", 117.2f, y + 40.3f, 37.5f, 37.6f)
+            I_CHECK -> icons.drawRound(c, "check@25.7x19.3", 78f, y, 115f, 120f, 30.9f, 23.2f)
+            else -> icons.drawRound(c, "library", 78f, y, 115f, 120f, 37.5f, 37.6f)
         }
         ink.text(c, ink.ellipsize(r.name, 1000f, 42f, 700), 227f, T.base(y + 9.5f, 42f, 1.25f),
             42f, 700, T.G1)
@@ -123,8 +123,8 @@ class ShelvesScreen(act: EinkActivity) : Screen(act) {
     private fun pager(c: Canvas, top: Float) {
         ink.convex(c, 41.1f, top, 121.6f, 127.1f, R_PAGE)
         ink.convexDark(c, 1240.4f, top, 121.6f, 127.1f, R_PAGE)
-        icons.draw(c, "back@54.8x57.1", 75f, top + 34.9f, 54.8f, 57.1f)
-        icons.draw(c, "next@53x53", 1275.1f, top + 34.7f, 53f, 53f)
+        icons.drawRound(c, "back@54.8x57.1", 41.1f, top, 121.6f, 127.1f, 54.8f, 57.1f)
+        icons.drawRound(c, "next@53x53", 1240.4f, top, 121.6f, 127.1f, 53f, 53f)
         ink.textCenter(c, "${page + 1} / ${totalPages()}", 0f, W,
             T.base(top + 30f, T.TS_PAGE, 1.25f), T.TS_PAGE, 600, T.G1)
     }

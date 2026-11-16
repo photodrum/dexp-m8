@@ -43,7 +43,7 @@ class SettingsScreen(act: EinkActivity) : Screen(act) {
         status.draw(c)
 
         ink.convex(c, 41.1f, 112.9f, 106.9f, 112.4f, 51.2f)
-        icons.draw(c, "back@43.9x45.7", 73.1f, 144.9f, 43.9f, 45.7f)
+        icons.drawRound(c, "back@43.9x45.7", 41.1f, 112.9f, 106.9f, 112.4f, 43.9f, 45.7f)
         ink.text(c, "Настройки", 175.5f, T.base(105f, T.TS_TITLE, 1.2f), T.TS_TITLE, 700, T.G1)
         ink.text(c, subtitle, 175.5f, T.base(181f, T.TS_BODY_S, 1.25f), T.TS_BODY_S, 600, T.G4)
 
@@ -53,7 +53,7 @@ class SettingsScreen(act: EinkActivity) : Screen(act) {
 
     private fun row(c: Canvas, r: Row) {
         ink.convex(c, 77.7f, r.y, 114.3f, 119.7f, 54.85f)
-        icons.draw(c, r.icon, 108.8f, r.y + r.iconDy, 53f, 55.2f)
+        icons.drawRound(c, r.icon, 77.7f, r.y, 114.3f, 119.7f, 53f, 55.2f)
         ink.text(c, r.title, 226.7f, T.base(r.y + 9.4f, T.TS_ACTION, 1.25f), T.TS_ACTION, 700, T.G1)
         if (r.value.isNotEmpty()) {
             ink.text(c, ink.ellipsize(r.value, VALUE_W, T.TS_BODY_S, 600), 226.7f,

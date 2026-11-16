@@ -89,13 +89,15 @@ class TypographySheet(private val ink: Ink, private val icons: Icons) {
         ink.text(c, LABEL_SIZE, LABEL_X, T.base(LABEL_SIZE_TOP, T.TS_BODY_S, 1.25f),
             T.TS_BODY_S, 600, T.G4)
         ink.convex(c, MINUS_X, MINUS_Y, KEY_D + T.SHADOW_DX, KEY_D + T.SHADOW_DY, KEY_D / 2f)
-        icons.draw(c, "minus", MINUS_ICON_X, MINUS_ICON_Y, MINUS_W, MINUS_H)
+        icons.drawRound(c, "minus", MINUS_X, MINUS_Y, KEY_D + T.SHADOW_DX, KEY_D + T.SHADOW_DY,
+            MINUS_W, MINUS_H)
         ink.inset(c, IND_X, IND_Y, IND_W, IND_H, R_IND, T.G12)
         ink.textCenter(c, size.toString(), IND_X + T.INSET_DX, IND_W - T.INSET_W,
             T.base(SIZE_TOP, TS_SIZE, 1.25f), TS_SIZE, 300, T.G1)
         slider(c, size)
         ink.convexDark(c, PLUS_X, PLUS_Y, KEY_D + T.SHADOW_DX, KEY_D + T.SHADOW_DY, KEY_D / 2f)
-        icons.draw(c, "plus", PLUS_ICON_X, PLUS_ICON_Y, PLUS_W, PLUS_H)
+        icons.drawRound(c, "plus", PLUS_X, PLUS_Y, KEY_D + T.SHADOW_DX, KEY_D + T.SHADOW_DY,
+            PLUS_W, PLUS_H)
     }
 
     /** Ползунок кегля: желоб вдавленный, заполнение G3 и ручка Ø65.8 на его правом краю. */
@@ -357,8 +359,6 @@ class TypographySheet(private val ink: Ink, private val icons: Icons) {
         private const val MINUS_X = 55.8f
         private const val MINUS_Y = 1108.8f
         private const val KEY_D = 117f
-        private const val MINUS_ICON_X = 94.1f
-        private const val MINUS_ICON_Y = 1148.1f
         private const val MINUS_W = 45.7f
         private const val MINUS_H = 47.6f
         private const val IND_X = 204.8f
@@ -370,8 +370,6 @@ class TypographySheet(private val ink: Ink, private val icons: Icons) {
         private const val TS_SIZE = 66f
         private const val PLUS_X = 1225.8f
         private const val PLUS_Y = 1108.8f
-        private const val PLUS_ICON_X = 1265.1f
-        private const val PLUS_ICON_Y = 1148.1f
         private const val PLUS_W = 43.9f
         private const val PLUS_H = 43.9f
 

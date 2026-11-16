@@ -19,7 +19,7 @@ class SimpleScreen(
 
         // Шапка — как на B2: «Назад» 41.1,112.3 (круг 102.4), заголовок и подзаголовок с x 175.5.
         ink.convex(c, 41.1f, 112.3f, 106.9f, 112.4f, 51.2f)
-        icons.draw(c, "back", 72.2f, 144.3f, 45.7f, 47.6f)
+        icons.drawRound(c, "back", 41.1f, 112.3f, 106.9f, 112.4f, 45.7f, 47.6f)
 
         ink.text(c, title, 175.5f, T.base(104f, T.TS_TITLE, 1.2f), T.TS_TITLE, 700, T.G1)
         ink.text(c, subtitle, 175.5f, T.base(180f, T.TS_BODY_S, 1.3f), T.TS_BODY_S, 600, T.G4)

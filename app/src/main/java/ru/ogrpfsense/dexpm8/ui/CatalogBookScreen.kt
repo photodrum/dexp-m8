@@ -69,7 +69,7 @@ class CatalogBookScreen(act: EinkActivity) : Screen(act) {
 
     private fun header(c: Canvas, e: Opds.Entry?) {
         ink.convex(c, 41.1f, 112.9f, 106.9f, 112.4f, R_BACK)
-        icons.draw(c, "back", 71.3f, 143f, 47.5f, 49.5f)
+        icons.drawRound(c, "back", 41.1f, 112.9f, 106.9f, 112.4f, 47.5f, 49.5f)
         ink.text(c, "Книга", 175.5f, T.base(105f, T.TS_TITLE, 1.2f), T.TS_TITLE, 700, T.G1)
         val src = act.opdsSource.removePrefix("http://").removePrefix("https://").substringBefore('/')
         ink.text(c, ink.ellipsize(src, 900f, T.TS_BODY_S, 600), 175.5f,

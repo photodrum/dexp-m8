@@ -194,7 +194,7 @@ class WifiUploadScreen(act: EinkActivity) : Screen(act) {
 
     private fun header(c: Canvas) {
         ink.convex(c, 41f, 113.5f, 107f, 112f, ROUND)
-        icons.draw(c, "back@12.3x26.6", 87.9f, 155.3f, 12.3f, 26.6f)
+        icons.drawRound(c, "back@12.3x26.6", 41f, 113.5f, 107f, 112f, 12.3f, 26.6f)
         ink.text(c, "Загрузка по Wi-Fi", 176f, T.base(105f, T.TS_TITLE, 1.25f), T.TS_TITLE, 700, T.G1)
         ink.text(c, ink.ellipsize(subtitle, 1100f, T.TS_BODY_S, 600), 176f,
             T.base(181f, T.TS_BODY_S, 1.25f), T.TS_BODY_S, 600, T.G4)

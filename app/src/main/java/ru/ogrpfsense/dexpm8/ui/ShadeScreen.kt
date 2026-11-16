@@ -116,9 +116,9 @@ class ShadeScreen(act: EinkActivity) : Screen(act) {
         key(c, K_FAST, "modeFast", mode == 1)
         key(c, K_CLEAN, "refresh@53x55.2", false)
         key(c, K_NET, if (status.wifi) "wifiDark" else "wifi@53x55.2", status.wifi)
-        quick(c, Q_POWER, "power", 64f, 66.7f, 858f, notes[Q_POWER] ?: "Выключение")
-        quick(c, Q_SLEEP, "moon@64x66.7", 64f, 66.7f, 858f, "Сон")
-        quick(c, Q_SHOT, "shot", 62.2f, 64.7f, 857.6f, notes[Q_SHOT] ?: "Снимок")
+        quick(c, Q_POWER, "power", 64f, 66.7f, notes[Q_POWER] ?: "Выключение")
+        quick(c, Q_SLEEP, "moon@64x66.7", 64f, 66.7f, "Сон")
+        quick(c, Q_SHOT, "shot", 62.2f, 64.7f, notes[Q_SHOT] ?: "Снимок")
 
         ink.roundRect(c, 643.5f, 1020.1f, 117f, 11f, 5.484375f, T.G11)
     }
@@ -174,10 +174,13 @@ class ShadeScreen(act: EinkActivity) : Screen(act) {
         }
     }
 
-    private fun quick(c: Canvas, q: Int, icon: String, iw: Float, ih: Float, iy: Float, label: String) {
+    private fun quick(c: Canvas, q: Int, icon: String, iw: Float, ih: Float, label: String) {
         val kx = QUICK_X[q] + 92.3f
         convexRound(c, kx, QUICK_Y, ROUND_D)
-        icons.draw(c, icon, kx + 40.3f, iy, iw, ih)
+        // Диск выровнен по центру видимой фигуры (блик ØROUND_D @ kx,QUICK_Y, поверхность
+        // на +2.8), а не по исходной точке иконки из макета.
+        icons.drawCentered(c, icon, kx + (ROUND_D + T.SURFACE_DX) / 2f,
+            QUICK_Y + (ROUND_D + T.SURFACE_DY) / 2f, iw, ih)
         ink.textCenter(c, label, QUICK_X[q], QUICK_W, T.base(970.8f, T.TS_BODY_S, 1.25f), T.TS_BODY_S, 600, T.G4)
     }
 

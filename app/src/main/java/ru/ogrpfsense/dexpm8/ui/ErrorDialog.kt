@@ -49,7 +49,7 @@ internal class ErrorDialog(private val ink: Ink, private val icons: Icons) {
     fun draw(c: Canvas) {
         ink.convex(c, DX, DY, DW, DH, R_DIALOG)
         ink.inset(c, 152f, 534f, 140f, 140f, 70f, T.G12)
-        icons.draw(c, "close@25x27.5", 212.5f, 591.5f, 25f, 27.5f)
+        icons.drawInset(c, "close@25x27.5", 152f, 534f, 140f, 140f, 25f, 27.5f)
 
         ink.text(c, ink.ellipsize(title, 940f, T.TS_TITLE, 700), 332f,
             T.base(540f, T.TS_TITLE, 1.25f), T.TS_TITLE, 700, T.G1)

@@ -2,7 +2,7 @@ package ru.ogrpfsense.dexpm8.ui
 
 import android.graphics.Canvas
 import java.text.SimpleDateFormat
-import java.util.Date
+import java.util.Calendar
 import java.util.Locale
 import ru.ogrpfsense.dexpm8.core.LibraryDb
 
@@ -26,6 +26,9 @@ class HomeScreen(act: EinkActivity) : Screen(act) {
 
     private var date = ""
 
+    /** Приветствие по времени суток: меняется без действий пользователя, поэтому хранится. */
+    private var greet = ""
+
     private val status = StatusBar(act, this, ink, icons)
 
     private val hits = ArrayList<Hit>(8)
@@ -33,13 +36,32 @@ class HomeScreen(act: EinkActivity) : Screen(act) {
     private class Hit(val id: Int, val x: Float, val y: Float, val w: Float, val h: Float)
 
     init {
-        refreshDate()
+        refreshHeader()
     }
 
-    private fun refreshDate() {
-        val now = Date()
-        val d = dateFmt.format(now)
-        date = d.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale("ru")) else it.toString() }
+    /**
+     * Дата и приветствие из системных часов. Час берём локальный ([Calendar.HOUR_OF_DAY]):
+     * 5–11 «Доброе утро», 12–17 «Добрый день», 18–22 «Добрый вечер», 23–4 «Доброй ночи».
+     *
+     * Возвращает true, если строка шапки изменилась — только тогда экран перерисовывается:
+     * на E-Ink лишний кадр это мерцание.
+     */
+    private fun refreshHeader(): Boolean {
+        val cal = Calendar.getInstance()
+        val d = dateFmt.format(cal.time)
+        val nd = d.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale("ru")) else it.toString() }
+        val ng = greeting(cal.get(Calendar.HOUR_OF_DAY))
+        val changed = nd != date || ng != greet
+        date = nd
+        greet = ng
+        return changed
+    }
+
+    private fun greeting(hour: Int): String = when (hour) {
+        in 5..11 -> "Доброе утро"
+        in 12..17 -> "Добрый день"
+        in 18..22 -> "Добрый вечер"
+        else -> "Доброй ночи"
     }
 
     override fun layout(w: Float, h: Float) {
@@ -61,7 +83,7 @@ class HomeScreen(act: EinkActivity) : Screen(act) {
 
     private fun header(c: Canvas) {
         ink.text(c, date, 51.2f, T.base(111f, T.TS_BODY, 1.25f), T.TS_BODY, 600, T.G4)
-        ink.text(c, "Добрый день", 51.2f, T.base(149.6f, T.TS_GREETING, 1.2f),
+        ink.text(c, greet, 51.2f, T.base(149.6f, T.TS_GREETING, 1.2f),
             T.TS_GREETING, 300, T.G1)
     }
 
@@ -223,7 +245,7 @@ class HomeScreen(act: EinkActivity) : Screen(act) {
             ink.convex(c, t.x, t.y, TILE_W, TILE_H, T.R_TILE)
             // Круглая кнопка иконки 136.2×141.6 (диск 131.6) на +43.9,+43.9.
             ink.convex(c, t.x + 43.9f, t.y + 43.9f, 136.2f, 141.6f, 65.8f)
-            icons.draw(c, t.icon, t.x + 73.1f, t.y + 74.6f, 73.1f, 76.2f)
+            icons.drawRound(c, t.icon, t.x + 43.9f, t.y + 43.9f, 136.2f, 141.6f, 73.1f, 76.2f)
             // Подпись и счётчик — под иконкой, x +46.7.
             ink.text(c, t.label, t.x + 46.7f, T.base(t.y + 202f, T.TS_TILE, 1.25f),
                 T.TS_TILE, 700, T.G1)
@@ -275,10 +297,21 @@ class HomeScreen(act: EinkActivity) : Screen(act) {
         }
     }
 
+    /**
+     * Обновить дату и приветствие, перерисовав только при смене строки. Зовётся из
+     * [EinkActivity.onResume]: экран в кеше переживает выключение экрана, и после пробуждения
+     * время суток уже другое. Таймера нет намеренно — на E-Ink лишний кадр это мерцание.
+     */
+    fun refreshTime() {
+        if (!refreshHeader()) return
+        if (parent != null) redraw()
+    }
+
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         status.attach()
-        refreshDate()
+        // Первый кадр экрана рисуется и так, поэтому здесь без redraw().
+        refreshHeader()
         refresh()
     }
 

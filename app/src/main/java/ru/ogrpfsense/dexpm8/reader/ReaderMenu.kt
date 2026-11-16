@@ -57,10 +57,15 @@ class ReaderMenu(private val ink: Ink, private val icons: Icons) {
             // выбранный вариант зон касаний на B39. Иконка одна и та же (`bookmark`). Кнопка
             // только ставит закладку (решение 2026-11-16), так что вдавленность значит
             // «на этой странице закладка уже есть».
-            if (i == KEY_MARK && marked) ink.inset(c, KEY_TOP_X[i], KEY_TOP_Y, TOP_KEY_D,
-                TOP_KEY_D, TOP_KEY_D / 2f)
-            else circle(c, KEY_TOP_X[i], KEY_TOP_Y, TOP_KEY_D)
-            icons.draw(c, ICON_TOP[i], ICON_TOP_X[i], ICON_TOP_Y[i], TOP_ICON_W, TOP_ICON_H)
+            if (i == KEY_MARK && marked) {
+                ink.inset(c, KEY_TOP_X[i], KEY_TOP_Y, TOP_KEY_D, TOP_KEY_D, TOP_KEY_D / 2f)
+                icons.drawInset(c, ICON_TOP[i], KEY_TOP_X[i], KEY_TOP_Y, TOP_KEY_D, TOP_KEY_D,
+                    TOP_ICON_W, TOP_ICON_H)
+            } else {
+                circle(c, KEY_TOP_X[i], KEY_TOP_Y, TOP_KEY_D)
+                icons.drawRound(c, ICON_TOP[i], KEY_TOP_X[i], KEY_TOP_Y,
+                    TOP_KEY_D + T.SHADOW_DX, TOP_KEY_D + T.SHADOW_DY, TOP_ICON_W, TOP_ICON_H)
+            }
         }
         val lf = T.literata(ink.res, 600)
         val t = ink.ellipsize(title, TITLE_W, T.TS_PAGE, 600, lf)
@@ -107,7 +112,8 @@ class ReaderMenu(private val ink: Ink, private val icons: Icons) {
     private fun button(c: Canvas, i: Int, djvu: Boolean) {
         val zoom = djvu && i == BTN_TEXT
         circle(c, BTN_SEAT_X[i], BTN_SEAT_Y, 117f)
-        icons.draw(c, if (zoom) ICON_ZOOM else BTN_ICON[i], BTN_ICON_X[i], BTN_ICON_Y,
+        icons.drawCentered(c, if (zoom) ICON_ZOOM else BTN_ICON[i],
+            BTN_SEAT_X[i] + (117f + T.SURFACE_DX) / 2f, BTN_SEAT_Y + (117f + T.SURFACE_DY) / 2f,
             BTN_ICON_W, BTN_ICON_H)
         val label = if (zoom) BTN_ZOOM else BTN_LABEL[i]
         ink.textCenter(c, label, BTN_X + BTN_STEP * i, BTN_W,
@@ -204,8 +210,6 @@ class ReaderMenu(private val ink: Ink, private val icons: Icons) {
         private const val KEY_MARK = 2
         private const val TOP_ICON_W = 49.4f
         private const val TOP_ICON_H = 51.4f
-        private val ICON_TOP_X = floatArrayOf(70.4f, 1050.3f, 1167.3f, 1284.3f)
-        private val ICON_TOP_Y = floatArrayOf(75f, 71.4f, 75f, 75f)
         private val ICON_TOP = arrayOf("back@49.4x51.4", "search@49.4x51.4",
             "bookmark@49.4x51.4", "more")
 
@@ -242,9 +246,6 @@ class ReaderMenu(private val ink: Ink, private val icons: Icons) {
         private const val BTN_SEAT_Y = 1664.5f
         private const val BTN_ICON_W = 54.8f
         private const val BTN_ICON_H = 57.1f
-        /** Иконки ряда: 133.5 / 396.7 / 660 / 923.2 / 1186.5, y 1699.4 (слой «Иконка»). */
-        private val BTN_ICON_X = floatArrayOf(133.5f, 396.7f, 660f, 923.2f, 1186.5f)
-        private const val BTN_ICON_Y = 1699.4f
         private val BTN_LABEL = arrayOf("Оглавление", "Текст", "Контраст", "Вслух", "Ещё")
         private val BTN_ICON = arrayOf("chapters@54.8x57.1", "font@54.8x57.1",
             "contrast@54.8x57.1", "tts", "more@54.8x57.1")

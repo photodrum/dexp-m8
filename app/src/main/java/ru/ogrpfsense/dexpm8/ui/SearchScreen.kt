@@ -219,7 +219,7 @@ class SearchScreen(act: EinkActivity) : Screen(act) {
 
     private fun header(c: Canvas) {
         ink.convex(c, 41f, 113.5f, 107f, 112f, R_ROUND)
-        icons.draw(c, "back@12.3x26.6", 87.9f, 155.3f, 12.3f, 26.6f)
+        icons.drawRound(c, "back@12.3x26.6", 41f, 113.5f, 107f, 112f, 12.3f, 26.6f)
         ink.text(c, "Поиск", 176f, T.base(105f, T.TS_TITLE, 1.25f), T.TS_TITLE, 700, T.G1)
         val sub = when {
             query.isBlank() -> "Название, автор или серия"
@@ -242,7 +242,7 @@ class SearchScreen(act: EinkActivity) : Screen(act) {
         ink.text(c, s, 154f, base, T.TS_LABEL_L, 600, T.G1)
         if (kbOpen) ink.rect(c, 158f + ink.measure(s, T.TS_LABEL_L, 600), 272f, 4f, 56f, T.G1)
         ink.convex(c, 1262f, 256f, 87f, 92f, 41f)
-        icons.draw(c, "close", 1298.1f, 292.1f, 15.8f, 17.4f)
+        icons.drawRound(c, "close", 1262f, 256f, 87f, 92f, 15.8f, 17.4f)
     }
 
     private fun tabs(c: Canvas) {
@@ -324,8 +324,8 @@ class SearchScreen(act: EinkActivity) : Screen(act) {
     private fun pager(c: Canvas) {
         ink.convex(c, 41.1f, 1708.3f, 121.6f, 127.1f, R_PAGE)
         ink.convexDark(c, 1240.4f, 1708.3f, 121.6f, 127.1f, R_PAGE)
-        icons.draw(c, "back@54.8x57.1", 75f, 1743.2f, 54.8f, 57.1f)
-        icons.draw(c, "next@53x53", 1275.1f, 1743f, 53f, 53f)
+        icons.drawRound(c, "back@54.8x57.1", 41.1f, 1708.3f, 121.6f, 127.1f, 54.8f, 57.1f)
+        icons.drawRound(c, "next@53x53", 1240.4f, 1708.3f, 121.6f, 127.1f, 53f, 53f)
         ink.textCenter(c, "${page + 1} / ${totalPages()}", 0f, W,
             T.base(1738.3f, T.TS_PAGE, 1.25f), T.TS_PAGE, 600, T.G1)
     }

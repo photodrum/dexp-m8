@@ -58,7 +58,7 @@ class DownloadsScreen(act: EinkActivity) : Screen(act) {
 
     private fun header(c: Canvas) {
         ink.convex(c, 41.1f, 112.9f, 106.9f, 112.4f, R_BACK)
-        icons.draw(c, "back", 71.3f, 143f, 47.5f, 49.5f)
+        icons.drawRound(c, "back", 41.1f, 112.9f, 106.9f, 112.4f, 47.5f, 49.5f)
         ink.text(c, "Загрузки", 175.5f, T.base(105f, T.TS_TITLE, 1.2f), T.TS_TITLE, 700, T.G1)
         val run = items.count { it.state == Downloads.S_RUN }
         val wait = items.count { it.state == Downloads.S_WAIT }
@@ -147,11 +147,11 @@ class DownloadsScreen(act: EinkActivity) : Screen(act) {
     private fun paging(c: Canvas) {
         if (items.size <= PER_PAGE) return
         ink.convex(c, 41.1f, 1708.3f, 121.6f, 127.1f, T.R_BUTTON)
-        icons.draw(c, "back", 75.9f, 1743f, 53f, 55.2f)
+        icons.drawRound(c, "back", 41.1f, 1708.3f, 121.6f, 127.1f, 53f, 55.2f)
         ink.textCenter(c, "${page + 1} / ${pages()}", 0f, W, T.base(1738.3f, T.TS_PAGE, 1.25f),
             T.TS_PAGE, 600, T.G1)
         ink.convexDark(c, 1240.4f, 1708.3f, 121.6f, 127.1f, T.R_BUTTON)
-        icons.draw(c, "next@53x53", 1275.1f, 1743f, 53f, 53f)
+        icons.drawRound(c, "next@53x53", 1240.4f, 1708.3f, 121.6f, 127.1f, 53f, 53f)
     }
 
     private fun pages(): Int = (items.size + PER_PAGE - 1) / PER_PAGE

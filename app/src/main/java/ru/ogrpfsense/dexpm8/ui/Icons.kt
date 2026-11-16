@@ -4,6 +4,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.RectF
 
 /**
  * Иконки оболочки. Каждая — набор примитивов ровно в той геометрии, что лежит
@@ -31,7 +32,15 @@ class Icons {
         val round: Boolean
     )
 
-    private class Spec(val w: Float, val h: Float, val prims: Array<Prim>)
+    private class Spec(
+        val w: Float, val h: Float, val prims: Array<Prim>,
+        /**
+         * Рамка видимого контура иконки: белый блик макета (+2.8,+2.8) в неё не входит,
+         * у штриховых примитивов учтена полутолщина. Нужна для центрирования: у половины
+         * иконок рисунок смещён внутри своей рамки, и без этого иконка в круге «висит».
+         */
+        val ink: RectF
+    )
 
     private val specs = HashMap<String, Spec>(64)
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG or Paint.DITHER_FLAG).apply { style = Paint.Style.FILL }
@@ -51,6 +60,8 @@ class Icons {
         val w = parts[1].toFloat()
         val h = parts[2].toFloat()
         val list = ArrayList<Prim>(parts.size - 3)
+        val inkBox = RectF(Float.MAX_VALUE, Float.MAX_VALUE, -Float.MAX_VALUE, -Float.MAX_VALUE)
+        var inkAny = false
         for (i in 3 until parts.size) {
             val tk = parts[i].trim().split(' ')
             if (tk.size < 6) continue
@@ -78,8 +89,26 @@ class Icons {
                 Path().apply { parseSvg(this, tk.subList(colIdx + 1, tk.size).joinToString(" ")) }
             } else null
             list.add(Prim(t, x, y, pw, ph, rad, realSw, color, d, round))
+            // Видимый контур: белый блик макета не берём (он раздут вправо-вниз и уводит
+            // центр), у path объявленная рамка не совпадает с самим рисунком — берём фактические
+            // границы пути; штрих расширяет контур на полтолщины.
+            if (color != Color.WHITE) {
+                val half = realSw / 2f
+                val box = RectF(x - half, y - half, x + pw + half, y + ph + half)
+                if (t == 'p' && d != null) d.computeBounds(box, true); box.inset(-half, -half)
+                if (!inkAny) { inkBox.set(box); inkAny = true } else unionInk(inkBox, box)
+            }
         }
-        specs[name] = Spec(w, h, list.toTypedArray())
+        if (!inkAny) inkBox.set(0f, 0f, w, h)
+        specs[name] = Spec(w, h, list.toTypedArray(), inkBox)
+    }
+
+    /** Дополнить рамку [acc] рамкой [r]: объединение габаритов. */
+    private fun unionInk(acc: RectF, r: RectF) {
+        acc.left = Math.min(acc.left, r.left)
+        acc.top = Math.min(acc.top, r.top)
+        acc.right = Math.max(acc.right, r.right)
+        acc.bottom = Math.max(acc.bottom, r.bottom)
     }
 
     /**
@@ -124,6 +153,72 @@ class Icons {
     }
 
     fun has(name: String) = specs.containsKey(name)
+
+    /**
+     * Рисует иконку по центру выпуклой круглой клавиши.
+     *
+     * [bx], [by], [bw], [bh] — габарит кнопки, те же числа, что получает `Ink.convex`:
+     * видимая поверхность G14 там меньше на тень и сдвинута на `SURFACE_DX/DY`, поэтому
+     * иконка, поставленная в центр габарита, уезжает вниз-вправо на (2.8, 7.3)/2+2.8.
+     * Сам рисунок иконки сдвигается как единое целое — рамка макета остаётся как была:
+     * дизайнер уже выставил в ней оптический центр фигуры (у шеврона bbox смещён от центра).
+     *
+     * [iw], [ih] — рамка иконки, как её передают в [draw]; размер не меняется,
+     * меняется только положение.
+     */
+    fun drawRound(c: Canvas, name: String, bx: Float, by: Float, bw: Float, bh: Float,
+                  iw: Float, ih: Float) {
+        val s = specs[name] ?: return
+        val d = disc(bx, by, bw, bh)
+        drawAt(c, s, d[0], d[1], iw, ih)
+    }
+
+    /** Иконка по центру вдавленной круглой клавиши (`Ink.inset`): центр — середина габарита. */
+    fun drawInset(c: Canvas, name: String, x: Float, y: Float, w: Float, h: Float,
+                  iw: Float, ih: Float) {
+        val s = specs[name] ?: return
+        drawAt(c, s, x + w / 2f, y + h / 2f, iw, ih)
+    }
+
+    /** Иконка с центром контура в ([cx], [cy]) — для клавиш с собственной обёрткой. */
+    fun drawCentered(c: Canvas, name: String, cx: Float, cy: Float, iw: Float, ih: Float) {
+        val s = specs[name] ?: return
+        drawAt(c, s, cx, cy, iw, ih)
+    }
+
+    /**
+     * Центр видимого диска выпуклой круглой клавиши.
+     *
+     * `Ink.convex` рисует три слоя: тень G10 @ +4.6,+10.1, блик G15 @ 0,0 и поверхность G14
+     * @ +2.8,+2.8, все размером W−4.6 × H−10.1. Тень внизу-справа — это не кнопка, а её
+     * отброшенная тень, поэтому силуэт кнопки = объединение блика и поверхности: он начинается
+     * в (bx, by) и на 1.8/7.3 больше слоя. Центр этого силуэта и есть оптический центр.
+     */
+    private fun disc(bx: Float, by: Float, bw: Float, bh: Float): FloatArray {
+        val dw = bw - T.SHADOW_DX
+        val dh = bh - T.SHADOW_DY
+        return floatArrayOf(bx + (dw + T.SURFACE_DX) / 2f, by + (dh + T.SURFACE_DY) / 2f)
+    }
+
+    /**
+     * Рисует [s] так, чтобы центр её видимого контура [Spec.ink] попал в ([cx], [cy]),
+     * при габарите рамки [iw] × [ih]. Пропорции сохраняются.
+     *
+     * Центр берётся по контуру, а не по рамке: у части иконок рисунок смещён внутри рамки
+     * (у шеврона `back` — на 0.95 влево-вверх), и тогда в круге он выглядит «висящим».
+     */
+    private fun drawAt(c: Canvas, s: Spec, cx: Float, cy: Float, iw: Float, ih: Float) {
+        val sx = iw / s.w
+        val sy = ih / s.h
+        val sc = if (sx < sy) sx else sy
+        val ox = cx - ((s.ink.left + s.ink.right) / 2f) * sc
+        val oy = cy - ((s.ink.top + s.ink.bottom) / 2f) * sc
+        val saved = c.save()
+        c.translate(ox, oy)
+        c.scale(sc, sc)
+        for (p in s.prims) drawPrim(c, p)
+        c.restoreToCount(saved)
+    }
 
     /**
      * Рисует иконку в прямоугольник [x, y, w, h]. Пропорции сохраняются,

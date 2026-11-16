@@ -215,9 +215,11 @@ class TocScreen(private val ink: Ink, private val icons: Icons) {
 
     private fun pager(c: Canvas, page: Int, count: Int) {
         circle(c, 41.1f, 1708.3f, T.G14, T.G15, T.G10, 117f)
-        icons.draw(c, "back@54.8x57.1", 75f, 1743.2f, 54.8f, 57.1f)
+        icons.drawRound(c, "back@54.8x57.1", 41.1f, 1708.3f, 117f + T.SHADOW_DX,
+            117f + T.SHADOW_DY, 54.8f, 57.1f)
         circle(c, 1240.4f, 1708.3f, T.G3, T.G6, T.G8, 117f)
-        icons.draw(c, "next@53x53", 1275.1f, 1743f, 53f, 53f)
+        icons.drawRound(c, "next@53x53", 1240.4f, 1708.3f, 117f + T.SHADOW_DX,
+            117f + T.SHADOW_DY, 53f, 53f)
         ink.textCenter(c, "${page + 1} / $count", 0f, D_W,
             T.base(1738.3f, T.TS_PAGE, 1.25f), T.TS_PAGE, 600, T.G1)
     }

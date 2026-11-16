@@ -174,7 +174,7 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
      */
     private fun header(c: Canvas) {
         ink.convex(c, 41.1f, 112.9f, 106.9f, 112.4f, R_BACK)
-        icons.draw(c, "back", 71.3f, 143f, 47.5f, 49.5f)
+        icons.drawRound(c, "back", 41.1f, 112.9f, 106.9f, 112.4f, 47.5f, 49.5f)
         val head = if (inSlice) title.ifEmpty { catTitle } else catTitle.ifEmpty { title }
         ink.text(c, ink.ellipsize(head.ifEmpty { "Каталог" }, 900f, T.TS_TITLE, 700), 175.5f,
             T.base(105f, T.TS_TITLE, 1.2f), T.TS_TITLE, 700, T.G1)
@@ -196,7 +196,7 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
         if (kbOpen) ink.rect(c, 157.6f + ink.measure(s, T.TS_LABEL_L, 600), 272f, 4f, 56f, T.G1)
         // «×» — круглая клавиша из B21 (1262,256 87×92): очистить запрос и вернуть корень.
         ink.convex(c, 1262f, 256f, 87f, 92f, 41f)
-        icons.draw(c, "close", 1298.1f, 292.1f, 15.8f, 17.4f)
+        icons.drawRound(c, "close", 1262f, 256f, 87f, 92f, 15.8f, 17.4f)
     }
 
     /** Четыре сегмента «Новые / Авторы / Серии / Жанры» — желоб 43.9,387.6 1316.2×87.8. */
@@ -268,7 +268,7 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
             else -> null
         }
         if (icon != null) {
-            icons.draw(c, icon, 126.8f, y + 39.1f, 38.4f, 40f)
+            icons.drawRound(c, icon, 88f, y, 115f, 120f, 38.4f, 40f)
         } else {
             // Инициалы: рамка B64 91,y+3 110×110 с va:center, центр = центр круга y+57.75,
             // верх строки 57.75 − 36·1.25/2 = y+35.25, базовая y+71.5 (было y+44.1 — на 8.6 ниже).
@@ -325,7 +325,7 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
 
     private fun downloadButton(c: Canvas, y: Float) {
         ink.convex(c, 1211.1f, y + 27.7f, 106.9f, 112.4f, R_BACK)
-        icons.draw(c, "download", 1241.3f, y + 57.8f, 47.5f, 49.5f)
+        icons.drawRound(c, "download", 1211.1f, y + 27.7f, 106.9f, 112.4f, 47.5f, 49.5f)
     }
 
     /** «Скачивается»: дорожка 219.4×29.2, десять делений, «60%» правым краем 1316. */
@@ -374,11 +374,11 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
 
     private fun paging(c: Canvas) {
         ink.convex(c, 41.1f, 1708.3f, 121.6f, 127.1f, T.R_BUTTON)
-        icons.draw(c, "back", 75.9f, 1743f, 53f, 55.2f)
+        icons.drawRound(c, "back", 41.1f, 1708.3f, 121.6f, 127.1f, 53f, 55.2f)
         ink.textCenter(c, "${page + 1} / ${pages()}", 0f, W, T.base(1738.3f, T.TS_PAGE, 1.25f),
             T.TS_PAGE, 600, T.G1)
         ink.convexDark(c, 1240.4f, 1708.3f, 121.6f, 127.1f, T.R_BUTTON)
-        icons.draw(c, "next@53x53", 1275.1f, 1743f, 53f, 53f)
+        icons.drawRound(c, "next@53x53", 1240.4f, 1708.3f, 121.6f, 127.1f, 53f, 53f)
     }
 
     private fun pages(): Int = (rows.size + perPage() - 1) / perPage()
