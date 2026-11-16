@@ -101,6 +101,12 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
     private var gen = 0
     /** Меняется при каждом листании: подсчёт кадров в очереди движка по нему отсекается. */
     private var epoch = 0
+    /**
+     * Страница, которую просят кнопки листания меню B9 (замечание 2026-11-16). Пока движок
+     * рисует предыдущую страницу, `cur` ещё старый, поэтому нажатия складываются от последней
+     * запрошенной страницы, а не от показанной. −1 — никто не просит.
+     */
+    @Volatile private var wantPage = -1
     private var attached = false
     /** Страниц перевёрнуто: каждое [FULL_EVERY]-е — полная перерисовка (B37). */
     private var flips = 0
@@ -303,6 +309,9 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
     private fun openMenu() {
         if (menuOpen || loading || pages <= 0) return
         menuOpen = true
+        // Кнопки листания отсчитывают от последней запрошенной страницы: за время, пока меню
+        // было закрыто, могли листать третями — начинаем от той, что на экране.
+        wantPage = -1
         // Состояние «Закладка» узнаём у базы, но позицию спрашивает движок — только в его
         // потоке (`Engine.pos` читает разметку). До ответа клавиша выпуклая.
         marked = false
@@ -891,6 +900,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         prevPage = -1
         prevShown = null
         panLast = null
+        wantPage = -1
         auto.clear()
         pan.clear()
     }
@@ -968,7 +978,10 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
     private fun show(page: Int, dir: Int) {
         if (loading) return             // книга ещё открывается, листать нечего
         if (page < 0 || page >= pages) return
-        if (page == shownPage && nextPage == -1) return    // уже на экране
+        if (page == shownPage && nextPage == -1) {    // уже на экране
+            if (wantPage == page) wantPage = -1
+            return
+        }
         val my = ++epoch
         Engine.worker.execute { showLocked(page, dir, my) }
     }
@@ -983,6 +996,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
             nextPage = -1
             shownPage = page
             cur = page
+            if (wantPage == page) wantPage = -1
             chapter(page)
             flips++
             if (flips % SAVE_EVERY == 0) savePlace()
@@ -1179,6 +1193,8 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         shownB = !shownB
         shownPage = page
         nextPage = -1
+        // Кнопки листания меню B9 отсчитывают от последней запрошенной страницы — она показана.
+        if (wantPage == page) wantPage = -1
     }
 
     /**
@@ -1265,9 +1281,11 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         // B9 «Меню чтения»: пока открыто, касания только его.
         if (menuOpen) {
             when (menu.hit(x, y, Engine.djvu)) {
-                ReaderMenu.ACT_CLOSE -> closeMenu()
-                ReaderMenu.ACT_PREV -> { closeMenu(); back() }
-                ReaderMenu.ACT_NEXT -> { closeMenu(); forward() }
+                ReaderMenu.ACT_CLOSE -> closeBook()
+                // Листание из меню (замечание 2026-11-16): меню остаётся открытым — человек
+                // листает несколько страниц подряд и видит на панели, где он оказался.
+                ReaderMenu.ACT_PREV -> step(-1)
+                ReaderMenu.ACT_NEXT -> step(1)
                 ReaderMenu.ACT_TOC -> { closeMenu(); openToc() }
                 ReaderMenu.ACT_SCALE -> { closeMenu(); openSheet() }
                 // «Текст» у crengine — лист B4 «Типографика» (R3.5); у DjVu это «Масштаб».
@@ -1420,6 +1438,73 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
     private fun forward() = show(cur + 1, 1)
 
     private fun back() = show(cur - 1, -1)
+
+    /**
+     * Листание кнопками нижней панели меню B9 (замечание 2026-11-16): страница переворачивается,
+     * **меню остаётся открытым** — им листают несколько страниц подряд, и на панели видно, где
+     * человек оказался.
+     *
+     * Отсчёт идёт от [wantPage], а не от [cur]: движок рисует страницу в своём потоке, поэтому
+     * два быстрых нажатия подряд иначе слились бы в один переворот — второе считалось бы от ещё
+     * не обновлённой `cur`. [wantPage] сбрасывается, когда запрошенная страница действительно
+     * показана ([showLocked]).
+     */
+    private fun step(dir: Int) {
+        if (loading || pages <= 0) return
+        val from = if (wantPage >= 0) wantPage else cur
+        val target = (from + dir).coerceIn(0, pages - 1)
+        if (target == from) {
+            Trace.step("b3: меню листание $dir — край книги стр.${from + 1}/$pages")
+            return
+        }
+        if (target == shownPage && nextPage == -1) {
+            // Качнули вперёд и сразу назад, пока движок не успел: страница та же, что на экране.
+            wantPage = -1
+            Trace.step("b3: меню листание $dir — вернулись на стр.${target + 1}/$pages")
+            return
+        }
+        wantPage = target
+        show(target, dir)
+        // Пересчёт «Закладки» — только для этой отрисовки: следующее нажатие сменит [epoch],
+        // и этот блок выйдет, не тронув клавишу. Лишнего кадра не заказываем — перерисовка
+        // нужна, только если состояние клавиши изменилось.
+        val my = epoch
+        Engine.worker.execute {
+            if (my != epoch) return@execute
+            val was = marked
+            refreshMark()
+            if (was != marked) post { if (attached && menuOpen) redraw() }
+        }
+        Trace.step("b3: меню листание $dir -> стр.${target + 1}/$pages")
+    }
+
+    /**
+     * «Назад» в шапке меню B9 (замечание 2026-11-16): закрыть книгу и оказаться там, откуда её
+     * открыли — главный экран (B1), библиотека, полка, карточка B12: экран читалки снимается
+     * со стека, и оболочка показывает предыдущий.
+     *
+     * Раньше кнопка только закрывала меню, и это выглядело как «вернулся на страницу книги».
+     * Клавиша «Назад» системы при этом не меняется: она по-прежнему сначала закрывает листы
+     * и меню ([backPressed]) — иначе из книги нельзя было бы выйти без потери меню.
+     *
+     * Место чтения сохраняет [onDetachedFromWindow] вместе с закрытием документа — здесь
+     * сохранять нечего.
+     */
+    private fun closeBook() {
+        if (loading) return      // B58: открытие ещё идёт, у него своя «Отмена»
+        // Кнопка меню значит «закрыть книгу», а не «закрыть то, что лежит поверх»: иначе
+        // `EinkActivity.onBackPressed` отдал бы нажатие экрану и, например, погасил диалог B45.
+        // Все свои оверлеи снимаем сами — экран уходит из книги с чистым состоянием.
+        menuOpen = false
+        tocOpen = false
+        gotoOpen = false
+        typoOpen = false
+        sheetOpen = false
+        dialogOpen = false
+        badPage = -1
+        Trace.step("b3: назад в оболочку со стр.${cur + 1}/$pages")
+        act.onBackPressed()
+    }
 
     /**
      * Физические клавиши книги (см. шапку класса). Возвращает true, если клавиша наша.
