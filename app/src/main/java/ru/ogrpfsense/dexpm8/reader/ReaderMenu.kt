@@ -24,29 +24,37 @@ import ru.ogrpfsense.dexpm8.ui.T
  * Затемнения под меню нет: страница остаётся как есть, панели просто лежат поверх — так же,
  * как лист B31 и шторка B4 (`docs/READER_SPEC.md`, «листы и диалоги без затемнения»).
  *
- * Кнопки, чьих экранов ещё нет (Поиск — B28, Закладка — B27, Контраст — B37, Вслух — R6,
- * «Ещё» — борда нет), нарисованы по макету, но касание не ловят; вопрос в `DESIGN_QUESTIONS.md`.
- * Живые: «Назад» (закрыть меню), листание, Оглавление (B10) и «Текст» — у crengine лист B4
- * «Типографика», у DjVu «Масштаб» (лист B31, решение пользователя 2026-11-15): у скана нет кегля.
+ * Кнопки, чьих экранов ещё нет (Поиск — B28, Контраст — B37, Вслух — R6, «Ещё» — борда нет),
+ * нарисованы по макету, но касание не ловят; вопрос в `DESIGN_QUESTIONS.md`.
+ * Живые: «Назад» (закрыть меню), «Закладка» (поставить/снять закладку на текущей странице,
+ * R4.1), листание, Оглавление (B10) и «Текст» — у crengine лист B4 «Типографика», у DjVu
+ * «Масштаб» (лист B31, решение пользователя 2026-11-15): у скана нет кегля.
  *
  * Состояние держит экран ([ReaderScreen]): меню получает надписи и значения в [draw], что нажали —
  * возвращает кодом действия. Своих копий у него нет.
  */
 class ReaderMenu(private val ink: Ink, private val icons: Icons) {
 
-    /** Нарисовать обе панели поверх страницы. */
+    /**
+     * Нарисовать обе панели поверх страницы. [marked] — на текущей странице есть закладка
+     * (R4.1): клавиша «Закладка» в шапке тогда вдавлена, как выбранный вариант на B39.
+     */
     fun draw(c: Canvas, title: String, sub: String, place: String,
-             pages: Int, cur: Int, djvu: Boolean) {
-        top(c, title, sub)
+             pages: Int, cur: Int, djvu: Boolean, marked: Boolean) {
+        top(c, title, sub, marked)
         bottom(c, place, pages, cur, djvu)
     }
 
     // ------------------------------------------------------------------ верх
 
-    private fun top(c: Canvas, title: String, sub: String) {
+    private fun top(c: Canvas, title: String, sub: String, marked: Boolean) {
         ink.convex(c, PANEL_X, PANEL_Y, PANEL_W, TOP_H, 0f)
         for (i in 0 until 4) {
-            circle(c, KEY_TOP_X[i], KEY_TOP_Y, TOP_KEY_D)
+            // Вида «закладка поставлена» в макете нет: показываем вдавленной клавишей, как
+            // выбранный вариант зон касаний на B39. Иконка одна и та же (`bookmark`).
+            if (i == KEY_MARK && marked) ink.inset(c, KEY_TOP_X[i], KEY_TOP_Y, TOP_KEY_D,
+                TOP_KEY_D, TOP_KEY_D / 2f)
+            else circle(c, KEY_TOP_X[i], KEY_TOP_Y, TOP_KEY_D)
             icons.draw(c, ICON_TOP[i], ICON_TOP_X[i], ICON_TOP_Y[i], TOP_ICON_W, TOP_ICON_H)
         }
         val lf = T.literata(ink.res, 600)
@@ -120,8 +128,14 @@ class ReaderMenu(private val ink: Ink, private val icons: Icons) {
             if (y < KEY_TOP_Y || y > KEY_TOP_Y + TOP_KEY_D) return ACT_NONE
             for (i in 0 until 4) {
                 if (x >= KEY_TOP_X[i] - HIT_PAD && x <= KEY_TOP_X[i] + TOP_KEY_D + HIT_PAD) {
-                    // Живая из верхних клавиш одна: «Назад» закрывает меню.
-                    return if (i == 0) ACT_CLOSE else ACT_NONE
+                    // Живые верхние клавиши: «Назад» закрывает меню, «Закладка» ставит и снимает
+                    // закладку на текущей странице (R4.1, B27). «Поиск» (B28) и «Ещё» (борда нет)
+                    // ждут своих этапов — касание пока только закрывает меню.
+                    return when (i) {
+                        0 -> ACT_CLOSE
+                        2 -> ACT_MARK
+                        else -> ACT_NONE
+                    }
                 }
             }
             return ACT_NONE
@@ -164,6 +178,8 @@ class ReaderMenu(private val ink: Ink, private val icons: Icons) {
         const val ACT_SCALE = 6
         /** B29 «Переход на страницу» — шкала и подпись «Стр. N из M» нижней панели. */
         const val ACT_GOTO = 7
+        /** «Закладка» в шапке — поставить или снять закладку на текущей странице (R4.1). */
+        const val ACT_MARK = 8
 
         // Полосы: макет −10.1,−10.1 1423.2×222.1 и −10.1,1423.2 1423.2×463.4 (габарит с тенью).
         private const val PANEL_X = -10.1f
@@ -178,6 +194,8 @@ class ReaderMenu(private val ink: Ink, private val icons: Icons) {
         private val KEY_TOP_X = floatArrayOf(41.1f, 1021f, 1138f, 1255f)
         private const val KEY_TOP_Y = 44.8f
         private const val TOP_KEY_D = 102.4f
+        /** Индекс клавиши «Закладка» в [KEY_TOP_X]: по нему меню показывает поставленную закладку. */
+        private const val KEY_MARK = 2
         private const val TOP_ICON_W = 49.4f
         private const val TOP_ICON_H = 51.4f
         private val ICON_TOP_X = floatArrayOf(70.4f, 1050.3f, 1167.3f, 1284.3f)

@@ -118,6 +118,11 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
     private val menu = ReaderMenu(ink, icons)
     /** Открыто меню B9. */
     private var menuOpen = false
+    /**
+     * На текущей странице стоит закладка (R4.1): кнопка «Закладка» в меню B9 рисуется вдавленной.
+     * Считается при открытии меню и после каждого нажатия — база, а не догадка.
+     */
+    private var marked = false
     // --- B10 «Оглавление» (R3.2): полноэкранный список поверх страницы
     private val tocView = TocScreen(ink, icons)
     /** Открыт список B10. */
@@ -256,7 +261,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         val b = if (shownB) bmpB else bmpA
         if (b != null) c.drawBitmap(b, null, dst, pagePaint)
         if (pages > 0) footer(c)
-        if (menuOpen) menu.draw(c, title, menuSub(), menuPlace(), pages, cur, Engine.djvu)
+        if (menuOpen) menu.draw(c, title, menuSub(), menuPlace(), pages, cur, Engine.djvu, marked)
         if (dim >= 0) dimEnd(c, dim)
         if (opening) openDialog.draw(c)
         if (dialogOpen) dialog.draw(c)
@@ -287,8 +292,74 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
     private fun openMenu() {
         if (menuOpen || loading || pages <= 0) return
         menuOpen = true
+        // Состояние «Закладка» узнаём у базы, но позицию спрашивает движок — только в его
+        // потоке (`Engine.pos` читает разметку). До ответа клавиша выпуклая.
+        marked = false
         redraw()
         Trace.step("b3: menu open")
+        Engine.worker.execute {
+            refreshMark()
+            post { if (attached && menuOpen) redraw() }
+        }
+    }
+
+    /**
+     * Пересчитать [marked] для текущей страницы (R4.1). Позиция — `Engine.pos(cur)`, то есть
+     * та же xpointer, что лежит в базе у закладки: сравнение идёт по тексту, а не по номеру
+     * страницы, поэтому после смены кегля закладка остаётся «на месте».
+     *
+     * Только в `Engine.worker`: `Engine.pos` читает разметку движка.
+     */
+    private fun refreshMark() {
+        val e = entry
+        if (e == null || e.id <= 0) { marked = false; return }
+        val pos = try { Engine.pos(cur) } catch (t: Throwable) { null }
+        marked = try { !pos.isNullOrEmpty() && act.db.hasMark(e.id, pos) }
+        catch (t: Throwable) {
+            Trace.step("b3: hasMark FAIL ${t.javaClass.simpleName}: ${t.message}")
+            false
+        }
+    }
+
+    /**
+     * Поставить или снять закладку на текущей странице (R4.1, кнопка «Закладка» меню B9).
+     *
+     * Позицию берём у движка в его потоке (`Engine.pos`) — это тот же вызов, которым читалка
+     * сохраняет место чтения, значит закладка и `books.pos` всегда об одном тексте.
+     * Строка в базе — снимок «страница, глава, первые слова»: список B27 (следующий шаг)
+     * покажет её, не открывая книгу.
+     *
+     * Меню остаётся открытым: человек видит, что клавиша стала вдавленной (или перестала).
+     */
+    private fun toggleMark() {
+        val e = entry ?: return
+        if (e.id <= 0 || pages <= 0) return
+        val page = cur
+        val chapter = chapterTitle.ifEmpty { null }
+        val txt = try { Engine.pageText() } catch (t: Throwable) { null }
+        Engine.worker.execute {
+            val pos = try { Engine.pos(page) } catch (t: Throwable) { null }
+            if (pos.isNullOrEmpty()) {
+                Trace.step("b3: mark — позиции нет")
+                return@execute
+            }
+            val removed = try { act.db.removeMark(e.id, pos) } catch (t: Throwable) { false }
+            if (!removed) {
+                val line = txt?.replace('\u00A0', ' ')?.trim()?.take(MARK_TEXT_MAX)
+                try {
+                    act.db.addMark(e.id, pos, page, chapter, line)
+                } catch (t: Throwable) {
+                    Trace.step("b3: addMark FAIL ${t.javaClass.simpleName}: ${t.message}")
+                    return@execute
+                }
+            }
+            Trace.step("b3: mark ${if (removed) "снята" else "поставлена"} стр.${page + 1}")
+            post {
+                if (!attached) return@post
+                refreshMark()
+                redraw()
+            }
+        }
     }
 
     private fun closeMenu() {
@@ -1072,8 +1143,11 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
 
                 // Шкала и подпись «Стр. N из M» на нижней панели — дверь в B29 (R3.3).
                 ReaderMenu.ACT_GOTO -> { closeMenu(); openGoto() }
-                // Мимо меню — закрыть. «Текст» у crengine (B4), «Контраст», «Вслух» и «Ещё»
-                // ждут своих этапов: кнопки нарисованы, касание пока только закрывает меню.
+                // «Закладка» в шапке (R4.1): поставить или снять на текущей странице. Меню
+                // остаётся открытым — видно, что клавиша стала вдавленной (или перестала).
+                ReaderMenu.ACT_MARK -> toggleMark()
+                // Мимо меню — закрыть. «Контраст», «Вслух» и «Ещё» ждут своих этапов:
+                // кнопки нарисованы, касание пока только закрывает меню.
                 else -> closeMenu()
             }
             return
@@ -1317,6 +1391,8 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         /** Свайп листания (B39 «Листать свайпом»): порог хода и перевес горизонтали. */
         private const val SWIPE_MIN = 120f
         private const val SWIPE_ASPECT = 2f
+        /** Сколько символов текста страницы хранить в закладке (R4.1): одна строка списка B27. */
+        private const val MARK_TEXT_MAX = 120
 
         // --- B31 «Масштаб и поля» (R2.5)
         /** Размер превью листа: 600×820 — слой «Страница DjVu» макета, без обрезки. */

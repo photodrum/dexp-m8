@@ -99,6 +99,7 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         db.execSQL("CREATE INDEX books_opened ON books (opened)")
         createShelves(db)
         createCatalogs(db)
+        createBookmarks(db)
     }
 
     private fun createShelves(db: SQLiteDatabase) {
@@ -141,6 +142,32 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         db.execSQL("CREATE INDEX catalogs_seen ON catalogs (seen)")
     }
 
+    /**
+     * Версия 10: закладки (R4.1, B27). Позиция — движка (`pos`, xpointer у crengine), а не
+     * номер страницы: после смены кегля закладка остаётся на своём тексте (требование R4).
+     *
+     * [text] — первые слова строки, чтобы список читался без открытия книги; [chapter] —
+     * название главы из оглавления на момент постановки. Оба поля — снимок на момент
+     * постановки: если книга изменится, закладка всё равно останется узнаваемой.
+     *
+     * UNIQUE (book_id, pos) — одна закладка на позицию: повторное нажатие «Закладка» снимает
+     * её, а не плодит дубли.
+     */
+    private fun createBookmarks(db: SQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE bookmarks (" +
+                "_id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                "book_id INTEGER NOT NULL," +
+                "pos TEXT NOT NULL," +
+                "page INTEGER NOT NULL DEFAULT 0," +
+                "chapter TEXT," +
+                "text TEXT," +
+                "created INTEGER NOT NULL," +
+                "UNIQUE (book_id, pos))"
+        )
+        db.execSQL("CREATE INDEX bookmarks_book ON bookmarks (book_id, created)")
+    }
+
     // Версия 2: автор и название из имени файла — сбрасываем mtime, и сканер переразберёт все файлы
     // (статус, прогресс и «добавлена» при этом не меняются: upsert обновляет только метаданные).
     // Версия 3: `series_sort` — ключ серии для поиска (B21); заполняем из `series`.
@@ -172,6 +199,8 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         // Версия 9: настройки страницы DjVu — лист B31 «Масштаб и поля» (R2.5). Строка
         // формата `DjvuView.encode()`; пусто = умолчания (по странице, авто-обрезка, без контраста).
         if (oldVersion < 9) db.execSQL("ALTER TABLE books ADD COLUMN view TEXT")
+        // Версия 10: закладки (R4.1, B27) — своя таблица, старые строки не трогаем.
+        if (oldVersion < 10) createBookmarks(db)
     }
 
     /**
@@ -727,6 +756,71 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         writableDatabase.update("books", cv, "_id = ?", arrayOf(id.toString()))
     }
 
+    // ------------------------------------------------------------------ закладки (R4.1)
+
+    /** Закладка книги: позиция движка и то, что видно в списке B27 без открытия книги. */
+    class Mark(
+        val id: Long,
+        val pos: String,
+        val page: Int,
+        val chapter: String?,
+        val text: String?,
+        val created: Long,
+    )
+
+    /**
+     * Поставить закладку на позицию [pos] (R4.1). Повторная постановка на ту же позицию
+     * ничего не меняет (`UNIQUE (book_id, pos)` с `IGNORE`): кнопка «Закладка» в меню B9 —
+     * переключатель, и «поставить дважды» значит «оставить одну».
+     *
+     * [page] — номер страницы на момент постановки: по нему список B27 показывает «Стр. N»,
+     * если книгу нельзя открыть прямо сейчас. Сама навигация идёт по [pos], поэтому после
+     * смены кегля номер в списке может отличаться от фактического — это ожидаемо.
+     */
+    fun addMark(bookId: Long, pos: String, page: Int, chapter: String?, text: String?): Long {
+        val cv = ContentValues(6)
+        cv.put("book_id", bookId)
+        cv.put("pos", pos)
+        cv.put("page", page)
+        cv.put("chapter", chapter)
+        cv.put("text", text)
+        cv.put("created", System.currentTimeMillis())
+        return writableDatabase.insertWithOnConflict("bookmarks", null, cv,
+            SQLiteDatabase.CONFLICT_IGNORE)
+    }
+
+    /** Снять закладку с позиции [pos]. true — строка была и удалена. */
+    fun removeMark(bookId: Long, pos: String): Boolean =
+        writableDatabase.delete("bookmarks", "book_id = ? AND pos = ?",
+            arrayOf(bookId.toString(), pos)) > 0
+
+    /** Есть ли закладка книги на позиции [pos]: по этому меню B9 рисует кнопку нажатой. */
+    fun hasMark(bookId: Long, pos: String): Boolean =
+        writableDatabase.rawQuery("SELECT 1 FROM bookmarks WHERE book_id = ? AND pos = ? LIMIT 1",
+            arrayOf(bookId.toString(), pos)).use { it.moveToFirst() }
+
+    /**
+     * Закладки книги, свежие сверху (список B27). Порядок — по `created`: человек ищет
+     * последнюю закладку, а не первую по тексту.
+     */
+    fun marks(bookId: Long): List<Mark> {
+        val out = ArrayList<Mark>()
+        writableDatabase.rawQuery(
+            "SELECT _id, pos, page, chapter, text, created FROM bookmarks " +
+                "WHERE book_id = ? ORDER BY created DESC", arrayOf(bookId.toString())).use { c ->
+            while (c.moveToNext()) {
+                out.add(Mark(c.getLong(0), c.getString(1), c.getInt(2),
+                    c.getString(3), c.getString(4), c.getLong(5)))
+            }
+        }
+        return out
+    }
+
+    /** Сколько закладок у книги — для подписи вкладки «Закладки · N» (B10/B27). */
+    fun markCount(bookId: Long): Int =
+        writableDatabase.rawQuery("SELECT COUNT(*) FROM bookmarks WHERE book_id = ?",
+            arrayOf(bookId.toString())).use { if (it.moveToFirst()) it.getInt(0) else 0 }
+
     private fun entry(c: Cursor) = Entry(
         id = c.getLong(0), path = c.getString(1), size = c.getLong(2), mtime = c.getLong(3),
         format = c.getString(4), title = c.getString(5),
@@ -748,7 +842,7 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
          * Версия 7: пароль каталога в базе шифруется ключом из `AndroidKeyStore`
          * ([Pass], п. 10.12). Старые открытые пароли перешифровываются при обновлении.
          */
-        const val VERSION = 9
+        const val VERSION = 10
 
         /** Автоматические полки: `_id` отрицательные, в таблице `shelves` их нет. */
         const val SHELF_READING = -1L
