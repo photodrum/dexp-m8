@@ -234,6 +234,61 @@ bool prepare(const char *cacheDir, const char *appFontDir)
 }
 
 /**
+ * Гарнитура B4 против `font-family` книги (замечание 18, 2026-11-16).
+ *
+ * `setDefaultFontFace` — только значение по умолчанию (`PROP_FONT_FACE`): `LVDocView::
+ * setDefaultFontFace` кладёт имя в `m_defaultFontFace` и зовёт перерисовку, а при разборе
+ * CSS имя из книги остаётся в силе. Проверено по коду `LVFontSelector::select`
+ * (`lvfntman.cpp:6704`), порядок там такой:
+ *
+ *   1. каждое имя из `font-family` книги, если семейство зарегистрировано (`findFamily`);
+ *   2. `preferred_family` — предпочтение пользователя (`fontMan->SetPrimaryFont`);
+ *   3. любое семейство нужного generic-типа;
+ *   4. любое зарегистрированное.
+ *
+ * EPUB со своим `@font-face` регистрирует шрифт документа, поэтому шаг 1 всегда срабатывает
+ * и «Гротекс» в B4 не менял ничего (DEVLOG 2026-11-15: 1451 стр. при всех трёх гарнитурах).
+ *
+ * Два рычага, оба штатные:
+ *
+ *  - `fontMan->SetPrimaryFont(face)` — заполняет `_preferred_family`, то есть шаг 2. Без него
+ *    шаг 2 мёртв: `SetAsPreferredFontWithBias` в движке никто не зовёт (проверено по всему
+ *    `third_party/crengine`), и `_preferred_family` остаётся пустым.
+ *  - `crengine.font.family.faces` (`PROP_FONT_FAMILY_FACES` → `setFontFamilyFonts`,
+ *    `lvtinydom.h:2888`): строка через `|`, где `[0]` непустое значит «имена из книги
+ *    отбрасывать», а `[1]…[8]` — имена для восьми generic-семейств в порядке
+ *    `css_font_family_t` (`cssdef.h`): serif, sans-serif, cursive, fantasy, monospace,
+ *    math, emoji, fangsong. В `lvstsheet.cpp:4349` generic-имя в списке `font-family`
+ *    заменяется на наше, а всё левее (имя шрифта книги) вычёркивается — это и нужно для
+ *    книг, где `font-family` вообще без generic-имени.
+ *
+ * Все восемь семейств заполняем одной выбранной гарнитурой: гарнитура в читалке одна, и
+ * `font-family: monospace` из стилей книги тоже должен слушаться B4. Встроенные шрифты книги
+ * при этом **не** отключаются (`crengine.doc.embedded.fonts.enabled` не трогаем) — синтез
+ * начертаний и фолбэк для недостающих символов работают как раньше.
+ */
+lString8 face_family_faces(const char *face)
+{
+    lString8 s("1");                  /* [0] непусто → имена книги отбрасывать */
+    for (int i = 0; i < 8; i++) {     /* [1]…[8] — восемь generic-семейств */
+        s += "|";
+        s += face;
+    }
+    return s;
+}
+
+/**
+ * Прокинуть выбранную гарнитуру в менеджер шрифтов (шаг 2 в `LVFontSelector::select`).
+ * Зовётся при каждой смене гарнитуры и при открытии книги: `_preferred_family` живёт на
+ * процесс (`fontMan` один), но полагаться на это не будем — выставим явно.
+ */
+void apply_preferred_face()
+{
+    if (fontMan)
+        fontMan->SetPrimaryFont(lString8(face_name(g_type.face)));
+}
+
+/**
  * Применить типографику B4 к виду. Зовётся после `LoadDocument` (нужен готовый DOM для
  * перевёрстки) и из `dexp_reader_set_typography` при смене настроек.
  *
@@ -254,7 +309,11 @@ void apply_typography()
 {
     if (!g_view)
         return;
-    g_view->setDefaultFontFace(lString8(face_name(g_type.face)));
+    const char *face = face_name(g_type.face);
+    g_view->setDefaultFontFace(lString8(face));
+    /* Замечание 18: имя из книги сильнее `setDefaultFontFace` — см. face_family_faces(). */
+    g_view->propApply(lString8(PROP_FONT_FAMILY_FACES), Utf8ToUnicode(face_family_faces(face)));
+    apply_preferred_face();
     if (g_type.size > 0)
         g_view->setFontSize(g_type.size);
     g_view->setDefaultInterlineSpace(g_type.interline);
@@ -367,6 +426,16 @@ DEXP_PROBE_API int dexp_reader_open(const char *path, const char *cacheDir,
     g_view->setViewMode(DVM_PAGES, 1);
     g_view->setPageHeaderInfo(PGHDR_NONE);   // колонтитулы рисует оболочка (B3)
     g_view->setDefaultFontFace(lString8(face_name(g_type.face)));
+    /*
+     * Замечание 18: имена generic-семейств и предпочтение пользователя должны быть в силе
+     * ДО первой разметки — `font-family` книги разбирается при загрузке документа
+     * (`lvstsheet.cpp`), и поздняя подмена семейств уже не перепишет стили узлов без
+     * полного `forceReinitStyles`. `apply_typography` ниже выставит их ещё раз: тот же
+     * вызов безопасен и нужен для смены настроек на лету.
+     */
+    g_view->propApply(lString8(PROP_FONT_FAMILY_FACES),
+                      Utf8ToUnicode(face_family_faces(face_name(g_type.face))));
+    apply_preferred_face();
     g_view->Resize(w, h);
     long t1 = now_ms();
 
