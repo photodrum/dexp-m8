@@ -100,8 +100,9 @@ abstract class Screen(protected val act: EinkActivity) : View(act) {
     }
 
     /**
-     * Касание. На E-Ink палец неизбежно «уезжает», поэтому pinch/scroll
-     * намеренно не распознаём: только нажатие → отпускание в той же зоне.
+     * Касание. На E-Ink палец неизбежно «уезжает», поэтому pinch/scroll не распознаём:
+     * только нажатие → отпускание в той же зоне. Свайп — единственное исключение и только
+     * там, где экран его объявил ([onSwipe]): читалка листает им по настройке B39.
      */
     override fun onTouchEvent(e: MotionEvent): Boolean {
         val x = e.x / D.u
@@ -112,13 +113,20 @@ abstract class Screen(protected val act: EinkActivity) : View(act) {
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
-                if (pressed && (Math.abs(x - downX) > 40f || Math.abs(y - downY) > 40f)) pressed = false
+                if (pressed && (Math.abs(x - downX) > MOVE_SLOP || Math.abs(y - downY) > MOVE_SLOP)) {
+                    pressed = false
+                }
                 return true
             }
             MotionEvent.ACTION_UP -> {
                 val ok = pressed
                 pressed = false
-                if (!ok) return true
+                if (!ok) {
+                    // Палец уехал — это не нажатие, и [onUp] уже не будет. Экран получает
+                    // жест целиком и сам решает, свайп ли это (у остальных экранов — нет).
+                    onSwipe(downX, downY, x, y)
+                    return true
+                }
                 // Шторка B5 — раньше элементов экрана: в зоне шторки у экранов ничего не нажимается.
                 if (downY < shadeZone && downX >= ShadeScreen.ZONE_X0 && downX <= ShadeScreen.ZONE_X1) {
                     act.openShade()
@@ -134,6 +142,14 @@ abstract class Screen(protected val act: EinkActivity) : View(act) {
 
     /** Обработка завершённого нажатия в дизайн-координатах. */
     protected open fun onUp(x: Float, y: Float) {}
+
+    /**
+     * Жест: палец уехал от точки нажатия и [onUp] не придёт. По умолчанию жестов нет —
+     * правило 3 `docs/ARCHITECTURE.md`: скролл и pinch не распознаются. Свайп листания
+     * объявляет только читалка (`ReaderScreen.onSwipe`, настройка B39 «Листать свайпом»).
+     * true — жест обработан. Координаты — дизайн-px.
+     */
+    protected open fun onSwipe(x0: Float, y0: Float, x1: Float, y1: Float): Boolean = false
 
     /**
      * Кнопка «Назад» системы. true — экран сам её обработал (закрыл свой лист или диалог),
@@ -156,6 +172,12 @@ abstract class Screen(protected val act: EinkActivity) : View(act) {
     protected fun dimEnd(c: android.graphics.Canvas, layer: Int) = c.restoreToCount(layer)
 
     private companion object {
+        /**
+         * Касание «нажал и отпустил»: `ACTION_MOVE` дальше этого отменяет нажатие (дизайн-px,
+         * ARCHITECTURE, правило 3). Отменённое касание отдаётся в [onSwipe].
+         */
+        const val MOVE_SLOP = 40f
+
         /**
          * Затемнение под шторкой и листами (замечание 15, вариант Б): out = a·in + b, a = 153/238,
          * b = 17·(1 − a). G15 (255) → 170 = G10, G12 (204) → 137 ≈ G8, G1 (17) → 17. Альфа не трогается.

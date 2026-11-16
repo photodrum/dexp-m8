@@ -29,7 +29,8 @@ import java.nio.ByteBuffer
  * Статус-бара на макете нет: на странице книги его роль играют колонтитулы.
  *
  * Листание — трети экрана (левая назад, правая вперёд; центр отдан шторке B5 сверху,
- * шторке B4 и меню B9 — R3, `ShadeScreen.ZONE_READER`) и физические кнопки книги:
+ * шторке B4 и меню B9 — R3, `ShadeScreen.ZONE_READER`), свайп по настройке B39 «Листать
+ * свайпом» ([onSwipe]: влево — вперёд, вправо — назад) и физические кнопки книги:
  * `gpio-keys` отдаёт `KEY_PAGEUP` / `KEY_PAGEDOWN`, `adc-keys` — `KEY_VOLUMEUP` /
  * `KEY_VOLUMEDOWN` (разведка на книге 2026-11-13). Клавиши страниц листают всегда, громкость —
  * по настройке B39 «Кнопки громкости» (`Prefs.volumeKeys`, B39.2). Клавиши приходят из
@@ -1137,6 +1138,33 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         return true
     }
 
+    /**
+     * Свайп листает страницу (настройка B39 «Листать свайпом», `Prefs.swipe`). Правило E-Ink
+     * — «касание — это нажал и отпустил» — здесь расширено единственным жестом и только по
+     * настройке: палец уезжает по экрану на 120 дизайн-px и больше (≈9 % ширины), при этом
+     * горизонталь перевешивает вертикаль вдвое — иначе случайное «уползание» пальца
+     * при листании третями стало бы листанием. Влево — вперёд, вправо — назад, как страницу
+     * в бумажной книге.
+     *
+     * Открытые листы, меню и диалоги жест не принимают — как у клавиш в [key]: пока поверх
+     * страницы что-то лежит, листать нечего.
+     */
+    override fun onSwipe(x0: Float, y0: Float, x1: Float, y1: Float): Boolean {
+        if (!act.prefs.swipe) return false
+        if (dialogOpen || sheetOpen || menuOpen || tocOpen || gotoOpen || typoOpen) return false
+        if (opening || loading || pages <= 0) return false
+        val dx = x1 - x0
+        val dy = y1 - y0
+        if (Math.abs(dx) < SWIPE_MIN || Math.abs(dx) < Math.abs(dy) * SWIPE_ASPECT) return false
+        // Увеличенный скан (B31) сдвигается третями: жест листает только когда сдвигать нечего.
+        val dir = if (dx < 0) 1 else -1
+        if (!panPage(dir)) {
+            if (dir > 0) forward() else back()
+        }
+        Trace.step("b3: swipe ${dx.toInt()},${dy.toInt()} dir=$dir")
+        return true
+    }
+
     /** «Назад»: сначала B10 и меню B9, листы B4 и B31, диалоги, потом уход из книги. */
     override fun backPressed(): Boolean {
         if (typoOpen) {
@@ -1285,6 +1313,10 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
          * подтверждаются на книге.
          */
         private const val MENU_ZONE_Y1 = 1358f
+
+        /** Свайп листания (B39 «Листать свайпом»): порог хода и перевес горизонтали. */
+        private const val SWIPE_MIN = 120f
+        private const val SWIPE_ASPECT = 2f
 
         // --- B31 «Масштаб и поля» (R2.5)
         /** Размер превью листа: 600×820 — слой «Страница DjVu» макета, без обрезки. */
