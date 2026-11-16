@@ -252,9 +252,31 @@ class Ink(ctx: Context) {
             }
             i++
         }
-        if (lineStart < s.length) {
-            c.drawText(s, lineStart, s.length, cx, y, text)
+        // Хвост от последнего переноса до конца строки цикл выше по ширине не проверял (условие
+        // стоит только на пробелах), поэтому последняя группа слов вылезала за полосу — поймано
+        // на B14: «Добавьте адрес OPDS-каталога» уходила за карточку B44. Дожёвываем остаток
+        // теми же правилами: режем по последнему пробелу, который ещё влезает в [maxW].
+        var rest = lineStart
+        while (rest < s.length) {
+            if (text.measureText(s, rest, s.length) <= maxW) {
+                c.drawText(s, rest, s.length, cx, y, text)
+                y += step
+                break
+            }
+            var cut = -1
+            var sp = rest
+            while (sp < s.length && text.measureText(s, rest, sp) <= maxW) {
+                if (s[sp] == ' ') cut = sp
+                sp++
+            }
+            if (cut <= rest) {
+                // Слово шире полосы — девать его некуда: рисуем целиком, как и раньше.
+                cut = s.indexOf(' ', rest)
+                if (cut < 0) cut = s.length
+            }
+            c.drawText(s, rest, cut, cx, y, text)
             y += step
+            rest = cut + 1
         }
         text.textAlign = Paint.Align.LEFT
         return y - T.base(top, size, lh)
