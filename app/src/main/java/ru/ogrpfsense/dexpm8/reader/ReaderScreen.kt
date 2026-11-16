@@ -121,14 +121,24 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
     /**
      * На текущей странице стоит закладка (R4.1): кнопка «Закладка» в меню B9 рисуется вдавленной.
      * Считается при открытии меню и после каждого нажатия — база, а не догадка.
+     *
+     * `volatile`: пишется в потоке движка (`refreshMark`), читается в [render] с UI-потока.
      */
-    private var marked = false
-    // --- B10 «Оглавление» (R3.2): полноэкранный список поверх страницы
+    @Volatile private var marked = false
+    // --- B10 «Оглавление» (R3.2) и B27 «Закладки» (R4.2): одна панель, две вкладки
     private val tocView = TocScreen(ink, icons)
-    /** Открыт список B10. */
+    /** Открыт список B10/B27. */
     private var tocOpen = false
-    /** Страница списка B10 (по 7 пунктов). */
+    /** Открытая вкладка: [TocScreen.TAB_TOC] — оглавление, [TocScreen.TAB_MARKS] — закладки. */
+    private var tocTab = TocScreen.TAB_TOC
+    /** Страница открытой вкладки: 7 пунктов оглавления или 5 закладок. */
     private var tocPage = 0
+    /**
+     * Закладки книги и их число для подписи вкладки (R4.2). Читаются из базы при открытии списка
+     * и после возврата с вкладки закладок — список мог измениться из меню B9.
+     */
+    private var marks: List<LibraryDb.Mark> = emptyList()
+    private var markCnt = 0
     // --- B29 «Переход на страницу» (R3.3): нижний лист с клавиатурой поверх страницы
     private val goto = GotoSheet(ink, icons)
     /** Открыт лист B29. */
@@ -227,10 +237,11 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
             if (dialogOpen) dialog.draw(c)
             return
         }
-        // B10 «Оглавление»: полноэкранный список поверх страницы, страница под ним не рисуется.
+        // B10 «Оглавление» и B27 «Закладки»: полноэкранный список поверх страницы, страница под ним
+        // не рисуется. Заголовок и подписи вкладок — по открытой вкладке.
         if (tocOpen) {
             ink.rect(c, 0f, 0f, W, H, T.BG)
-            tocView.draw(c, "Оглавление", menuSub(), toc, tocPage, hereOf())
+            tocView.draw(c, menuSub(), toc, tocPage, hereOf(), tocTab, marks, markCnt)
             return
         }
         // B29 «Переход на страницу»: та же страница, но приглушённая (макет: текст G10),
@@ -322,41 +333,54 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
     }
 
     /**
-     * Поставить или снять закладку на текущей странице (R4.1, кнопка «Закладка» меню B9).
+     * Поставить закладку на текущей странице (кнопка «Закладка» меню B9).
+     *
+     * Решение пользователя 2026-11-16: **нажатие только ставит закладку**, снимать — крестиком
+     * в списке B27. Раньше кнопка была переключателем, и второе нажатие молча удаляло закладку:
+     * со стороны это выглядело как «нажимаю — ничего не происходит». Повторное нажатие на той же
+     * странице теперь ничего не меняет (`UNIQUE (book_id, pos)` с `CONFLICT_IGNORE`), клавиша
+     * остаётся вдавленной — видно, что закладка уже есть.
      *
      * Позицию берём у движка в его потоке (`Engine.pos`) — это тот же вызов, которым читалка
      * сохраняет место чтения, значит закладка и `books.pos` всегда об одном тексте.
-     * Строка в базе — снимок «страница, глава, первые слова»: список B27 (следующий шаг)
-     * покажет её, не открывая книгу.
+     * Строка в базе — снимок «страница, глава, первые слова»: список B27 покажет её,
+     * не открывая книгу.
      *
-     * Меню остаётся открытым: человек видит, что клавиша стала вдавленной (или перестала).
+     * Меню остаётся открытым: человек видит, что клавиша стала вдавленной.
+     * Поэтому `refreshMark` вызывается здесь же, в [Engine.worker], и только потом `post` —
+     * раньше он стоял внутри `post`, то есть на UI-потоке: `Engine.pos` там возвращал null,
+     * клавиша оставалась выпуклой, и нажатие выглядело как «не работает» (замечание 2026-11-16).
      */
-    private fun toggleMark() {
+    private fun addBookmark() {
         val e = entry ?: return
         if (e.id <= 0 || pages <= 0) return
         val page = cur
         val chapter = chapterTitle.ifEmpty { null }
-        val txt = try { Engine.pageText() } catch (t: Throwable) { null }
         Engine.worker.execute {
+            // `pageText` читает разметку движка — только в его потоке (правило ARCHITECTURE).
+            val txt = try { Engine.pageText() } catch (t: Throwable) { null }
             val pos = try { Engine.pos(page) } catch (t: Throwable) { null }
             if (pos.isNullOrEmpty()) {
                 Trace.step("b3: mark — позиции нет")
                 return@execute
             }
-            val removed = try { act.db.removeMark(e.id, pos) } catch (t: Throwable) { false }
-            if (!removed) {
+            val already = try { act.db.hasMark(e.id, pos) } catch (t: Throwable) { false }
+            if (already) {
+                Trace.step("b3: mark уже есть стр.${page + 1}")
+            } else {
                 val line = txt?.replace('\u00A0', ' ')?.trim()?.take(MARK_TEXT_MAX)
                 try {
                     act.db.addMark(e.id, pos, page, chapter, line)
+                    Trace.step("b3: mark поставлена стр.${page + 1}")
                 } catch (t: Throwable) {
                     Trace.step("b3: addMark FAIL ${t.javaClass.simpleName}: ${t.message}")
                     return@execute
                 }
             }
-            Trace.step("b3: mark ${if (removed) "снята" else "поставлена"} стр.${page + 1}")
+            // Состояние клавиши — здесь: `refreshMark` спрашивает позицию у движка.
+            refreshMark()
             post {
                 if (!attached) return@post
-                refreshMark()
                 redraw()
             }
         }
@@ -369,20 +393,28 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         Trace.step("b3: menu close")
     }
 
-    /** Открыть B10 «Оглавление»: список уже в [toc] (`Engine.toc()` при открытии книги). */
+    /**
+     * Открыть список B10/B27: оглавление уже в [toc] (`Engine.toc()` при открытии книги), закладки
+     * читаются из базы здесь же — их список меняется от кнопки «Закладка» меню B9.
+     *
+     * Открытая вкладка — «Оглавление», а если оглавления нет (часть DjVu без навигации),
+     * то «Закладки»: иначе дверь в список вела бы в пустой экран.
+     */
     private fun openToc() {
         if (tocOpen) return
-        if (toc.isEmpty()) {
-            // Оглавления нет (часть DjVu без навигации) — открывать нечего, меню просто закрылось.
+        reloadMarks()
+        tocTab = if (toc.isEmpty() && markCnt > 0) TocScreen.TAB_MARKS else TocScreen.TAB_TOC
+        if (toc.isEmpty() && markCnt == 0) {
+            // Ни оглавления, ни закладок — открывать нечего, меню просто закрылось.
             Trace.step("b3: toc пусто")
             return
         }
         tocOpen = true
-        // Открываем на странице со текущей главой: иначе искать своё место в длинной книге.
+        // Открываем на странице с текущей главой: иначе искать своё место в длинной книге.
         val here = hereOf()
         tocPage = if (here >= 0) here / TocScreen.ROWS else 0
         redraw()
-        Trace.step("b3: toc open items=${toc.size} page=$tocPage here=$here")
+        Trace.step("b3: toc open items=${toc.size} marks=$markCnt tab=$tocTab page=$tocPage here=$here")
     }
 
     private fun closeToc() {
@@ -390,6 +422,46 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         tocOpen = false
         redraw()
         Trace.step("b3: toc close")
+    }
+
+    /**
+     * Перечитать закладки книги из базы (UI-поток: `LibraryScreen` читает так же). У книги без
+     * строки в базе закладок быть не может — список пустой.
+     */
+    private fun reloadMarks() {
+        val e = entry
+        if (e == null || e.id <= 0) {
+            marks = emptyList()
+            markCnt = 0
+            return
+        }
+        marks = try { act.db.marks(e.id) } catch (t: Throwable) {
+            Trace.step("b3: marks FAIL ${t.javaClass.simpleName}: ${t.message}")
+            emptyList()
+        }
+        markCnt = marks.size
+    }
+
+    /**
+     * Смена вкладки списка. Заголовок шапки — имя вкладки, поэтому страница каждого списка
+     * не переносится: на «Оглавлении» открывается место текущей главы, на «Закладках» — первая
+     * страница (закладки идут свежими сверху).
+     *
+     * Закладки перечитываются при каждом переходе на их вкладку: пока список был закрыт, человек
+     * мог поставить или снять закладку через меню B9, а вкладка показывает их число.
+     */
+    private fun switchTocTab(tab: Int) {
+        if (!tocOpen || tab == tocTab || tab == TocScreen.TAB_NOTE) return
+        tocTab = tab
+        if (tab == TocScreen.TAB_MARKS) {
+            reloadMarks()
+            tocPage = 0
+        } else {
+            val here = hereOf()
+            tocPage = if (here >= 0) here / TocScreen.ROWS else 0
+        }
+        redraw()
+        Trace.step("b3: toc tab=$tab page=$tocPage marks=$markCnt")
     }
 
     /** Открыть B29 «Переход на страницу» (шкала меню B9): поле сразу с номером текущей страницы. */
@@ -542,6 +614,62 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
             }
         }
         Trace.step("b3: toc goto $i «${toc[i].title}» pos=${if (pos == null) "нет" else "ok"} page=$page")
+    }
+
+    /**
+     * Удалить закладку из списка B27 (корзина строки). Список остаётся открытым: человек видит,
+     * что строка исчезла, а подпись вкладки стала «Закладки · N−1».
+     *
+     * Удаляем по `pos` строки — тому же xpointer, по которому идёт переход; номер страницы для
+     * этого не нужен, и удаляется именно та закладка, на которую нажали.
+     *
+     * Если удалили закладку текущей страницы, [marked] пересчитываем — иначе кнопка «Закладка»
+     * в меню B9 осталась бы вдавленной до следующего открытия меню.
+     */
+    private fun deleteMark(i: Int) {
+        if (i < 0 || i >= marks.size) return
+        val e = entry ?: return
+        val m = marks[i]
+        val ok = try { act.db.removeMark(e.id, m.pos) } catch (t: Throwable) {
+            Trace.step("b3: removeMark FAIL ${t.javaClass.simpleName}: ${t.message}")
+            false
+        }
+        Trace.step("b3: mark del $i стр.${m.page + 1} ok=$ok")
+        reloadMarks()
+        // Строка была последней на странице — показали бы пустоту вместо предыдущих закладок.
+        val pages = TocScreen.pageCount(TocScreen.TAB_MARKS, 0, markCnt)
+        if (tocPage >= pages) tocPage = pages - 1
+        redraw()
+        if (!ok) return
+        // Кнопка «Закладка» меню B9 должна знать правду: `refreshMark` сам спрашивает позицию
+        // текущей страницы у движка в его потоке и сверяет с базой.
+        Engine.worker.execute {
+            refreshMark()
+            post { if (attached && menuOpen) redraw() }
+        }
+    }
+
+    /**
+     * Перейти по закладке (R4.2): сперва по её `pos` — позиции движка, той же, что у места чтения,
+     * поэтому после смены кегля закладка остаётся на своём тексте. `pos` не принят (другая раскладка
+     * книги) — запасным путём служит `page` из снимка закладки, а если и она вне книги, ничего.
+     */
+    private fun gotoMark(i: Int) {
+        if (i < 0 || i >= marks.size) return
+        val m = marks[i]
+        closeToc()
+        val my = ++epoch
+        Engine.worker.execute {
+            var target = try { Engine.gotoPos(m.pos) } catch (t: Throwable) { -1 }
+            if (target < 0) target = m.page
+            if (my != epoch) return@execute
+            if (target < 0 || target >= pages) return@execute
+            post {
+                if (!attached) return@post
+                show(target, 0)
+            }
+        }
+        Trace.step("b3: mark goto $i стр.${m.page + 1} «${m.chapter ?: "—"}»")
     }
 
     /**
@@ -1099,13 +1227,17 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
             }
             return
         }
-        // B10 «Оглавление»: касания только списка (страницы, листание, кнопки).
+        // B10/B27: касания только списка (вкладки, строки, пагинация, «Назад»).
         if (tocOpen) {
-            when (tocView.hit(x, y, tocPage, toc)) {
-                TocScreen.ACT_CLOSE -> closeToc()
-                TocScreen.ACT_PREV -> { tocPage--; redraw() }
-                TocScreen.ACT_NEXT -> { tocPage++; redraw() }
-                TocScreen.ACT_OPEN -> gotoItem(tocView.chosen)
+            val a = tocView.hit(x, y, tocTab, tocPage, toc, marks)
+            when {
+                a == TocScreen.ACT_CLOSE -> closeToc()
+                a == TocScreen.ACT_PREV -> { tocPage--; redraw() }
+                a == TocScreen.ACT_NEXT -> { tocPage++; redraw() }
+                a == TocScreen.ACT_OPEN -> gotoItem(tocView.chosen)
+                a == TocScreen.ACT_MARK -> gotoMark(tocView.chosenMark)
+                a == TocScreen.ACT_DEL -> deleteMark(tocView.chosenMark)
+                a >= TocScreen.ACT_TAB -> switchTocTab(a - TocScreen.ACT_TAB)
             }
             return
         }
@@ -1145,7 +1277,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
                 ReaderMenu.ACT_GOTO -> { closeMenu(); openGoto() }
                 // «Закладка» в шапке (R4.1): поставить или снять на текущей странице. Меню
                 // остаётся открытым — видно, что клавиша стала вдавленной (или перестала).
-                ReaderMenu.ACT_MARK -> toggleMark()
+                ReaderMenu.ACT_MARK -> addBookmark()
                 // Мимо меню — закрыть. «Контраст», «Вслух» и «Ещё» ждут своих этапов:
                 // кнопки нарисованы, касание пока только закрывает меню.
                 else -> closeMenu()

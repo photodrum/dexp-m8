@@ -312,8 +312,28 @@ class Ink(ctx: Context) {
             }
             i++
         }
-        if (lineStart < s.length) {
-            c.drawText(s, lineStart, s.length, x, y, text)
+        // Хвост от последнего пробела до конца строки цикл выше не проверял по ширине (условие
+        // стоит только на пробелах), поэтому последняя группа слов могла вылезти за [maxW] —
+        // поймано на B27: цитата закладки уходила за панель. Дожёвываем остаток теми же правилами.
+        var rest = lineStart
+        // Последняя строка — с «…» при обрезке и без; остальные переносятся по словам.
+        while (rest < s.length && !(maxLines > 0 && lines + 1 >= maxLines)) {
+            var cut = -1
+            var sp = rest
+            while (sp < s.length) {
+                if (s[sp] == ' ' && text.measureText(s, rest, sp) <= maxW) cut = sp
+                sp++
+            }
+            if (cut <= rest) break
+            c.drawText(s, rest, cut, x, y, text)
+            y += step
+            lines++
+            rest = cut + 1
+        }
+        if (rest < s.length) {
+            val tail = s.substring(rest).trim()
+            c.drawText(if (maxLines > 0) ellipsize(tail, maxW, size, weight, font) else tail,
+                x, y, text)
             y += step
         }
         return y - top
