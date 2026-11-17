@@ -437,6 +437,137 @@ object Engine {
         }
     }
 
+    // ------------------------------------- выделение, цитаты и заметки (R4.3, B50–B52)
+
+    /**
+     * Слово под точкой [x],[y] (дизайн-px окна) — долгое нажатие B50. Выделение движка
+     * ставится на это слово, дальше его двигают маркеры ([selectionExtend]).
+     * `null` — точка не на тексте (поля, картинка, пустая строка).
+     *
+     * У DjVu текстового слоя нет: выделения и поиска в сканах не будет (READER_SPEC, R4).
+     * Только в [worker].
+     */
+    fun wordAt(x: Int, y: Int): String? {
+        if (!open || djvu) return null
+        return try {
+            wordAtNative(x, y)
+        } catch (t: Throwable) {
+            Trace.step("reader: wordAt FAIL ${t.javaClass.simpleName}: ${t.message}")
+            null
+        }
+    }
+
+    /** Текст текущего выделения; `null` — выделения нет. Только в [worker]. */
+    fun selectionText(): String? {
+        if (!open || djvu) return null
+        return try {
+            selectionTextNative()
+        } catch (t: Throwable) {
+            null
+        }
+    }
+
+    /**
+     * Расширить выделение на слово: [dir] > 0 — вперёд (маркер конца), `< 0` — назад
+     * (маркер начала). 1 — расширилось, 0 — край текста, `< 0` — выделения нет.
+     * Только в [worker].
+     */
+    fun selectionExtend(dir: Int): Int {
+        if (!open || djvu) return ENOSESSION
+        return try {
+            selectionExtendNative(dir)
+        } catch (t: Throwable) {
+            ENOSESSION
+        }
+    }
+
+    /** Снять выделение (уходят плашки G12 на странице). Только в [worker]. */
+    fun selectionClear() {
+        if (!open || djvu) return
+        try {
+            selectionClearNative()
+        } catch (_: Throwable) {
+        }
+    }
+
+    /** Позиция выделения: [which] 0 — начало, 1 — конец (xpointer); `null` — нет. */
+    fun selectionPos(which: Int): String? {
+        if (!open || djvu) return null
+        return try {
+            selectionPosNative(which)
+        } catch (t: Throwable) {
+            null
+        }
+    }
+
+    /**
+     * Отрезки текста в окне страницы — плоский `IntArray` по 4 числа на отрезок
+     * (`x, y, w, h`): `null` — текущее выделение, иначе сохранённый диапазон
+     * [start]…[end] в xpointer. Так рисуются плашки B50, подчёркивание цитаты
+     * и заливка заметки B52. Пустой массив (0 отрезков) — на этой странице ничего нет.
+     *
+     * [cap] — сколько чисел заказать: страница B3 — 40 строк, хватает 256 чисел (64 отрезка).
+     * Только в [worker].
+     */
+    fun rangeRects(start: String?, end: String?, cap: Int = 256): IntArray? {
+        if (!open || djvu) return null
+        return try {
+            val out = IntArray(cap)
+            val n = if (start == null) rectsNative(null, null, out)
+                    else rectsNative(start, end, out)
+            if (n <= 0) IntArray(0) else out.copyOf(n * 4)
+        } catch (t: Throwable) {
+            Trace.step("reader: rects FAIL ${t.javaClass.simpleName}: ${t.message}")
+            null
+        }
+    }
+
+    // ----------------------------------------------------- поиск по книге (R4.3, B28)
+
+    /**
+     * Найти [query] по всей книге (B28 «Вся книга»). Возвращает число совпадений
+     * (не больше 500) или `< 0` — код ошибки. Сами совпадения остаются в движке:
+     * дальше их читают [searchCount], [searchPage], [searchText], [searchPos].
+     *
+     * [look] — сколько символов контекста в фрагменте; 0 — умолчание движка (40).
+     * У DjVu нет текстового слоя — `ENOSESSION`. Только в [worker].
+     */
+    fun search(query: String, look: Int = 0): Int {
+        if (!open) return ENOSESSION
+        if (djvu) return ENOSESSION
+        if (query.isEmpty()) return EARG
+        return try {
+            searchNative(query, look)
+        } catch (t: Throwable) {
+            Trace.step("reader: search FAIL ${t.javaClass.simpleName}: ${t.message}")
+            ENOSESSION
+        }
+    }
+
+    /** Сколько совпадений в последнем [search]. */
+    fun searchCount(): Int {
+        if (!open || djvu) return 0
+        return try { searchCountNative() } catch (_: Throwable) { 0 }
+    }
+
+    /** Страница совпадения [index]; -1 — такого нет. */
+    fun searchPage(index: Int): Int {
+        if (!open || djvu) return -1
+        return try { searchPageNative(index) } catch (_: Throwable) { -1 }
+    }
+
+    /** Фрагмент текста совпадения [index] (для строки списка B28). */
+    fun searchText(index: Int): String? {
+        if (!open || djvu) return null
+        return try { searchStringNative(index, 0) } catch (_: Throwable) { null }
+    }
+
+    /** Позиция (xpointer) совпадения [index] — для `gotoPos`. */
+    fun searchPos(index: Int): String? {
+        if (!open || djvu) return null
+        return try { searchStringNative(index, 1) } catch (_: Throwable) { null }
+    }
+
     /**
      * Оглавление книги плоско, в порядке текста (B10 «Оглавление», R3 — здесь только
      * данные). Пустой список — в книге нет оглавления или документ не открыт.
@@ -505,4 +636,14 @@ object Engine {
     @JvmStatic private external fun tocPageNative(index: Int): Int
     @JvmStatic private external fun tocStringNative(index: Int, which: Int): String?
     @JvmStatic private external fun posOnPageNative(pos: String): Int
+    @JvmStatic private external fun wordAtNative(x: Int, y: Int): String?
+    @JvmStatic private external fun selectionTextNative(): String?
+    @JvmStatic private external fun selectionExtendNative(dir: Int): Int
+    @JvmStatic private external fun selectionClearNative(): Int
+    @JvmStatic private external fun selectionPosNative(which: Int): String?
+    @JvmStatic private external fun rectsNative(start: String?, end: String?, out: IntArray): Int
+    @JvmStatic private external fun searchNative(query: String, look: Int): Int
+    @JvmStatic private external fun searchCountNative(): Int
+    @JvmStatic private external fun searchPageNative(index: Int): Int
+    @JvmStatic private external fun searchStringNative(index: Int, which: Int): String?
 }

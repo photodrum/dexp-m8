@@ -127,6 +127,10 @@ object EngineSelfTest {
         // тому, осталась ли та же фраза (xpointer держится позицией в тексте).
         typeStep(midPos, buf)
 
+        // R4.3: поиск по книге и выделение (B28, B50–B52). Нужен кадр с текстом, чтобы
+        // `wordAt` попал в слово: берём середину страницы, заведомо занятую текстом.
+        findStep(buf)
+
         // Повторное открытие — должно быть из кэша разметки (быстро).
         Engine.close()
         t0 = SystemClock.uptimeMillis()
@@ -150,6 +154,91 @@ object EngineSelfTest {
         dump(1, "first")
         Engine.close()
     }
+    /**
+     * R4.3 на книге: поиск B28 и выделение B50–B52 через `Engine`.
+     *
+     * Что должно сойтись:
+     *  - `search` находит известное слово, номера страниц растут, фрагмент не пустой;
+     *  - `gotoPos(searchPos(...))` встаёт на ту же страницу, что назвал поиск;
+     *  - `wordAt` в середину страницы даёт непустое слово, `selectionPos` — xpointer;
+     *  - `rangeRects` по сохранённой позиции даёт 1–3 отрезка в пределах страницы;
+     *  - после смены кегля выделение и результаты поиска сбрасываются (xpointer старого DOM).
+     */
+    private fun findStep(buf: ByteArray) {
+        val pages = Engine.pageCount()
+        if (pages <= 0) return
+        val p = pages / 2
+        Engine.page(p, W, H, buf)
+
+        // Слово из текста страницы — чтобы искать заведомо существующее.
+        val text = Engine.pageText().orEmpty()
+        val words = text.split(' ', '\n', '\r', '\t', '—', ',', '.', '«', '»', '…')
+            .filter { it.length in 5..24 && it.all { ch -> ch.isLetter() } }
+        val query = words.getOrNull(1) ?: words.firstOrNull()
+        Trace.step("selftest: find слово='${query ?: "—"}' из=${cut(text)}")
+        if (query != null) {
+            var t0 = SystemClock.uptimeMillis()
+            val n = Engine.search(query)
+            val ms = SystemClock.uptimeMillis() - t0
+            Trace.step("selftest: find '$query' n=$n ${Engine.codeText(n)} ${ms}ms")
+            if (n > 0) {
+                for (i in 0 until Math.min(3, n)) {
+                    val page = Engine.searchPage(i)
+                    val frag = Engine.searchText(i)
+                    Trace.step("selftest: find[$i] стр.$page ${cut(frag)}")
+                    if (i == 0) {
+                        val pos = Engine.searchPos(0)
+                        val jumped = if (pos != null) Engine.gotoPos(pos) else -1
+                        Trace.step("selftest: find[0] gotoPos → стр.$jumped " +
+                            if (jumped == page) "СТРАНИЦА СОВПАЛА" else "СТРАНИЦА ДРУГАЯ")
+                    }
+                }
+            }
+        }
+
+        // Выделение: точка в середине страницы — почти всегда в тексте.
+        Engine.page(p, W, H, buf)
+        var wx = W / 2
+        var wy = H / 2
+        var word = Engine.wordAt(wx, wy)
+        // Середина могла попасть в пустую строку между абзацами — поднимаемся на строку.
+        var tries = 0
+        while (word == null && tries < 8) {
+            wy -= 60
+            word = Engine.wordAt(wx, wy)
+            tries++
+        }
+        Trace.step("selftest: wordAt($wx,$wy) попыток=$tries слово='${word ?: "—"}'")
+        if (word != null) {
+            val sel = Engine.selectionText()
+            val a = Engine.selectionPos(0)
+            val b = Engine.selectionPos(1)
+            Trace.step("selftest: text выделения='${cut(sel)}' pos=${a != null}…${b != null}")
+            var rects = Engine.rangeRects(null, null)
+            Trace.step("selftest: rects выделения=${rects?.size?.div(4) ?: -1}")
+            // Маркер конца: слово вперёд — выделение должно вырасти.
+            val ext = Engine.selectionExtend(1)
+            val after = Engine.selectionText()
+            rects = Engine.rangeRects(null, null)
+            Trace.step("selftest: extend(+1)=$ext '${cut(after)}' " +
+                "rects=${rects?.size?.div(4) ?: -1}")
+            // Сохранённый диапазон — как B52 рисует уже записанную цитату.
+            val sa = Engine.selectionPos(0)
+            val sb = Engine.selectionPos(1)
+            if (sa != null && sb != null) {
+                val saved = Engine.rangeRects(sa, sb)
+                Trace.step("selftest: rects saved=${saved?.size?.div(4) ?: -1}")
+            }
+            Engine.selectionClear()
+            Trace.step("selftest: clear → выделение='${Engine.selectionText() ?: "нет"}' " +
+                "поиск остался=${Engine.searchCount()}")
+            // Смена кегля бросает выделение и найденное: xpointer старого DOM не годится.
+            Engine.setFont(52, null)
+            Trace.step("selftest: после setFont выделение='${Engine.selectionText() ?: "нет"}' " +
+                "поиск=${Engine.searchCount()}")
+        }
+    }
+
     /**
      * R3.4 на книге: типографика B4 через `Engine.setTypography`. Для каждого варианта —
      * число страниц, время перевёрстки и «та же фраза» (xpointer места чтения держится

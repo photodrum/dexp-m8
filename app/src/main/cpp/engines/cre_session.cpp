@@ -324,6 +324,129 @@ void apply_typography()
     TextLangMan::setHyphenationEnabled(g_type.hyphens);
 }
 
+/* ------------------------------------------------- выделение и поиск (R4.3, B28/B50–B52) */
+
+/**
+ * Выделение (B50–B52) живёт на стороне сеанса: [g_sel] — диапазон от начала до конца
+ * в xpointer, в порядке текста. Движку свою подсветку НЕ отдаём (`selectRange`/`selectWords`
+ * не зовём): страница рисуется в буфер как есть, а плашки G12 оболочка рисует сама по
+ * прямоугольникам [dexp_reader_selection_rects] — так требует макет B50 и ROADMAP п. 17
+ * («плашкой G12 по рамкам слов от движка, не getRange»).
+ *
+ * Диапазон держит ссылки на узлы DOM, поэтому освобождается ДО `delete g_view`
+ * (см. [drop_document]): указатель в освобождённое дерево — падение процесса.
+ */
+ldomXRange *g_sel = NULL;
+
+/** Уронить выделение. Звать до уничтожения вида — оно держит xpointer в его DOM. */
+void sel_clear()
+{
+    if (g_sel) {
+        delete g_sel;
+        g_sel = NULL;
+    }
+}
+
+/** Поставить выделение по готовому диапазону [range]. */
+void sel_set(const ldomXRange &range)
+{
+    sel_clear();
+    g_sel = new ldomXRange(range);
+}
+
+/**
+ * Результат последнего поиска по книге (B28). Позиция — xpointer, номер страницы — на
+ * момент поиска. После перевёрстки копия выбрасывается ([drop_search] из [relayout]):
+ * xpointer старого DOM после новой разметки указывает в другое место (DEVLOG 2026-11-13),
+ * а номера страниц считаются только по новой.
+ */
+struct SearchHit {
+    int page;
+    lString8 pos;
+    lString8 text;
+};
+
+std::vector<SearchHit> g_search;
+
+/**
+ * Сколько совпадений держим и отдаём в B28. 500 строк — это ~125 экранов списка; больше
+ * на 1 ГБ ОЗУ бессмысленно, а поиск «и» иначе вернул бы десятки тысяч.
+ */
+const int SEARCH_MAX_HITS = 500;
+
+void drop_search()
+{
+    g_search.clear();
+}
+
+/**
+ * Кусок текста вокруг совпадения для строки B28: «…Все смешалось в доме Облонских. Жена…».
+ * Берём текстовый узел, где стоит начало совпадения, отсчитываем [ctx] символов в обе
+ * стороны и обрезаем по границам слов. Совпадение, перешедшее в другой узел (переносом
+ * внутри абзаца), отдаётся текстом самого диапазона.
+ */
+lString8 excerpt_of(ldomXRange &range, int ctx)
+{
+    ldomXPointer &sp = range.getStart();
+    ldomXPointer &ep = range.getEnd();
+    ldomNode *node = sp.getNode();
+    if (!node || !node->isText() || ep.getNode() != node)
+        return UnicodeToUtf8(range.getRangeText(' '));
+    lString32 txt = node->getText();
+    int n = (int) txt.length();
+    int a = sp.getOffset();
+    int b = ep.getOffset();
+    if (a < 0)
+        a = 0;
+    if (b < a)
+        b = a;
+    if (b > n)
+        b = n;
+    int from = a - ctx;
+    int to = b + ctx;
+    if (from < 0)
+        from = 0;
+    if (to > n)
+        to = n;
+    /* Границы — по пробелу, чтобы фрагмент не начинался с половины слова. За пределы
+       самого совпадения не выходим: там стоят те же неразрывные буквы. */
+    while (from > 0 && from < a && txt[from] != ' ')
+        from++;
+    while (to > b && to < n && txt[to] != ' ')
+        to--;
+    while (from < a && txt[from] == ' ')
+        from++;
+    while (to > b && txt[to - 1] == ' ')
+        to--;
+    lString32 out;
+    if (from > 0)
+        out << (lChar32) 0x2026;   /* … */
+    out << txt.substr(from, to - from);
+    if (to < n)
+        out << (lChar32) 0x2026;
+    return UnicodeToUtf8(out);
+}
+
+/**
+ * Скопировать UTF-8 в буфер вызывающего, не разрывая символ: обрыв посреди символа даёт
+ * невалидную строку, а `NewStringUTF` на ней абортит процесс (падеж на EPUB 2026-11-13).
+ * Возвращает длину или код `< 0`.
+ */
+int copy_utf8(const lString8 &s, char *out, int outLen)
+{
+    if (!out || outLen <= 1)
+        return DEXP_PROBE_EARG;
+    int n = (int) s.length();
+    if (n + 1 > outLen) {
+        n = outLen - 1;
+        while (n > 0 && ((unsigned char) s[n] & 0xC0) == 0x80)
+            n--;
+    }
+    memcpy(out, s.c_str(), (size_t) n);
+    out[n] = 0;
+    return n;
+}
+
 /**
  * Переверстать после смены типографики, удержав место чтения [keepPos] (xpointer).
  * Возвращает число страниц или `< 0`.
@@ -339,6 +462,10 @@ int relayout(const char *keepPos)
     g_view->checkRender();
     g_pages = g_view->getPageCount();
     drop_toc();   // номера страниц пунктов посчитает build_toc на новой разметке
+    /* Выделение и результаты поиска — на старом DOM: после перевёрстки их xpointer
+       указывают в другое место (DEVLOG 2026-11-13), а номера страниц не совпадают. */
+    sel_clear();
+    drop_search();
     if (keepPos && keepPos[0]) {
         ldomXPointer pos = g_view->getDocument()->createXPointer(Utf8ToUnicode(keepPos));
         if (!pos.isNull()) {
@@ -355,6 +482,8 @@ int relayout(const char *keepPos)
  */
 void drop_document()
 {
+    sel_clear();   /* выделение держит xpointer в DOM вида — уронить до delete g_view */
+    drop_search();
     if (g_view) {
         delete g_view;
         g_view = NULL;
@@ -400,6 +529,47 @@ void build_toc()
     collect_toc(root);
     g_tocValid = true;
     DEXP_LOG("reader: toc %d items", (int)g_toc.size());
+}
+
+/**
+ * Отрезки диапазона [range] в координатах окна — плоский `int[]` по 4 числа
+ * (`x, y, w, h`). Возвращает число отрезков (может быть меньше найденных, если [outLen]
+ * мал). Одна строка текста — один отрезок.
+ *
+ * `getSegmentRects` отдаёт координаты документа целиком, поэтому каждая пара точек
+ * переводится `docToWindowPoint`; отрезок, не попавший на текущую страницу, отбрасывается.
+ * Верхняя точка — обычным вызовом, нижняя — с `isRectBottom`: низ строки совпадает
+ * с верхом следующей, и без флага движок отнёс бы его к другой странице.
+ */
+int range_rects_to_window(ldomXRange &range, int *out, int outLen)
+{
+    LVArray<lvRect> rects;
+    range.getSegmentRects(rects, false);
+    int cap = outLen / 4;
+    int n = 0;
+    for (int i = 0; i < rects.length(); i++) {
+        lvRect r = rects[i];
+        if (r.isEmpty())
+            continue;
+        lvPoint p0 = r.topLeft();
+        lvPoint p1 = r.bottomRight();
+        if (!g_view->docToWindowPoint(p0))
+            continue;
+        if (!g_view->docToWindowPoint(p1, true))
+            continue;
+        int w = p1.x - p0.x;
+        int h = p1.y - p0.y;
+        if (w <= 0 || h <= 0)
+            continue;
+        if (n >= cap)
+            break;
+        out[n * 4 + 0] = p0.x;
+        out[n * 4 + 1] = p0.y;
+        out[n * 4 + 2] = w;
+        out[n * 4 + 3] = h;
+        n++;
+    }
+    return n;
 }
 
 } // namespace
@@ -858,6 +1028,263 @@ DEXP_PROBE_API int dexp_reader_pos_on_page(const char *pos)
     int h = g_view->getPageHeight(page);
     DEXP_LOG("reader: posOnPage page %d y=%d pageY=%d..%d", page, y, start, start + h);
     return (y >= start && y < start + h) ? 1 : 0;
+}
+
+/* --------------------------------------------- выделение, цитаты и заметки (B50–B52) */
+
+/**
+ * Обрезать знаки препинания по краям слова: `getWordRange` режет только по пробелам,
+ * поэтому «стриженым,» приходит с запятой, а «(Стива» — со скобкой. В B50 выделение
+ * и плашки должны стоять на самом слове; подчёркивание ищет те же границы.
+ *
+ * Коды — числами: кириллические литералы в `switch` не влезают в `char32_t` на ARM
+ * (`character too large for enclosing character literal type`).
+ */
+bool is_word_punct(lChar32 ch)
+{
+    switch (ch) {
+    case 0x21: case 0x22: case 0x27: case 0x28: case 0x29:      /* ! " ' ( ) */
+    case 0x2A: case 0x2C: case 0x2D: case 0x2E: case 0x2F:      /* * , - . / */
+    case 0x3A: case 0x3B: case 0x3F:                            /* : ; ? */
+    case 0x5B: case 0x5D: case 0x7B: case 0x7D:                 /* [ ] { } */
+    case 0xAB: case 0xBB:                                       /* « » */
+    case 0x2013: case 0x2014: case 0x2018: case 0x2019:         /* – — ' ' */
+    case 0x201C: case 0x201D: case 0x201E: case 0x2026:         /* " " „ … */
+        return true;
+    default:
+        return false;
+    }
+}
+
+/**
+ * Слово под точкой (B50, долгое нажатие): координаты [x],[y] — окно (тот же буфер, что
+ * у [dexp_reader_page]), в дизайн-px. Выделение ставится на это слово целиком; текст
+ * слова — в [out]. Длина слова или код `< 0`.
+ *
+ * Почему `getNodeByPoint(..., forTextSelection=true)`: без него точка в поле или в
+ * пробеле между словами не даёт узла, и касание края абзаца не срабатывало бы.
+ * Затем `ldomXRange::getWordRange` расширяет позицию до границ слова по пробелам.
+ */
+DEXP_PROBE_API int dexp_reader_word_at(int x, int y, char *out, int outLen)
+{
+    if (!g_view)
+        return DEXP_READER_ENOSESSION;
+    if (!out || outLen <= 1)
+        return DEXP_PROBE_EARG;
+    ldomXPointer ptr = g_view->getNodeByPoint(lvPoint(x, y), false, true);
+    if (ptr.isNull())
+        return DEXP_READER_EPOS;
+    /* Точка попала между узлами (курсив, сноска) — берём следующий видимый текст. */
+    if (!ptr.getNode() || !ptr.getNode()->isText()) {
+        ldomXPointerEx ex(ptr);
+        if (!ex.nextVisibleText())
+            return DEXP_READER_EPOS;
+        ptr = ex;
+    }
+    ldomXRange range;
+    if (!ldomXRange::getWordRange(range, ptr) || range.isNull())
+        return DEXP_READER_EPOS;
+    /* Знаки препинания по краям — вон: выделение и плашки стоят на самом слове. */
+    ldomXPointerEx a = range.getStart();
+    ldomXPointerEx b = range.getEnd();
+    ldomNode *node = a.getNode();
+    if (node && node->isText()) {
+        while (b.getNode() == node && a.getOffset() < b.getOffset()
+               && is_word_punct(a.getChar()))
+            a.setOffset(a.getOffset() + 1);
+        while (b.getNode() == node && b.getOffset() > a.getOffset()) {
+            b.setOffset(b.getOffset() - 1);
+            if (!is_word_punct(b.getChar())) {
+                b.setOffset(b.getOffset() + 1);   /* вернуть последнюю букву в слово */
+                break;
+            }
+        }
+        range = ldomXRange(a, b);
+    }
+    if (range.isNull())
+        return DEXP_READER_EPOS;
+    sel_set(range);
+    lString8 word = UnicodeToUtf8(range.getRangeText(' '));
+    DEXP_LOG("reader: wordAt %d,%d -> %s", x, y, word.c_str());
+    return copy_utf8(word, out, outLen);
+}
+
+/** Текст выделения в [out]. Длина или код `< 0` (нет выделения — `EPOS`). */
+DEXP_PROBE_API int dexp_reader_selection_text(char *out, int outLen)
+{
+    if (!g_view)
+        return DEXP_READER_ENOSESSION;
+    if (!g_sel || g_sel->isNull())
+        return DEXP_READER_EPOS;
+    return copy_utf8(UnicodeToUtf8(g_sel->getRangeText(' ')), out, outLen);
+}
+
+/**
+ * Расширить выделение на слово: [dir] > 0 — вперёд (маркер конца B50), `< 0` — назад
+ * (маркер начала). 1 — расширилось, 0 — край текста, `< 0` — нет выделения.
+ *
+ * Двигаемся по видимым словам движка (`nextVisibleWordEnd`/`prevVisibleWordStart`):
+ * резать текст по пробелам руками нельзя — в книге есть курсив и сноски, и слово
+ * бывает разорвано на несколько узлов (маркер B50 останавливался бы на «полслове»).
+ */
+DEXP_PROBE_API int dexp_reader_selection_extend(int dir)
+{
+    if (!g_view)
+        return DEXP_READER_ENOSESSION;
+    if (!g_sel || g_sel->isNull())
+        return DEXP_READER_EPOS;
+    if (dir > 0) {
+        ldomXPointerEx end = g_sel->getEnd();
+        if (!end.nextVisibleWordEnd())
+            return 0;
+        g_sel->setEnd(end);
+    } else if (dir < 0) {
+        ldomXPointerEx start = g_sel->getStart();
+        if (!start.prevVisibleWordStart())
+            return 0;
+        g_sel->setStart(start);
+    }
+    return 1;
+}
+
+/** Снять выделение: плашки гаснут. B50 зовёт это перед «Меню» и листанием. */
+DEXP_PROBE_API int dexp_reader_selection_clear()
+{
+    sel_clear();
+    return DEXP_PROBE_OK;
+}
+
+/**
+ * Позиция выделения в [out]: `which` 0 — начало, 1 — конец (xpointer). Так цитата и
+ * заметка ложатся в таблицу `bookmarks` (поле `pos` = xpointer, R4.1) и остаются на
+ * своём тексте после смены кегля. Длина строки или код `< 0`.
+ */
+DEXP_PROBE_API int dexp_reader_selection_pos(int which, char *out, int outLen)
+{
+    if (!g_view)
+        return DEXP_READER_ENOSESSION;
+    if (!g_sel || g_sel->isNull())
+        return DEXP_READER_EPOS;
+    ldomXPointer p = which == 0 ? (ldomXPointer) g_sel->getStart()
+                                : (ldomXPointer) g_sel->getEnd();
+    if (p.isNull())
+        return DEXP_READER_EPOS;
+    return copy_utf8(UnicodeToUtf8(p.toString()), out, outLen);
+}
+
+/**
+ * Прямоугольники текущего выделения в окне — для плашек G12 на странице (B50).
+ * Формат — [range_rects_to_window]: плоский массив по 4 числа на отрезок.
+ */
+DEXP_PROBE_API int dexp_reader_selection_rects(int *out, int outLen)
+{
+    if (!g_view)
+        return DEXP_READER_ENOSESSION;
+    if (!out || outLen < 4)
+        return DEXP_PROBE_EARG;
+    if (!g_sel || g_sel->isNull())
+        return DEXP_READER_EPOS;
+    return range_rects_to_window(*g_sel, out, outLen);
+}
+
+/**
+ * Прямоугольники сохранённого диапазона [startPos]…[endPos] (xpointer) в окне — так B52
+ * рисует уже записанные цитаты (подчёркивание G3) и заметки (заливка G13), не выделяя их
+ * заново. Формат и возврат — как у [dexp_reader_selection_rects].
+ */
+DEXP_PROBE_API int dexp_reader_range_rects(const char *startPos, const char *endPos,
+                                           int *out, int outLen)
+{
+    if (!g_view)
+        return DEXP_READER_ENOSESSION;
+    if (!out || outLen < 4 || !startPos || !startPos[0] || !endPos || !endPos[0])
+        return DEXP_PROBE_EARG;
+    ldomXPointer a = g_view->getDocument()->createXPointer(Utf8ToUnicode(startPos));
+    ldomXPointer b = g_view->getDocument()->createXPointer(Utf8ToUnicode(endPos));
+    if (a.isNull() || b.isNull())
+        return DEXP_READER_EPOS;
+    ldomXRange range(a, b);
+    if (range.isNull())
+        return DEXP_READER_EPOS;
+    return range_rects_to_window(range, out, outLen);
+}
+
+/* ------------------------------------------------------------- поиск по книге (B28) */
+
+/**
+ * Найти [query] по всей книге и запомнить совпадения (B28 «Вся книга»).
+ * Возвращает число найденных (не больше [SEARCH_MAX_HITS]) или код `< 0`.
+ *
+ * [look] — контекст фрагмента в символах, `<= 0` — умолчание 40.
+ *
+ * Тонкости движка, проверенные по коду:
+ *  - `minY = maxY = 0` — весь документ: `ldomDocument::findText` сам ищет валидный y,
+ *    если границы попали в пустое место (поля, пустой абзац);
+ *  - `maxHeight = 0` выключает ограничение по высоте блока: cr3qt зовёт поиск с высотой
+ *    страницы и нашёл бы только текущую;
+ *  - флаги — сквозняк по текстовым узлам (курсив и `<b>` делят слово на два узла) и
+ *    сжатие кратных пробелов; без них «в связи с» в форматированном тексте не нашлось бы.
+ */
+DEXP_PROBE_API int dexp_reader_search(const char *query, int look)
+{
+    if (!g_view)
+        return DEXP_READER_ENOSESSION;
+    if (!query || !query[0])
+        return DEXP_PROBE_EARG;
+    if (look <= 0)
+        look = 40;
+    long t0 = now_ms();
+    drop_search();
+    ldomXRangeList ranges;
+    lUInt32 flags = LDOM_FIND_TEXT_MATCH_ACROSS_TEXT_NODES
+                    | LDOM_FIND_TEXT_COLLAPSE_CONSECUTIVE_SPACES;
+    lString32 pattern = Utf8ToUnicode(query);
+    g_view->getDocument()->findText(pattern, true, false, 0, 0, ranges,
+                                    SEARCH_MAX_HITS, 0, -1, false, flags);
+    g_search.reserve((size_t) ranges.length());
+    for (int i = 0; i < ranges.length(); i++) {
+        ldomXRange *r = ranges[i];
+        if (!r || r->isNull())
+            continue;
+        int page = g_view->getBookmarkPage(r->getStart());
+        if (page < 0 || page >= g_pages)
+            continue;
+        SearchHit h;
+        h.page = page;
+        h.pos = UnicodeToUtf8(r->getStart().toString());
+        h.text = excerpt_of(*r, look);
+        g_search.push_back(h);
+    }
+    DEXP_LOG("reader: search '%s' %d hits (ranges %d) %ldms", query,
+             (int) g_search.size(), ranges.length(), now_ms() - t0);
+    return (int) g_search.size();
+}
+
+/** Сколько совпадений запомнил последний [dexp_reader_search]. */
+DEXP_PROBE_API int dexp_reader_search_count()
+{
+    return (int) g_search.size();
+}
+
+/** Номер страницы совпадения [index] (0-based); `-1` — такого нет. */
+DEXP_PROBE_API int dexp_reader_search_page(int index)
+{
+    if (index < 0 || index >= (int) g_search.size())
+        return -1;
+    return g_search[(size_t) index].page;
+}
+
+/**
+ * Строка совпадения [index] в [out]: `which` 0 — фрагмент для списка B28,
+ * 1 — позиция (xpointer) для перехода. Длина или код `< 0`.
+ */
+DEXP_PROBE_API int dexp_reader_search_string(int index, int which, char *out, int outLen)
+{
+    if (index < 0 || index >= (int) g_search.size())
+        return DEXP_PROBE_EARG;
+    const lString8 &s = which == 0 ? g_search[(size_t) index].text
+                                   : g_search[(size_t) index].pos;
+    return copy_utf8(s, out, outLen);
 }
 
 } // extern "C"

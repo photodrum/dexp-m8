@@ -98,6 +98,22 @@ DEXP_PROBE_API int dexp_reader_toc_page(int index);
 DEXP_PROBE_API int dexp_reader_toc_string(int index, int which, char *out, int outLen);
 DEXP_PROBE_API int dexp_reader_pos_on_page(const char *pos);
 
+/* Выделение, цитаты и заметки (R4.3, B50–B52). */
+DEXP_PROBE_API int dexp_reader_word_at(int x, int y, char *out, int outLen);
+DEXP_PROBE_API int dexp_reader_selection_text(char *out, int outLen);
+DEXP_PROBE_API int dexp_reader_selection_extend(int dir);
+DEXP_PROBE_API int dexp_reader_selection_clear();
+DEXP_PROBE_API int dexp_reader_selection_pos(int which, char *out, int outLen);
+DEXP_PROBE_API int dexp_reader_selection_rects(int *out, int outLen);
+DEXP_PROBE_API int dexp_reader_range_rects(const char *startPos, const char *endPos,
+                                           int *out, int outLen);
+
+/* Поиск по книге (R4.3, B28). */
+DEXP_PROBE_API int dexp_reader_search(const char *query, int look);
+DEXP_PROBE_API int dexp_reader_search_count();
+DEXP_PROBE_API int dexp_reader_search_page(int index);
+DEXP_PROBE_API int dexp_reader_search_string(int index, int which, char *out, int outLen);
+
 JNIEXPORT jint JNICALL
 Java_ru_ogrpfsense_dexpm8_reader_Engine_openNative(JNIEnv *env, jclass cls,
         jstring path, jstring cacheDir, jstring fontDir, jint w, jint h)
@@ -358,6 +374,144 @@ Java_ru_ogrpfsense_dexpm8_reader_Engine_posOnPageNative(JNIEnv *env, jclass cls,
     int r = dexp_reader_pos_on_page(p);
     env->ReleaseStringUTFChars(pos, p);
     return r;
+}
+
+/* ------------------------------------ выделение, цитаты и заметки (R4.3, B50–B52) */
+
+/** Слово под точкой (B50). Строка слова или NULL; пустая строка — не попали в текст. */
+JNIEXPORT jstring JNICALL
+Java_ru_ogrpfsense_dexpm8_reader_Engine_wordAtNative(JNIEnv *env, jclass cls,
+                                                    jint x, jint y)
+{
+    (void)cls;
+    /* Кегль текста B3 — 60 px, слово не бывает длиннее ~60 символов: 256 байт UTF-8
+       хватает с запасом на кириллицу (2 байта на букву). */
+    char buf[256];
+    int rc = dexp_reader_word_at(x, y, buf, (int) sizeof(buf));
+    if (rc < 0)
+        return NULL;
+    return utf8ToJString(env, buf, rc);
+}
+
+JNIEXPORT jstring JNICALL
+Java_ru_ogrpfsense_dexpm8_reader_Engine_selectionTextNative(JNIEnv *env, jclass cls)
+{
+    (void)cls;
+    /* Цитата — до абзаца: 4 КБ UTF-8. Длиннее в B50 не выделяют: маркеры листают слово
+       за словом, а выделение на страницу B51 не показывает. */
+    char buf[4096];
+    int rc = dexp_reader_selection_text(buf, (int) sizeof(buf));
+    if (rc < 0)
+        return NULL;
+    return utf8ToJString(env, buf, rc);
+}
+
+/** 1 — расширилось, 0 — край текста, `< 0` — нет выделения. */
+JNIEXPORT jint JNICALL
+Java_ru_ogrpfsense_dexpm8_reader_Engine_selectionExtendNative(JNIEnv *env, jclass cls, jint dir)
+{
+    (void)env; (void)cls;
+    return dexp_reader_selection_extend(dir);
+}
+
+JNIEXPORT jint JNICALL
+Java_ru_ogrpfsense_dexpm8_reader_Engine_selectionClearNative(JNIEnv *env, jclass cls)
+{
+    (void)env; (void)cls;
+    return dexp_reader_selection_clear();
+}
+
+/** Позиция выделения (`which` 0 — начало, 1 — конец) или NULL. */
+JNIEXPORT jstring JNICALL
+Java_ru_ogrpfsense_dexpm8_reader_Engine_selectionPosNative(JNIEnv *env, jclass cls, jint which)
+{
+    (void)cls;
+    /* xpointer у crengine — «/body/DocFragment[3]/body/p[12]/text().0»: сотни байт. */
+    char buf[1024];
+    int rc = dexp_reader_selection_pos(which, buf, (int) sizeof(buf));
+    if (rc < 0)
+        return NULL;
+    return utf8ToJString(env, buf, rc);
+}
+
+/**
+ * Прямоугольники в `int[]` по 4 числа на отрезок: текущее выделение (`start` = NULL)
+ * или сохранённый диапазон. Возвращает число отрезков или `< 0`.
+ */
+JNIEXPORT jint JNICALL
+Java_ru_ogrpfsense_dexpm8_reader_Engine_rectsNative(JNIEnv *env, jclass cls,
+                                                    jstring start, jstring end,
+                                                    jintArray out)
+{
+    (void)cls;
+    if (!out)
+        return DEXP_PROBE_EARG;
+    jsize cap = env->GetArrayLength(out);
+    if (cap < 4)
+        return DEXP_PROBE_EARG;
+    /* Массив на стороне C: JNI не даёт писать в jintArray без GetIntArrayElements,
+       а копировать туда-сюда по элементу — лишние вызовы на каждый отрезок. */
+    jint *buf = new jint[cap];
+    int n;
+    if (!start) {
+        n = dexp_reader_selection_rects(buf, (int) cap);
+    } else {
+        const char *a = env->GetStringUTFChars(start, NULL);
+        const char *b = end ? env->GetStringUTFChars(end, NULL) : NULL;
+        n = (a && b) ? dexp_reader_range_rects(a, b, buf, (int) cap) : DEXP_PROBE_EARG;
+        if (a)
+            env->ReleaseStringUTFChars(start, a);
+        if (b)
+            env->ReleaseStringUTFChars(end, b);
+    }
+    if (n > 0)
+        env->SetIntArrayRegion(out, 0, n * 4, buf);
+    delete[] buf;
+    return n;
+}
+
+/* --------------------------------------------------------- поиск по книге (R4.3, B28) */
+
+JNIEXPORT jint JNICALL
+Java_ru_ogrpfsense_dexpm8_reader_Engine_searchNative(JNIEnv *env, jclass cls,
+                                                     jstring query, jint look)
+{
+    (void)cls;
+    if (!query)
+        return DEXP_PROBE_EARG;
+    const char *q = env->GetStringUTFChars(query, NULL);
+    if (!q)
+        return DEXP_PROBE_EARG;
+    int r = dexp_reader_search(q, look);
+    env->ReleaseStringUTFChars(query, q);
+    return r;
+}
+
+JNIEXPORT jint JNICALL
+Java_ru_ogrpfsense_dexpm8_reader_Engine_searchCountNative(JNIEnv *env, jclass cls)
+{
+    (void)env; (void)cls;
+    return dexp_reader_search_count();
+}
+
+JNIEXPORT jint JNICALL
+Java_ru_ogrpfsense_dexpm8_reader_Engine_searchPageNative(JNIEnv *env, jclass cls, jint index)
+{
+    (void)env; (void)cls;
+    return dexp_reader_search_page(index);
+}
+
+/** Строка совпадения (`which` 0 — фрагмент, 1 — позиция) или NULL. */
+JNIEXPORT jstring JNICALL
+Java_ru_ogrpfsense_dexpm8_reader_Engine_searchStringNative(JNIEnv *env, jclass cls,
+                                                           jint index, jint which)
+{
+    (void)cls;
+    char buf[1024];
+    int rc = dexp_reader_search_string(index, which, buf, (int) sizeof(buf));
+    if (rc < 0)
+        return NULL;
+    return utf8ToJString(env, buf, rc);
 }
 
 } // extern "C"
