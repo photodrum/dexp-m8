@@ -6,6 +6,7 @@ import android.graphics.Canvas
 import android.os.Build
 import android.os.Environment
 import android.os.StatFs
+import ru.ogrpfsense.dexpm8.R
 
 /**
  * B43 · Настройки · Об устройстве. Числа — из design/v5/B43.json.
@@ -22,7 +23,9 @@ class SetAboutScreen(act: EinkActivity) : Screen(act) {
     private val status = StatusBar(act, this, ink, icons)
     private val kit = SettingsKit(ink, icons)
 
-    private var version = "Оболочка"
+    private val NAME = act.getString(R.string.app_name)
+
+    private var version = ""
     private var android = "Android ${Build.VERSION.RELEASE}"
     private var cpu = "Rockchip PX30"
     private var mem = ""
@@ -36,7 +39,7 @@ class SetAboutScreen(act: EinkActivity) : Screen(act) {
         kit.panel(c, 250f, 810f)
         ink.convexDark(c, 88f, 292f, 175f, 236f, 22f)
         ink.roundRect(c, 110f, 314f, 132f, 168f, 8f, T.G13)
-        ink.text(c, "DEXP M8 Prudentia", 300f, T.base(310f, T.TS_TITLE, 1.25f), T.TS_TITLE, 700, T.G1)
+        ink.text(c, NAME, 300f, T.base(310f, T.TS_TITLE, 1.25f), T.TS_TITLE, 700, T.G1)
         ink.text(c, version, 300f, T.base(390f, T.TS_BODY_S, 1.25f), T.TS_BODY_S, 600, T.G4)
         ink.text(c, android, 300f, T.base(440f, T.TS_BODY_S, 1.25f), T.TS_BODY_S, 600, T.G4)
 
@@ -85,7 +88,7 @@ class SetAboutScreen(act: EinkActivity) : Screen(act) {
         }
         val name = info?.versionName ?: ""
         val code = if (info == null) 0L else if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
-        version = "Оболочка " + shortVersion(name) + (if (code > 0L) " · сборка $code" else "")
+        version = "Оболочка " + name + (if (code > 0L) " · сборка $code" else "")
         android = "Android ${Build.VERSION.RELEASE}"
         cpu = "Rockchip PX30 · " + cores(Runtime.getRuntime().availableProcessors())
 
@@ -99,9 +102,6 @@ class SetAboutScreen(act: EinkActivity) : Screen(act) {
         val flash = SettingsData.storage()?.let { SettingsData.capacityGb(it.first).toString() + " ГБ встроенной" } ?: ""
         mem = if (ram.isNotEmpty() && flash.isNotEmpty()) "$ram · $flash" else ram + flash
     }
-
-    /** «0.1.0» → «0.1»: как в макете; остальное оставляем как есть. */
-    private fun shortVersion(v: String): String = if (v.endsWith(".0") && v.count { it == '.' } == 2) v.dropLast(2) else v
 
     private fun cores(n: Int): String {
         val m = n % 100
