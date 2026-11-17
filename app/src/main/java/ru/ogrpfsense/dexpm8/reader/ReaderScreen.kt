@@ -728,8 +728,17 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         if (Engine.djvu) return false                 // у скана нет текстового слоя (READER_SPEC, R4)
         if (dialogOpen || sheetOpen || menuOpen || tocOpen || searchOpen || gotoOpen ||
             typoOpen || noteOpen) return false
-        val px = D.px(x)
-        val py = D.px(y)
+        // `word_at` ждёт точку в координатах БУФЕРА страницы, а буфер рисуется со смещением
+        // области текста (TX,TY): без вычета получалось выделение на 117 px ниже — на две строки.
+        // Всё за пределами области текста (колонтитул, поля, нижняя панель) — промах.
+        val bx = x - TX
+        val by = y - TY
+        if (bx < 0f || by < 0f || bx >= TW || by >= TH) {
+            Trace.step("b50: удержание вне текста ${x.toInt()},${y.toInt()}")
+            return false
+        }
+        val px = D.px(bx)
+        val py = D.px(by)
         selecting = true
         Engine.worker.execute {
             val word = try { Engine.wordAt(px, py) } catch (t: Throwable) { null }
