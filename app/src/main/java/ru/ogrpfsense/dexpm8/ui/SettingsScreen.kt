@@ -2,6 +2,7 @@ package ru.ogrpfsense.dexpm8.ui
 
 import android.graphics.Canvas
 import android.os.Build
+import ru.ogrpfsense.dexpm8.R
 
 /**
  * B13 · Настройки · разделы. Числа — из design/v5/B13.json.
@@ -36,7 +37,10 @@ class SettingsScreen(act: EinkActivity) : Screen(act) {
         Row("Об устройстве", "info", 1530.2f, 32.2f, 0f, EinkActivity.SCR_SET_ABOUT)
     )
 
-    private var subtitle = "DEXP M8 Prudentia"
+    /** Имя приложения — из `app_name`, чтобы не расходиться с подписью под иконкой в лаунчере. */
+    private val NAME = act.getString(R.string.app_name)
+
+    private var subtitle = NAME
 
     override fun render(c: Canvas) {
         ink.rect(c, 0f, 0f, W, H, T.BG)
@@ -71,7 +75,7 @@ class SettingsScreen(act: EinkActivity) : Screen(act) {
         } catch (t: Throwable) {
             ""
         }
-        subtitle = if (ver.isEmpty()) "DEXP M8 Prudentia" else "DEXP M8 Prudentia · оболочка $ver"
+        subtitle = if (ver.isEmpty()) NAME else "$NAME · оболочка $ver"
         val p = act.prefs
         val br = act.sys.brightness()
         rows[0].value = if (br >= 0) "Подсветка $br%" else ""
