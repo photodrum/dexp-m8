@@ -48,6 +48,25 @@ abstract class Screen(protected val act: EinkActivity) : View(act) {
     private var downY = 0f
     private var pressed = false
 
+    /**
+     * Долгое нажатие уже отдано экрану ([onLongPress]): `ACTION_UP` после него не доходит ни до
+     * [onUp], ни до шторки B5 — иначе одно удержание дало бы ещё и обычное нажатие (меню B9,
+     * переворот страницы, открытие шторки).
+     */
+    private var longFired = false
+
+    /**
+     * Отложенный вызов [onLongPress] на время удержания. Снимается при уезде пальца
+     * (`MOVE_SLOP`), отпускании и отмене касания — короткое нажатие долгим не считается.
+     */
+    private val longPress = Runnable {
+        // Экран успели отвязать или палец уже уехал/отпущен — жест не наш.
+        if (!pressed || !isAttachedToWindow) return@Runnable
+        // Шторка B5 открывается отпусканием в своей зоне: удержание там ничего не выделяет.
+        if (inShadeZone()) return@Runnable
+        if (onLongPress(downX, downY)) longFired = true
+    }
+
     init {
         setBackgroundColor(T.BG)    // совпадает с фоном темы: без «прыжка» при старте
         isClickable = true
@@ -101,24 +120,35 @@ abstract class Screen(protected val act: EinkActivity) : View(act) {
 
     /**
      * Касание. На E-Ink палец неизбежно «уезжает», поэтому pinch/scroll не распознаём:
-     * только нажатие → отпускание в той же зоне. Свайп — единственное исключение и только
-     * там, где экран его объявил ([onSwipe]): читалка листает им по настройке B39.
+     * только нажатие → отпускание в той же зоне. Жестов два, и оба объявляет сам экран:
+     * свайп ([onSwipe]) — палец уехал, удержание ([onLongPress]) — палец стоит на месте
+     * дольше [LONG_MS].
      */
     override fun onTouchEvent(e: MotionEvent): Boolean {
         val x = e.x / D.u
         val y = e.y / D.u
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                downX = x; downY = y; pressed = true
+                downX = x; downY = y; pressed = true; longFired = false
+                removeCallbacks(longPress)
+                postDelayed(longPress, LONG_MS)
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
                 if (pressed && (Math.abs(x - downX) > MOVE_SLOP || Math.abs(y - downY) > MOVE_SLOP)) {
                     pressed = false
+                    removeCallbacks(longPress)
                 }
                 return true
             }
             MotionEvent.ACTION_UP -> {
+                removeCallbacks(longPress)
+                // Удержание уже отдано экрану: отпускание — только конец жеста.
+                if (longFired) {
+                    longFired = false
+                    pressed = false
+                    return true
+                }
                 val ok = pressed
                 pressed = false
                 if (!ok) {
@@ -128,20 +158,40 @@ abstract class Screen(protected val act: EinkActivity) : View(act) {
                     return true
                 }
                 // Шторка B5 — раньше элементов экрана: в зоне шторки у экранов ничего не нажимается.
-                if (downY < shadeZone && downX >= ShadeScreen.ZONE_X0 && downX <= ShadeScreen.ZONE_X1) {
+                if (inShadeZone()) {
                     act.openShade()
                     return true
                 }
                 onUp(downX, downY)
                 return true
             }
-            MotionEvent.ACTION_CANCEL -> { pressed = false; return true }
+            MotionEvent.ACTION_CANCEL -> {
+                pressed = false
+                longFired = false
+                removeCallbacks(longPress)
+                return true
+            }
         }
         return super.onTouchEvent(e)
     }
 
+    /** Точка нажатия — в зоне открытия шторки B5 (там у экранов ничего не нажимается). */
+    private fun inShadeZone() =
+        downY < shadeZone && downX >= ShadeScreen.ZONE_X0 && downX <= ShadeScreen.ZONE_X1
+
     /** Обработка завершённого нажатия в дизайн-координатах. */
     protected open fun onUp(x: Float, y: Float) {}
+
+    /**
+     * Удержание: палец стоит на месте дольше [LONG_MS] (дизайн-px; [onUp] после такого жеста
+     * не придёт). По умолчанию жеста нет — правило 3 `docs/ARCHITECTURE.md`. Сейчас объявляет
+     * только читалка (`ReaderScreen.onLongPress`, B50 «выделение слова»); шторка B5 и уезд
+     * пальца удержанием не считаются.
+     *
+     * true — жест обработан, обычное нажатие по этой же точке не случится.
+     */
+    protected open fun onLongPress(x: Float, y: Float): Boolean = false
+
 
     /**
      * Жест: палец уехал от точки нажатия и [onUp] не придёт. По умолчанию жестов нет —
@@ -177,6 +227,13 @@ abstract class Screen(protected val act: EinkActivity) : View(act) {
          * ARCHITECTURE, правило 3). Отменённое касание отдаётся в [onSwipe].
          */
         const val MOVE_SLOP = 40f
+
+        /**
+         * Порог удержания, мс ([onLongPress]). На E-Ink палец держат дольше, чем на телефоне
+         * (600 вместо привычных 400–500): листание третями — это короткое нажатие, и слишком
+         * ранний порог превращал бы его в выделение.
+         */
+        const val LONG_MS = 600L
 
         /**
          * Затемнение под шторкой и листами (замечание 15, вариант Б): out = a·in + b, a = 153/238,

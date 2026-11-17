@@ -73,6 +73,16 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
     }
     private val dst = RectF(TX, TY, TX + TW, TY + TH)
 
+    /**
+     * B51: страница под листом заметки приглушена сильнее, чем под B29 и B4 — в макете текст
+     * G8 (не G10). Колонтитул там G9, его цвет передаётся в [header] отдельно.
+     */
+    private val pagePaintDim8 = Paint().apply {
+        color = T.G8
+        isFilterBitmap = false
+        isDither = false
+    }
+
     // --- Данные книги (меняются в worker)
     private var title = ""
     /** Строка базы открытой книги: из неё берётся место чтения и в неё оно пишется. */
@@ -160,6 +170,36 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
     /** Оглавление для подписей «Место» на B28: страницы и названия пунктов, считается один раз. */
     private var tocPages: List<Int> = emptyList()
     private var tocNames: List<String> = emptyList()
+    // --- B50 «Выделение» (R4.3): плашки G12, маркеры и меню действий поверх страницы
+    private val selBar = SelectionBar(ink)
+    /** Отрезки выделения в координатах буфера страницы (x, y, w, h по 4 числа); пусто — нет. */
+    private var selRects: IntArray = IntArray(0)
+    /** Текст выделения — для меню «Копировать», «Найти» и листа B51. */
+    private var selText = ""
+    /** Начало и конец выделения (xpointer) — для `addQuote`/`addNote`. */
+    private var selStart: String? = null
+    private var selEnd: String? = null
+    /** Верх панели B50 на кадре: считается один раз при отрисовке, нужен касанию. */
+    private var selBarY = 0f
+    /** Касание выделения обрабатывается в потоке движка: плашки нужны для меню. */
+    @Volatile private var selecting = false
+    // --- B51 «Новая заметка» (R4.3): нижний лист с цитатой и клавиатурой
+    private val noteView = NoteSheet(ink)
+    /** Открыт лист B51. */
+    private var noteOpen = false
+    /**
+     * Метки B52 на показанной странице: подчёркивание цитаты G3 и заливка заметки G13 с номером
+     * на полях. Считаются в потоке движка ([rangeRects] читает разметку) при каждой отрисовке
+     * страницы и после сохранения цитаты/заметки; [render] только рисует готовые отрезки.
+     */
+    @Volatile private var pageMarks: List<PageMark> = emptyList()
+
+    /**
+     * Метка B52: отрезки текста в координатах буфера страницы ([rects], по 4 числа) и её вид.
+     * [number] — номер заметки на полях (у цитаты 0: там знак «“»).
+     */
+    class PageMark(val kind: Int, val rects: IntArray, val number: Int)
+
     /**
      * Типографика B4 на листе: значения из `Prefs`, пока лист открыт — его
      * [TypographySheet.result]. Пишется и из потока движка (применение), читается в [render] —
@@ -284,13 +324,31 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
             typo.draw(c, typing)
             return
         }
+        // B51 «Новая заметка» (R4.3): страница под листом приглушена сильнее — в макете её
+        // текст G8, колонтитул G9; сверху лист с цитатой и клавиатурой.
+        if (noteOpen) {
+            ink.rect(c, 0f, 0f, W, H, T.BG_READ)
+            header(c, T.G9)
+            drawSelectionUnder(c)         // выделение видно сквозь страницу: оно же цитата заметки
+            val nb = if (shownB) bmpB else bmpA
+            if (nb != null) c.drawBitmap(nb, null, dst, pagePaintDim8)
+            drawSelectionOver(c, bar = false)  // маркеры поверх; меню закрыто листом
+            noteView.draw(c, notePlace(), selText)
+            return
+        }
 
         val dim = if (opening) dimBegin(c) else -1
         ink.rect(c, 0f, 0f, W, H, T.BG_READ)
         header(c)
+        // B52 и B50 под текстом: заливки и подчёркивания видны сквозь прозрачный фон буфера,
+        // а буквы остаются поверх них.
+        if (pageMarks.isNotEmpty() || selRects.isNotEmpty()) drawSelectionUnder(c)
         val b = if (shownB) bmpB else bmpA
         if (b != null) c.drawBitmap(b, null, dst, pagePaint)
         if (pages > 0) footer(c)
+        // B52: метки на полях; B50: маркеры выделения и меню действий — поверх страницы.
+        if (pageMarks.isNotEmpty()) drawPageMarks(c)
+        if (selRects.isNotEmpty()) drawSelectionOver(c)
         if (menuOpen) menu.draw(c, title, menuSub(), menuPlace(), pages, cur, Engine.djvu, marked)
         if (dim >= 0) dimEnd(c, dim)
         if (opening) openDialog.draw(c)
@@ -498,6 +556,16 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
      */
     private fun openSearch() {
         if (searchOpen || loading || pages <= 0) return
+        openSearch("")
+    }
+
+    /**
+     * Открыть B28 с готовым запросом (пусто — как раньше, с клавиатурой и пустым полем).
+     * Запрос приходит из меню выделения B50 («Найти»): слово уже набрано, клавиатура не нужна,
+     * а поиск запускается сразу — от человека ждать ещё одного нажатия незачем.
+     */
+    private fun openSearch(query: String) {
+        if (searchOpen || loading || pages <= 0) return
         if (Engine.djvu) {
             Trace.step("b28: DjVu — поиска нет")
             return
@@ -512,7 +580,13 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         reloadNotes()
         searchOpen = true
         redraw()
-        Trace.step("b28: open pages=$pages главы=${toc.size} заметок=${searchView.notesCount()}")
+        if (query.isNotEmpty()) {
+            searchView.setQuery(query)
+            runSearch()
+            Trace.step("b28: open из выделения '$query'")
+        } else {
+            Trace.step("b28: open pages=$pages главы=${toc.size} заметок=${searchView.notesCount()}")
+        }
     }
 
     private fun closeSearch() {
@@ -633,6 +707,353 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         if (target < 0) return
         Trace.step("b3: goto page ${target + 1}/$pages")
         show(target, if (target > cur) 1 else if (target < cur) -1 else 0)
+    }
+
+    // ------------------------------------------------------------------ B50 «Выделение» (R4.3)
+
+    /**
+     * Удержание на слове (B50). Жест объявлен в `Screen.onLongPress`: `ACTION_UP` после него
+     * не придёт, поэтому обычное нажатие по той же точке меню B9 не откроет.
+     *
+     * `true` — слово найдено и выделение поставлено (жест наш), `false` — точка не на тексте:
+     * тогда отпускание отработает как обычное нажатие (трети, меню).
+     *
+     * Всё, что читает разметку (`wordAt`, `selectionText`, `selectionPos`, `rangeRects`), —
+     * только в `Engine.worker`; отрисовка — в `post`. Пока идёт запрос, второе удержание
+     * игнорируется ([selecting]).
+     */
+    override fun onLongPress(x: Float, y: Float): Boolean {
+        if (selecting) return true
+        if (!attached || loading || pages <= 0) return false
+        if (Engine.djvu) return false                 // у скана нет текстового слоя (READER_SPEC, R4)
+        if (dialogOpen || sheetOpen || menuOpen || tocOpen || searchOpen || gotoOpen ||
+            typoOpen || noteOpen) return false
+        val px = D.px(x)
+        val py = D.px(y)
+        selecting = true
+        Engine.worker.execute {
+            val word = try { Engine.wordAt(px, py) } catch (t: Throwable) { null }
+            if (word.isNullOrEmpty()) {
+                selecting = false
+                // Промах по пустому месту: удержание не состоялось — отпускание должно
+                // отработать как обычное нажатие (трети, меню B9), иначе экран «не отвечает».
+                post {
+                    if (attached) {
+                        Trace.step("b50: удержание мимо текста")
+                        onUp(x, y)
+                    }
+                }
+                return@execute
+            }
+            val text = Engine.selectionText().orEmpty()
+            val a = Engine.selectionPos(0)
+            val b = Engine.selectionPos(1)
+            val rects = Engine.rangeRects(null, null) ?: IntArray(0)
+            selecting = false
+            if (rects.isEmpty()) return@execute
+            post {
+                if (!attached) return@post
+                selText = text
+                selStart = a
+                selEnd = b
+                selRects = rects
+                Trace.step("b50: выделено '${text.take(40)}' отрезков=${rects.size / 4}")
+                redraw()
+            }
+        }
+        return true
+    }
+
+    /** Снять выделение: плашки и меню уходят, движку тоже сказано (`sel_clear`). */
+    private fun clearSelection() {
+        selRects = IntArray(0)
+        selText = ""
+        selStart = null
+        selEnd = null
+        Engine.worker.execute { Engine.selectionClear() }
+        redraw()
+        Trace.step("b50: выделение снято")
+    }
+
+    /**
+     * Плашки G12 по отрезкам движка (B50) и заливки/подчёркивания меток B52 — **под** страницей:
+     * буфер движка приходит как маска (`ALPHA_8`, фон прозрачный), поэтому текст страницы
+     * ложится на плашку сверху и остаётся читаемым. Маркеры и меню — [drawSelectionOver].
+     *
+     * Отрезки приходят в координатах буфера страницы, отрисовка — в дизайн-px со смещением
+     * области текста ([TX]/[TY]): на книге `D.u = 1`, поэтому числа совпадают с макетом
+     * (плашка 96,330.2).
+     */
+    private fun drawSelectionUnder(c: Canvas) {
+        for (m in pageMarks) {
+            val r = m.rects
+            var i = 0
+            while (i + 3 < r.size) {
+                val rx = TX + r[i] / D.u
+                val ry = TY + r[i + 1] / D.u
+                val rw = r[i + 2] / D.u
+                val rh = r[i + 3] / D.u
+                if (m.kind == LibraryDb.MARK_NOTE) {
+                    // Заметка: заливка строки G13 (B52: 96,611.8 1213×64).
+                    ink.roundRect(c, rx - MARK_PLATE_PAD, ry, rw + 2 * MARK_PLATE_PAD, rh,
+                        R_SEL, T.G13)
+                } else {
+                    // Цитата: подчёркивание по низу строки (B52: 102,390.2 1199×4).
+                    ink.rect(c, rx, ry + rh - QUOTE_UNDER_H, rw, QUOTE_UNDER_H, T.G3)
+                }
+                i += 4
+            }
+        }
+        var i = 0
+        while (i + 3 < selRects.size) {
+            ink.roundRect(c, TX + selRects[i] / D.u, TY + selRects[i + 1] / D.u,
+                selRects[i + 2] / D.u, selRects[i + 3] / D.u, R_SEL, T.G12)
+            i += 4
+        }
+    }
+
+    /**
+     * Верх выделения: маркеры 6×72.4 у первой и последней строки и меню B50.
+     * Считается по тем же отрезкам, что рисовала [drawSelectionUnder].
+     * [bar] = false — только маркеры (под листом B51 меню всё равно закрыто листом).
+     */
+    private fun drawSelectionOver(c: Canvas, bar: Boolean = true) {
+        var top = Float.MAX_VALUE
+        var bottom = -Float.MAX_VALUE
+        var firstX = 0f
+        var lastRight = 0f
+        var i = 0
+        while (i + 3 < selRects.size) {
+            val rx = TX + selRects[i] / D.u
+            val ry = TY + selRects[i + 1] / D.u
+            val rw = selRects[i + 2] / D.u
+            val rh = selRects[i + 3] / D.u
+            if (ry < top) {
+                top = ry
+                firstX = rx
+            }
+            if (ry + rh > bottom) bottom = ry + rh
+            if (rx + rw > lastRight) lastRight = rx + rw
+            i += 4
+        }
+        if (top > bottom) return
+        // Маркеры на 4 выше плашки (макет: 148,257.8 при плашке 150,261.8).
+        ink.rect(c, firstX - MARK_OFF_X, top - MARK_OFF_Y, MARK_W, MARK_H, T.G1)
+        ink.rect(c, lastRight + MARK_GAP_X, bottom - MARK_OFF_Y - MARK_EXTRA_Y,
+            MARK_W, MARK_H, T.G1)
+        if (!bar) return
+        selBarY = selBar.top(top, bottom)
+        selBar.draw(c, selBarY)
+    }
+
+    /**
+     * Касание меню выделения (B50). `true` — касание наше: меню, само выделение или «мимо» —
+     * всё это не должно доходить до третей и меню B9.
+     */
+    private fun selectionTouch(x: Float, y: Float): Boolean {
+        if (selRects.isEmpty()) return false
+        when (selBar.hit(x, y, selBarY)) {
+            SelectionBar.ACT_QUOTE -> addQuote()
+            SelectionBar.ACT_NOTE -> openNote()
+            SelectionBar.ACT_DICT -> {
+                // «Словарь» — R5 (B30): кнопка нарисована по макету, этап ещё не сделан.
+                Trace.step("b50: словарь — этап R5")
+                clearSelection()
+            }
+            SelectionBar.ACT_FIND -> {
+                val w = selText.trim()
+                clearSelection()
+                openSearch(w)
+            }
+            SelectionBar.ACT_COPY -> copySelection()
+            else -> clearSelection()          // мимо меню — снять выделение
+        }
+        return true
+    }
+
+    /** «Копировать»: выделенный текст в системный буфер Android. */
+    private fun copySelection() {
+        val s = selText
+        if (s.isEmpty()) return
+        try {
+            val cm = act.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                as android.content.ClipboardManager
+            cm.setPrimaryClip(android.content.ClipData.newPlainText("Цитата", s))
+            Trace.step("b50: скопировано ${s.length} символов")
+        } catch (t: Throwable) {
+            Trace.step("b50: буфер обмена FAIL ${t.javaClass.simpleName}: ${t.message}")
+        }
+        clearSelection()
+    }
+
+    /**
+     * «Цитата»: выделение (xpointer начала и конца) уходит в базу видом
+     * [LibraryDb.MARK_QUOTE]. Страница и глава — на момент сохранения: по ним список B27
+     * и B28 показывают «Стр. N», если книгу нельзя открыть прямо сейчас.
+     */
+    private fun addQuote() {
+        val e = entry
+        val a = selStart
+        val b = selEnd
+        val text = selText
+        val page = cur
+        val chapter = chapterTitle.ifEmpty { null }
+        clearSelection()
+        if (e == null || e.id <= 0 || a.isNullOrEmpty() || b.isNullOrEmpty()) return
+        Engine.worker.execute {
+            val line = text.replace('\u00A0', ' ').trim().take(MARK_TEXT_MAX).ifEmpty { null }
+            val id = try { act.db.addQuote(e.id, a, b, page, chapter, line) }
+                catch (t: Throwable) {
+                    Trace.step("b50: addQuote FAIL ${t.javaClass.simpleName}: ${t.message}")
+                    -1L
+                }
+            Trace.step("b50: цитата id=$id стр.${page + 1} '${line.orEmpty().take(30)}'")
+            if (id > 0) {
+                reloadNotes()
+                refreshPageMarks()
+                post { if (attached) redraw() }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------ B51 «Новая заметка» (R4.3)
+
+    /** «Заметка»: лист B51 поверх страницы; выделение остаётся — это и есть цитата заметки. */
+    private fun openNote() {
+        if (noteOpen) return
+        noteView.open()
+        noteOpen = true
+        redraw()
+        Trace.step("b51: open стр.${cur + 1} '${selText.take(30)}'")
+    }
+
+    private fun closeNote() {
+        if (!noteOpen) return
+        noteOpen = false
+        redraw()
+        Trace.step("b51: close")
+    }
+
+    /** Подпись места на B51: «Часть 1 · Глава I · стр. 124» — глава и страница. */
+    private fun notePlace(): String {
+        val page = "стр. ${cur + 1}"
+        return if (chapterTitle.isEmpty()) page else "$chapterTitle · $page"
+    }
+
+    /**
+     * «Сохранить» на B51: заметка (выделение + набранный текст) уходит в базу видом
+     * [LibraryDb.MARK_NOTE]. Пустое поле лист не отдаёт: [NoteSheet.hit] в этом случае
+     * возвращает `ACT_NONE`, и сюда дело не доходит.
+     */
+    private fun saveNote() {
+        val e = entry
+        val a = selStart
+        val b = selEnd
+        val text = selText
+        val note = noteView.note()
+        val page = cur
+        val chapter = chapterTitle.ifEmpty { null }
+        closeNote()
+        if (e == null || e.id <= 0 || a.isNullOrEmpty() || b.isNullOrEmpty()) {
+            clearSelection()
+            return
+        }
+        clearSelection()
+        Engine.worker.execute {
+            val line = text.replace('\u00A0', ' ').trim().take(MARK_TEXT_MAX).ifEmpty { null }
+            val id = try { act.db.addNote(e.id, a, b, page, chapter, line, note) }
+                catch (t: Throwable) {
+                    Trace.step("b51: addNote FAIL ${t.javaClass.simpleName}: ${t.message}")
+                    -1L
+                }
+            Trace.step("b51: заметка id=$id стр.${page + 1} знаков=${note.length}")
+            if (id > 0) {
+                reloadNotes()
+                refreshPageMarks()
+                post { if (attached) redraw() }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------ B52 «Метки» (R4.3)
+
+    /**
+     * Пересчитать метки показанной страницы (B52): цитаты и заметки книги из базы, у каждой
+     * свои отрезки через `Engine.rangeRects(start, end)`; не попавшие на эту страницу дают
+     * пустой массив и отбрасываются. Только в `Engine.worker`.
+     *
+     * Номер заметки — её порядок от начала книги (`created`): он стоит на полях и совпадает
+     * с порядком во вкладке «Заметки» B28.
+     */
+    private fun refreshPageMarks() {
+        val e = entry
+        if (e == null || e.id <= 0 || Engine.djvu) {
+            pageMarks = emptyList()
+            return
+        }
+        val list = try { act.db.notes(e.id) } catch (t: Throwable) { emptyList() }
+        if (list.isEmpty()) {
+            pageMarks = emptyList()
+            return
+        }
+        val ordered = list.sortedBy { it.created }
+        val out = ArrayList<PageMark>(4)
+        var noteNo = 0
+        for (m in ordered) {
+            if (m.kind == LibraryDb.MARK_NOTE) noteNo++
+            if (m.page != cur) continue
+            val end = m.posEnd
+            if (end.isNullOrEmpty()) continue
+            val rects = try { Engine.rangeRects(m.pos, end) } catch (t: Throwable) { null }
+            if (rects == null || rects.isEmpty()) continue
+            out.add(PageMark(m.kind, rects, if (m.kind == LibraryDb.MARK_NOTE) noteNo else 0))
+        }
+        pageMarks = out
+    }
+
+    /**
+     * Метки B52 поверх страницы: Ø44 G3 со знаком «“» (цитата) или с номером (заметка)
+     * на полях. Заливка заметки и подчёркивание цитаты рисуются под текстом —
+     * [drawSelectionUnder]: на `ALPHA_8`-буфере они видны сквозь прозрачный фон.
+     *
+     * Метка стоит на одном и том же x = 1330, как в макете (текст кончается на 1301.7),
+     * и не зависит от того, где кончилась строка: иначе она наезжала бы на слова.
+     * По вертикали: у цитаты — верх её первой строки, у заметки — середина плашки
+     * (макет: 269.8 при строке с 261.8 и 621.8 при плашке с 611.8).
+     */
+    private fun drawPageMarks(c: Canvas) {
+        for (m in pageMarks) {
+            val r = m.rects
+            if (r.size < 4) continue
+            var top = Float.MAX_VALUE
+            var i = 0
+            while (i + 3 < r.size) {
+                val y = TY + r[i + 1] / D.u
+                if (y < top) top = y
+                i += 4
+            }
+            if (top == Float.MAX_VALUE) continue
+            // Заметка: метка по середине плашки (611.8 → 621.8 при Ø44); цитата — по верху строки.
+            val h = r[3] / D.u
+            val badgeY = if (m.kind == LibraryDb.MARK_NOTE) top + (h - BADGE_D) / 2f else top
+            markBadge(c, BADGE_X, badgeY, m)
+        }
+    }
+
+    /**
+     * Метка Ø44 на полях. У цитаты — знак «“» 44/800 G15, у заметки — её номер 26/800 G15.
+     * В макете и то и другое: круг 1330, номер выровнен по центру круга, знак поднят на 8.
+     */
+    private fun markBadge(c: Canvas, x: Float, y: Float, m: PageMark) {
+        ink.roundRect(c, x, y, BADGE_D, BADGE_D, BADGE_D / 2f, T.G3)
+        if (m.number > 0) {
+            ink.textCenter(c, m.number.toString(), x, BADGE_D,
+                ink.baselineIn(y, BADGE_D, TS_BADGE, 800), TS_BADGE, 800, T.G15)
+        } else {
+            ink.textCenter(c, "“", x, BADGE_D,
+                ink.baselineIn(y - BADGE_QUOTE_DY, BADGE_D, TS_QUOTE, 800),
+                TS_QUOTE, 800, T.G15)
+        }
     }
 
     // ------------------------------------------------------------------ B4 «Типографика» (R3.5)
@@ -876,6 +1297,14 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         gen++                 // результат уже идущей отрисовки выбрасываем
         stopOpenDialog()
         sheetOpen = false
+        // Оверлеи R4.3 снимаем вместе с экраном: при возврате книга откроется на месте чтения,
+        // а выделение и лист заметки к ушедшей странице уже не относятся.
+        noteOpen = false
+        selRects = IntArray(0)
+        selText = ""
+        selStart = null
+        selEnd = null
+        pageMarks = emptyList()
         prevShown = null
         prevA = null
         prevB = null
@@ -1113,6 +1542,15 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
     private fun show(page: Int, dir: Int) {
         if (loading) return             // книга ещё открывается, листать нечего
         if (page < 0 || page >= pages) return
+        // Выделение живёт на конкретной странице: при листании его снимаем (пункт 17 ROADMAP —
+        // выделение по рамкам слов текущей страницы, ушедшая страница их уже не отрисует).
+        if (selRects.isNotEmpty()) {
+            selRects = IntArray(0)
+            selText = ""
+            selStart = null
+            selEnd = null
+            Engine.worker.execute { Engine.selectionClear() }
+        }
         if (page == shownPage && nextPage == -1) {    // уже на экране
             if (wantPage == page) wantPage = -1
             return
@@ -1134,6 +1572,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
             if (wantPage == page) wantPage = -1
             chapter(page)
             flips++
+            refreshPageMarks()        // B52: метки живут на конкретной странице
             if (flips % SAVE_EVERY == 0) savePlace()
             val full = flips % FULL_EVERY == 0
             post {
@@ -1164,6 +1603,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         cur = page
         chapter(page)
         flips++
+        refreshPageMarks()            // B52: метки живут на конкретной странице
         if (flips % SAVE_EVERY == 0) savePlace()
         val full = flips % FULL_EVERY == 0
         Trace.step("b3: page $page ${ms}ms")
@@ -1358,6 +1798,15 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
     }
 
     override fun onUp(x: Float, y: Float) {
+        // B51 «Новая заметка» (R4.3) — раньше всего: лист лежит над страницей и над выделением.
+        if (noteOpen) {
+            when (noteView.hit(x, y)) {
+                NoteSheet.ACT_SAVE -> saveNote()
+                NoteSheet.ACT_CHANGED -> redraw()
+                NoteSheet.ACT_CLOSE -> { closeNote(); clearSelection() }
+            }
+            return
+        }
         if (dialogOpen) {
             val a = dialog.hit(x, y)
             if (a != ErrorDialog.ACT_NONE) {
@@ -1440,6 +1889,9 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
             }
             return
         }
+        // B50 «Выделение» (R4.3): пока выделено, касание сначала отдаётся меню выделения —
+        // «мимо меню» снимает выделение, а не листает страницу и не открывает B9.
+        if (selRects.isNotEmpty() && selectionTouch(x, y)) return
         // B9 «Меню чтения»: пока открыто, касания только его.
         if (menuOpen) {
             when (menu.hit(x, y, Engine.djvu)) {
@@ -1556,6 +2008,17 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
 
     /** «Назад»: сначала B10 и меню B9, листы B4 и B31, диалоги, потом уход из книги. */
     override fun backPressed(): Boolean {
+        // B51: «Назад» закрывает лист заметки (и снимает выделение) — книга остаётся открытой.
+        if (noteOpen) {
+            closeNote()
+            clearSelection()
+            return true
+        }
+        // B50: пока выделено, «Назад» снимает выделение, а не уходит из книги.
+        if (selRects.isNotEmpty()) {
+            clearSelection()
+            return true
+        }
         if (searchOpen) {
             closeSearch()
             return true
@@ -1671,6 +2134,12 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         searchOpen = false
         sheetOpen = false
         dialogOpen = false
+        noteOpen = false
+        selRects = IntArray(0)
+        selText = ""
+        selStart = null
+        selEnd = null
+        pageMarks = emptyList()
         badPage = -1
         Trace.step("b3: назад в оболочку со стр.${cur + 1}/$pages")
         act.onBackPressed()
@@ -1685,6 +2154,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
      */
     fun key(code: Int): Boolean {
         if (dialogOpen) return false
+        if (noteOpen) return false     // B51: лист с клавиатурой, страница не листается
         if (sheetOpen) return false    // B31: пока лист открыт, страница не листается
         if (menuOpen) return false     // B9: меню закрывается касанием или «Назад»
         if (tocOpen) return false      // B10: список листается своими кнопками
@@ -1781,6 +2251,31 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         private const val SWIPE_ASPECT = 2f
         /** Сколько символов текста страницы хранить в закладке (R4.1): одна строка списка B27. */
         private const val MARK_TEXT_MAX = 120
+
+        // --- B50 «Выделение» (R4.3)
+        /** Скругление плашки выделения: строка текста 64 высотой при радиусе 10. */
+        private const val R_SEL = 10f
+        /** Маркеры выделения: 6×72.4 (B50.json), вынесены на 4 влево/вверх от плашки. */
+        private const val MARK_W = 6f
+        private const val MARK_H = 72.4f
+        private const val MARK_OFF_X = 2f
+        private const val MARK_OFF_Y = 4f
+        private const val MARK_GAP_X = 0f
+        /** Нижний маркер поднят ещё на 4: в макете 326.2 против плашки 330.2 (верх 257.8). */
+        private const val MARK_EXTRA_Y = 4f
+
+        // --- B52 «Метки» (R4.3)
+        /** Подчёркивание цитаты: полоса G3 в 4 px по низу строки. */
+        private const val QUOTE_UNDER_H = 4f
+        /** Заливка заметки шире отрезка текста на 2 с каждой стороны (1213 против 1209 строки). */
+        private const val MARK_PLATE_PAD = 2f
+        /** Метка на полях: Ø44 в 1330 — текст страницы кончается на 1301.7 (B52.json). */
+        private const val BADGE_D = 44f
+        private const val BADGE_X = 1330f
+        /** Номер заметки 26/800, знак цитаты 44/800; знак в макете поднят на 8. */
+        private const val TS_BADGE = 26f
+        private const val TS_QUOTE = 44f
+        private const val BADGE_QUOTE_DY = 8f
 
         // --- B31 «Масштаб и поля» (R2.5)
         /** Размер превью листа: 600×820 — слой «Страница DjVu» макета, без обрезки. */

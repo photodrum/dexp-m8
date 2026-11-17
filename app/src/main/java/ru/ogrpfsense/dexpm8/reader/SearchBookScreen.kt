@@ -148,6 +148,19 @@ class SearchBookScreen(private val ink: Ink, private val icons: Icons) {
     /** Запрос для движка (тот, что набран) — читалка передаёт его в `Engine.search`. */
     fun searchQuery(): String = query
 
+    /**
+     * Запрос пришёл готовым (B50 «Найти» из меню выделения): поле заполнено, клавиатура
+     * не нужна — слово уже набрано, а поиск запускает сама читалка.
+     */
+    fun setQuery(q: String) {
+        query = q.take(MAX_QUERY)
+        kbOpen = false
+        page = 0
+        hits = emptyList()
+        stale = true
+        searched = ""
+    }
+
     /** Поиск пошёл: до ответа шапка показывает «ищем…» вместо числа. */
     fun markSearching() {
         searching = true
