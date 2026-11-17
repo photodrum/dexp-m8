@@ -158,7 +158,8 @@ abstract class Screen(protected val act: EinkActivity) : View(act) {
                     return true
                 }
                 // Шторка B5 — раньше элементов экрана: в зоне шторки у экранов ничего не нажимается.
-                if (inShadeZone()) {
+                // Экран может уступить свою зону, если на этом месте лежит его элемент (замечание 20).
+                if (inShadeZone() && shadeAllowed(downX, downY)) {
                     act.openShade()
                     return true
                 }
@@ -178,6 +179,16 @@ abstract class Screen(protected val act: EinkActivity) : View(act) {
     /** Точка нажатия — в зоне открытия шторки B5 (там у экранов ничего не нажимается). */
     private fun inShadeZone() =
         downY < shadeZone && downX >= ShadeScreen.ZONE_X0 && downX <= ShadeScreen.ZONE_X1
+
+    /**
+     * Разрешает шторке B5 открыться в своей зоне (x 468…936, y < [shadeZone]). По умолчанию — да:
+     * в зоне шторки у экранов ничего не нажимается, и отпускание открывает шторку.
+     *
+     * `false` — экран уступает эту точку себе: касание доходит до [onUp], как у любой другой точки
+     * вне зоны. Так делает читалка, когда меню B50 встало в верхнюю треть страницы (замечание 20,
+     * 2026-11-17). Удержание зону шторки уважает по-прежнему — см. [longPress].
+     */
+    protected open fun shadeAllowed(x: Float, y: Float): Boolean = true
 
     /** Обработка завершённого нажатия в дизайн-координатах. */
     protected open fun onUp(x: Float, y: Float) {}
