@@ -338,6 +338,18 @@ class Ink(ctx: Context) {
         // стоит только на пробелах), поэтому последняя группа слов могла вылезти за [maxW] —
         // поймано на B27: цитата закладки уходила за панель. Дожёвываем остаток теми же правилами.
         var rest = lineStart
+        // Остаток, который влезает целиком, рисуем одной строкой. Без этой проверки цикл ниже
+        // доходит до последнего слова, не находит в нём пробела и выносит его вниз одиночной
+        // строкой-сиротой — B45: «Остальные книги открываются как» (638 px) + «обычно.» (148.5 px)
+        // вместо одной строки на 794 px из 1100. То же лечится в [paragraphCenter] выше.
+        val whole = s.substring(rest).trim()
+        if (rest < s.length && !(maxLines > 0 && lines + 1 >= maxLines) &&
+            text.measureText(whole, 0, whole.length) <= maxW) {
+            c.drawText(if (maxLines > 0) ellipsize(whole, maxW, size, weight, font) else whole,
+                x, y, text)
+            y += step
+            return y - top
+        }
         // Последняя строка — с «…» при обрезке и без; остальные переносятся по словам.
         while (rest < s.length && !(maxLines > 0 && lines + 1 >= maxLines)) {
             var cut = -1
