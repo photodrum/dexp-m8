@@ -200,12 +200,12 @@ object EngineSelfTest {
         Engine.page(p, W, H, buf)
         var wx = W / 2
         var wy = H / 2
-        var word = Engine.wordAt(wx, wy)
+        var word = Engine.wordAt(p, wx, wy)
         // Середина могла попасть в пустую строку между абзацами — поднимаемся на строку.
         var tries = 0
         while (word == null && tries < 8) {
             wy -= 60
-            word = Engine.wordAt(wx, wy)
+            word = Engine.wordAt(p, wx, wy)
             tries++
         }
         Trace.step("selftest: wordAt($wx,$wy) попыток=$tries слово='${word ?: "—"}'")

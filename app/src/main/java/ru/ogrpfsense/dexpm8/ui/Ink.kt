@@ -185,8 +185,14 @@ class Ink(ctx: Context) {
     }
 
     /**
-     * Разбить название на [lines] строк по словам (обложка B17: «Белая\\nгвардия»).
-     * Не влезло — последняя строка обрезается по «…», как [ellipsize].
+     * Разбить текст на [lines] строк по словам. Не влезло — последняя строка обрезается
+     * по «…», как [ellipsize].
+     *
+     * Остаток, который влезает целиком, всегда уходит одной строкой. Без этой проверки
+     * жадная набивка каждой строки до предела выталкивала последнее слово на следующую
+     * строку даже при большом запасе: B30 показывал «… перен. сопускать» / «ошибку»
+     * при 823 px из 1180 (замечание пользователя 2026-11-17). Та же правка, что в
+     * [paragraph] («слово-сирота», B45), — здесь её не было.
      */
     fun ellipsize2(s: String, maxW: Float, size: Float, weight: Int,
                    font: Typeface = T.manrope(res, weight), lines: Int = 2): ArrayList<String> {
@@ -194,6 +200,10 @@ class Ink(ctx: Context) {
         var rest = s.trim()
         for (i in 0 until lines) {
             if (rest.isEmpty()) break
+            if (measure(rest, size, weight, font) <= maxW) {
+                out.add(rest)
+                break
+            }
             if (i == lines - 1) {
                 out.add(ellipsize(rest, maxW, size, weight, font))
                 break

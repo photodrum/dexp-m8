@@ -190,6 +190,17 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
     private val noteView = NoteSheet(ink)
     /** Открыт лист B51. */
     private var noteOpen = false
+    // --- B30 «Словарь и сноски» (R5): нижний лист со словом под пальцем
+    private val dictView = DictSheet(ink, icons)
+    /** Открыт лист B30. */
+    private var dictOpen = false
+    /** Сеть для словаря и перевода. Лениво: экран живёт в кэше, контекст — активити. */
+    private val dictOnline by lazy { ru.ogrpfsense.dexpm8.core.DictOnline(act) }
+    /**
+     * Номер запроса к сети: ответ, пришедший после закрытия листа или смены слова,
+     * выбрасывается так же, как кадр движка по [epoch].
+     */
+    private var dictGen = 0
     /**
      * Метки B52 на показанной странице: подчёркивание цитаты G3 и заливка заметки G13 с номером
      * на полях. Считаются в потоке движка ([rangeRects] читает разметку) при каждой отрисовке
@@ -338,6 +349,19 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
             if (nb != null) c.drawBitmap(nb, null, dst, pagePaintDim8)
             drawSelectionOver(c, bar = false)  // маркеры поверх; меню закрыто листом
             noteView.draw(c, notePlace(), selText)
+            return
+        }
+        // B30 «Словарь и сноски» (R5): страница как есть (в макете её текст G1), слово под
+        // вдавленной плашкой, сверху нижний лист. Меню B50 закрыто листом, маркеры остаются.
+        if (dictOpen) {
+            ink.rect(c, 0f, 0f, W, H, T.BG_READ)
+            header(c)
+            drawSelectionUnder(c)
+            val db = if (shownB) bmpB else bmpA
+            if (db != null) c.drawBitmap(db, null, dst, pagePaint)
+            if (pages > 0) footer(c)
+            drawSelectionOver(c, bar = false)
+            dictView.draw(c)
             return
         }
 
@@ -742,7 +766,13 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         if (!attached || loading || pages <= 0) return false
         if (Engine.djvu) return false                 // у скана нет текстового слоя (READER_SPEC, R4)
         if (dialogOpen || sheetOpen || menuOpen || tocOpen || searchOpen || gotoOpen ||
-            typoOpen || noteOpen) return false
+            typoOpen || noteOpen || dictOpen) return false
+        // Идёт перевёрстка после смены кегля: номера страниц ещё старые, координаты относятся
+        // к прежнему кадру — удержание сейчас дало бы слово из чужого места.
+        if (relayouting) {
+            Trace.step("b50: удержание во время перевёрстки — пропуск")
+            return false
+        }
         // `word_at` ждёт точку в координатах БУФЕРА страницы, а буфер рисуется со смещением
         // области текста (TX,TY): без вычета получалось выделение на 117 px ниже — на две строки.
         // Всё за пределами области текста (колонтитул, поля, нижняя панель) — промах.
@@ -754,9 +784,14 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         }
         val px = D.px(bx)
         val py = D.px(by)
+        // Страница, которая на экране: движок мог уехать вперёд фоновой отрисовкой соседней.
+        val page0 = cur
         selecting = true
         Engine.worker.execute {
-            val word = try { Engine.wordAt(px, py) } catch (t: Throwable) { null }
+            // Пока задача ждала очередь, могла закончиться перевёрстка ([applyTypo]) и
+            // сменить номер страницы: берём актуальный, снимок с UI-потока уже устарел.
+            val page = if (relayouting) page0 else cur
+            val word = try { Engine.wordAt(page, px, py) } catch (t: Throwable) { null }
             if (word.isNullOrEmpty()) {
                 selecting = false
                 // Промах по пустому месту: удержание не состоялось — отпускание должно
@@ -883,11 +918,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         when (selBar.hit(x, y, selBarY)) {
             SelectionBar.ACT_QUOTE -> addQuote()
             SelectionBar.ACT_NOTE -> openNote()
-            SelectionBar.ACT_DICT -> {
-                // «Словарь» — R5 (B30): кнопка нарисована по макету, этап ещё не сделан.
-                Trace.step("b50: словарь — этап R5")
-                clearSelection()
-            }
+            SelectionBar.ACT_DICT -> openDict()
             SelectionBar.ACT_FIND -> {
                 val w = selText.trim()
                 clearSelection()
@@ -1003,7 +1034,122 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         }
     }
 
-    // ------------------------------------------------------------------ B52 «Метки» (R4.3)
+    // ------------------------------------------------------------------ B30 «Словарь и сноски» (R5)
+
+    /**
+     * «Словарь» в меню выделения B50: нижний лист B30 поверх страницы.
+     *
+     * Выделение остаётся — в макете слово под листом лежит во вдавленной плашке, её рисует
+     * [drawSelectionUnder]. Слово для запроса берётся у движка (`selText`), а не из меню:
+     * выделение может быть фразой, тогда словарь спросит её целиком и не найдёт — начало
+     * формы отдаст поиск по Викисловарю.
+     */
+    private fun openDict() {
+        if (dictOpen) return
+        val w = selText.trim()
+        if (w.isEmpty()) return
+        dictView.open(w)
+        dictOpen = true
+        redraw()
+        Trace.step("b30: open '$w'")
+        askDict(w)
+    }
+
+    private fun closeDict() {
+        if (!dictOpen) return
+        dictOpen = false
+        dictGen++            // ответ, который уже в пути, экрану не нужен
+        redraw()
+        Trace.step("b30: close")
+    }
+
+    /**
+     * Запрос статьи в Викисловарь — только в фоне: `HttpURLConnection` на UI-потоке даёт
+     * `NetworkOnMainThreadException`. Ответ приходит в `post`; устаревший (закрыли лист или
+     * сменили вкладку) отбрасывается по [dictGen].
+     */
+    private fun askDict(word: String) {
+        val my = ++dictGen
+        Engine.worker.execute {
+            val d = try { dictOnline.define(word) } catch (t: Throwable) {
+                Trace.step("b30: define FAIL ${t.javaClass.simpleName}: ${t.message}")
+                null
+            }
+            val why = if (d == null) dictOnline.why else null
+            Trace.step("b30: '$word' -> ${d?.word ?: "нет"} ${why ?: ""}")
+            post {
+                if (!attached || my != dictGen || !dictOpen) return@post
+                if (d == null) dictView.show(word, "", null, "", why)
+                else dictView.show(d.word, d.grammar, d.definition, d.source, null)
+                redraw()
+            }
+        }
+    }
+
+    /** Вкладка «Перевод»: слово уходит в MyMemory, направление считает [DictOnline]. */
+    private fun askTranslate() {
+        val w = dictView.word()
+        if (w.isEmpty()) return
+        val ru = w.any { it in '\u0400'..'\u04FF' }
+        dictView.waitTranslate(if (ru) "ru → en" else "en → ru")
+        redraw()
+        val my = ++dictGen
+        Engine.worker.execute {
+            val t = try { dictOnline.translate(w) } catch (e: Throwable) {
+                Trace.step("b30: translate FAIL ${e.javaClass.simpleName}: ${e.message}")
+                null
+            }
+            val why = if (t == null) dictOnline.why else null
+            Trace.step("b30: перевод '$w' -> ${t?.text ?: "нет"} ${why ?: ""}")
+            post {
+                if (!attached || my != dictGen || !dictOpen) return@post
+                val dir = if (t != null) "${t.from} → ${t.to}"
+                          else if (ru) "ru → en" else "en → ru"
+                dictView.showTranslate(dir, t?.text, why)
+                redraw()
+            }
+        }
+    }
+
+    /**
+     * Касание листа B30. Вкладка «Сноска» пока без нативного `linkAt()` (R5.1, нужен Opus):
+     * на ней лист честно говорит, что сносок ещё нет, а не показывает пустоту.
+     */
+    private fun dictTouch(x: Float, y: Float) {
+        val a = dictView.hit(x, y)
+        when {
+            a == DictSheet.ACT_CLOSE -> closeDict()
+            a >= DictSheet.ACT_HIGHLIGHT -> dictAction(a - DictSheet.ACT_HIGHLIGHT)
+            a >= DictSheet.ACT_TAB -> {
+                val t = a - DictSheet.ACT_TAB
+                if (!dictView.setTab(t)) return
+                redraw()
+                when (t) {
+                    DictSheet.TAB_TRANSLATE -> askTranslate()
+                    DictSheet.TAB_NOTE -> Trace.step("b30: вкладка «Сноска» — натив R5.1")
+                }
+            }
+        }
+    }
+
+    /**
+     * Действия внизу листа B30 — те же, что в меню выделения B50: лист их дублирует
+     * (макет B30), поэтому закрываем лист и зовём тот же код.
+     */
+    private fun dictAction(i: Int) {
+        when (i) {
+            0 -> { closeDict(); addQuote() }
+            1 -> { closeDict(); openNote() }
+            2 -> { closeDict(); copySelection() }
+            else -> {
+                val w = selText.trim()
+                closeDict()
+                clearSelection()
+                openSearch(w)
+            }
+        }
+    }
+
 
     /**
      * Пересчитать метки показанной страницы (B52): цитаты и заметки книги из базы, у каждой
@@ -1330,6 +1476,8 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         // Оверлеи R4.3 снимаем вместе с экраном: при возврате книга откроется на месте чтения,
         // а выделение и лист заметки к ушедшей странице уже не относятся.
         noteOpen = false
+        dictOpen = false
+        dictGen++
         selRects = IntArray(0)
         selText = ""
         selStart = null
@@ -1599,6 +1747,10 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
             nextPage = -1
             shownPage = page
             cur = page
+            // Движок обычно уже на этой странице (`prefetch` её и рисовал), но после
+            // удержания он возвращён на прежнюю ([Engine.syncPage]) — тогда метки B52
+            // считались бы по чужой странице. Проверка дешёвая: совпало — выходит сразу.
+            if (!Engine.djvu) Engine.syncPage(page)
             if (wantPage == page) wantPage = -1
             chapter(page)
             flips++
@@ -1919,6 +2071,11 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
             }
             return
         }
+        // B30 «Словарь и сноски» (R5): лист перекрывает страницу целиком — касание только его.
+        if (dictOpen) {
+            dictTouch(x, y)
+            return
+        }
         // B50 «Выделение» (R4.3): пока выделено, касание сначала отдаётся меню выделения —
         // «мимо меню» снимает выделение, а не листает страницу и не открывает B9.
         if (selRects.isNotEmpty() && selectionTouch(x, y)) return
@@ -2038,6 +2195,11 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
 
     /** «Назад»: сначала B10 и меню B9, листы B4 и B31, диалоги, потом уход из книги. */
     override fun backPressed(): Boolean {
+        // B30: «Назад» закрывает лист словаря, выделение под ним снимается вместе с листом.
+        if (dictOpen) {
+            closeDict()
+            return true
+        }
         // B51: «Назад» закрывает лист заметки (и снимает выделение) — книга остаётся открытой.
         if (noteOpen) {
             closeNote()
@@ -2165,6 +2327,8 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         sheetOpen = false
         dialogOpen = false
         noteOpen = false
+        dictOpen = false
+        dictGen++
         selRects = IntArray(0)
         selText = ""
         selStart = null
@@ -2185,6 +2349,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
     fun key(code: Int): Boolean {
         if (dialogOpen) return false
         if (noteOpen) return false     // B51: лист с клавиатурой, страница не листается
+        if (dictOpen) return false     // B30: лист словаря поверх страницы
         if (sheetOpen) return false    // B31: пока лист открыт, страница не листается
         if (menuOpen) return false     // B9: меню закрывается касанием или «Назад»
         if (tocOpen) return false      // B10: список листается своими кнопками
