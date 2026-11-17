@@ -146,6 +146,13 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
      * Версия 10: закладки (R4.1, B27). Позиция — движка (`pos`, xpointer у crengine), а не
      * номер страницы: после смены кегля закладка остаётся на своём тексте (требование R4).
      *
+     * Версия 11 (R4.3, B50–B52) — та же таблица хранит три вида записей:
+     *  - `kind` 0 — закладка страницы (R4.1): `pos` — позиция строки;
+     *  - `kind` 1 — цитата: `pos` — начало выделения, `pos_end` — конец, `text` — сам текст;
+     *  - `kind` 2 — заметка: как цитата плюс `note` — что человек написал (B51).
+     * У цитаты и заметки `text` — выделенный текст (он же цитата в списке B27), у заметки
+     * в `text` остаётся выделение: B52 рисует именно его. Старые строки получают 0 — закладку.
+     *
      * [text] — первые слова строки, чтобы список читался без открытия книги; [chapter] —
      * название главы из оглавления на момент постановки. Оба поля — снимок на момент
      * постановки: если книга изменится, закладка всё равно останется узнаваемой.
@@ -163,7 +170,10 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
                 "chapter TEXT," +
                 "text TEXT," +
                 "created INTEGER NOT NULL," +
-                "UNIQUE (book_id, pos))"
+                "kind INTEGER NOT NULL DEFAULT 0," +
+                "pos_end TEXT," +
+                "note TEXT," +
+                "UNIQUE (book_id, pos, kind))"
         )
         db.execSQL("CREATE INDEX bookmarks_book ON bookmarks (book_id, created)")
     }
@@ -201,6 +211,20 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         if (oldVersion < 9) db.execSQL("ALTER TABLE books ADD COLUMN view TEXT")
         // Версия 10: закладки (R4.1, B27) — своя таблица, старые строки не трогаем.
         if (oldVersion < 10) createBookmarks(db)
+        // Версия 11: цитаты и заметки (R4.3, B50–B52) — те же строки, три новых поля.
+        // Таблицу перестраиваем, а не дополняем: `UNIQUE (book_id, pos)` не дал бы цитате
+        // встать на ту же позицию, что и закладка страницы, а ALTER в SQLite не меняет
+        // ограничения таблицы. Старые закладки переезжают как есть (kind 0).
+        if (oldVersion < 11) {
+            db.execSQL("ALTER TABLE bookmarks RENAME TO bookmarks_old")
+            // Индекс переезжает вместе с таблицей и сохраняет своё имя — без этого
+            // createBookmarks упадёт на «index bookmarks_book already exists».
+            db.execSQL("DROP INDEX IF EXISTS bookmarks_book")
+            createBookmarks(db)
+            db.execSQL("INSERT INTO bookmarks (_id, book_id, pos, page, chapter, text, created, kind) " +
+                "SELECT _id, book_id, pos, page, chapter, text, created, 0 FROM bookmarks_old")
+            db.execSQL("DROP TABLE bookmarks_old")
+        }
     }
 
     /**
@@ -756,9 +780,15 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         writableDatabase.update("books", cv, "_id = ?", arrayOf(id.toString()))
     }
 
-    // ------------------------------------------------------------------ закладки (R4.1)
+    // ------------------------------------------- закладки, цитаты и заметки (R4.1, R4.3)
 
-    /** Закладка книги: позиция движка и то, что видно в списке B27 без открытия книги. */
+    /**
+     * Запись книги: закладка страницы (B27), цитата или заметка (B50–B52) — позиция движка и то,
+     * что видно в списке B27 без открытия книги.
+     *
+     * [pos] у закладки — позиция строки, у цитаты и заметки — начало выделения; [posEnd] — его
+     * конец (только цитата и заметка); [note] — текст заметки (только заметка).
+     */
     class Mark(
         val id: Long,
         val pos: String,
@@ -766,6 +796,9 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         val chapter: String?,
         val text: String?,
         val created: Long,
+        val kind: Int = MARK_BOOKMARK,
+        val posEnd: String? = null,
+        val note: String? = null,
     )
 
     /**
@@ -777,13 +810,43 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
      * если книгу нельзя открыть прямо сейчас. Сама навигация идёт по [pos], поэтому после
      * смены кегля номер в списке может отличаться от фактического — это ожидаемо.
      */
-    fun addMark(bookId: Long, pos: String, page: Int, chapter: String?, text: String?): Long {
-        val cv = ContentValues(6)
+    fun addMark(bookId: Long, pos: String, page: Int, chapter: String?, text: String?): Long =
+        add(bookId, MARK_BOOKMARK, pos, null, page, chapter, text, null)
+
+    /**
+     * Записать цитату (B50 «Цитата»): [start]/[end] — начало и конец выделения (xpointer),
+     * [text] — выделенный текст. Та же строка потом рисуется в B52 подчёркиванием G3 и в B27
+     * цитатой под закладкой.
+     *
+     * Возвращает `_id` строки; `< 0` — такая цитата у книги уже есть (`UNIQUE`).
+     */
+    fun addQuote(bookId: Long, start: String, end: String, page: Int, chapter: String?,
+                 text: String?): Long =
+        add(bookId, MARK_QUOTE, start, end, page, chapter, text, null)
+
+    /**
+     * Записать заметку (B51): выделение [start]…[end] и то, что человек написал, — [note].
+     * Выделенный текст остаётся в `text`: B52 заливает его G13, а номер заметки рисует на полях.
+     */
+    fun addNote(bookId: Long, start: String, end: String, page: Int, chapter: String?,
+                text: String?, note: String): Long =
+        add(bookId, MARK_NOTE, start, end, page, chapter, text, note)
+
+    /**
+     * Общая запись строки `bookmarks`. Вид [kind] входит в `UNIQUE` вместе с позицией:
+     * цитата может начинаться там же, где стоит закладка страницы, — это разные записи.
+     */
+    private fun add(bookId: Long, kind: Int, pos: String, posEnd: String?, page: Int,
+                    chapter: String?, text: String?, note: String?): Long {
+        val cv = ContentValues(9)
         cv.put("book_id", bookId)
+        cv.put("kind", kind)
         cv.put("pos", pos)
+        cv.put("pos_end", posEnd)
         cv.put("page", page)
         cv.put("chapter", chapter)
         cv.put("text", text)
+        cv.put("note", note)
         cv.put("created", System.currentTimeMillis())
         return writableDatabase.insertWithOnConflict("bookmarks", null, cv,
             SQLiteDatabase.CONFLICT_IGNORE)
@@ -794,23 +857,29 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         writableDatabase.delete("bookmarks", "book_id = ? AND pos = ?",
             arrayOf(bookId.toString(), pos)) > 0
 
-    /** Есть ли закладка книги на позиции [pos]: по этому меню B9 рисует кнопку нажатой. */
+    /**
+     * Есть ли закладка книги на позиции [pos]: по этому меню B9 рисует кнопку нажатой.
+     * Цитаты и заметки не считаются — у них свой вид ([MARK_QUOTE], [MARK_NOTE]).
+     */
     fun hasMark(bookId: Long, pos: String): Boolean =
-        writableDatabase.rawQuery("SELECT 1 FROM bookmarks WHERE book_id = ? AND pos = ? LIMIT 1",
+        writableDatabase.rawQuery(
+            "SELECT 1 FROM bookmarks WHERE book_id = ? AND pos = ? AND kind = 0 LIMIT 1",
             arrayOf(bookId.toString(), pos)).use { it.moveToFirst() }
 
     /**
-     * Закладки книги, свежие сверху (список B27). Порядок — по `created`: человек ищет
+     * Все записи книги, свежие сверху (список B27). Порядок — по `created`: человек ищет
      * последнюю закладку, а не первую по тексту.
      */
     fun marks(bookId: Long): List<Mark> {
         val out = ArrayList<Mark>()
         writableDatabase.rawQuery(
-            "SELECT _id, pos, page, chapter, text, created FROM bookmarks " +
+            "SELECT _id, pos, page, chapter, text, created, kind, pos_end, note FROM bookmarks " +
                 "WHERE book_id = ? ORDER BY created DESC", arrayOf(bookId.toString())).use { c ->
             while (c.moveToNext()) {
                 out.add(Mark(c.getLong(0), c.getString(1), c.getInt(2),
-                    c.getString(3), c.getString(4), c.getLong(5)))
+                    c.getString(3), c.getString(4), c.getLong(5), c.getInt(6),
+                    if (c.isNull(7)) null else c.getString(7),
+                    if (c.isNull(8)) null else c.getString(8)))
             }
         }
         return out
@@ -818,7 +887,34 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
 
     /** Сколько закладок у книги — для подписи вкладки «Закладки · N» (B10/B27). */
     fun markCount(bookId: Long): Int =
-        writableDatabase.rawQuery("SELECT COUNT(*) FROM bookmarks WHERE book_id = ?",
+        writableDatabase.rawQuery(
+            "SELECT COUNT(*) FROM bookmarks WHERE book_id = ? AND kind = 0",
+            arrayOf(bookId.toString())).use { if (it.moveToFirst()) it.getInt(0) else 0 }
+
+    /**
+     * Заметки и цитаты книги, свежие сверху — вкладка «Заметки» экрана B28 и метки B52.
+     * [kind] — [MARK_QUOTE] или [MARK_NOTE]; −1 — обе.
+     */
+    fun notes(bookId: Long, kind: Int = -1): List<Mark> {
+        val out = ArrayList<Mark>()
+        val where = if (kind < 0) "book_id = ? AND kind <> 0" else "book_id = ? AND kind = $kind"
+        writableDatabase.rawQuery(
+            "SELECT _id, pos, page, chapter, text, created, kind, pos_end, note FROM bookmarks " +
+                "WHERE $where ORDER BY created DESC", arrayOf(bookId.toString())).use { c ->
+            while (c.moveToNext()) {
+                out.add(Mark(c.getLong(0), c.getString(1), c.getInt(2),
+                    c.getString(3), c.getString(4), c.getLong(5), c.getInt(6),
+                    if (c.isNull(7)) null else c.getString(7),
+                    if (c.isNull(8)) null else c.getString(8)))
+            }
+        }
+        return out
+    }
+
+    /** Сколько заметок и цитат у книги (вкладка «Заметки» B28 и подпись вкладки B27). */
+    fun noteCount(bookId: Long): Int =
+        writableDatabase.rawQuery(
+            "SELECT COUNT(*) FROM bookmarks WHERE book_id = ? AND kind <> 0",
             arrayOf(bookId.toString())).use { if (it.moveToFirst()) it.getInt(0) else 0 }
 
     private fun entry(c: Cursor) = Entry(
@@ -837,12 +933,18 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
     companion object {
         const val NAME = "library.db"
         /**
+         * Версия 11 (R4.3): цитаты и заметки — колонки `kind`, `pos_end`, `note` в `bookmarks`.
          * Версия 9 (R2.5): настройки страницы DjVu — колонка `view` (строка `DjvuView.encode()`).
          * Версия 8 (R1.4): место чтения — колонка `pos` (позиция движка, xpointer).
          * Версия 7: пароль каталога в базе шифруется ключом из `AndroidKeyStore`
          * ([Pass], п. 10.12). Старые открытые пароли перешифровываются при обновлении.
          */
-        const val VERSION = 10
+        const val VERSION = 11
+
+        /** Вид записи в таблице `bookmarks` (версия 11, R4.3): закладка, цитата, заметка. */
+        const val MARK_BOOKMARK = 0
+        const val MARK_QUOTE = 1
+        const val MARK_NOTE = 2
 
         /** Автоматические полки: `_id` отрицательные, в таблице `shelves` их нет. */
         const val SHELF_READING = -1L

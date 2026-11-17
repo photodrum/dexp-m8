@@ -145,6 +145,7 @@ class ReaderMenu(private val ink: Ink, private val icons: Icons) {
                     // только закрывает меню.
                     return when (i) {
                         0 -> ACT_CLOSE
+                        1 -> ACT_SEARCH
                         2 -> ACT_MARK
                         else -> ACT_NONE
                     }
@@ -192,6 +193,8 @@ class ReaderMenu(private val ink: Ink, private val icons: Icons) {
         const val ACT_GOTO = 7
         /** «Закладка» в шапке — поставить или снять закладку на текущей странице (R4.1). */
         const val ACT_MARK = 8
+        /** «Поиск» в шапке — экран B28 «Поиск по книге» (R4.3). */
+        const val ACT_SEARCH = 9
 
         // Полосы: макет −10.1,−10.1 1423.2×222.1 и −10.1,1423.2 1423.2×463.4 (габарит с тенью).
         private const val PANEL_X = -10.1f

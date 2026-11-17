@@ -153,6 +153,13 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
     private val typo = TypographySheet(ink, icons)
     /** Открыт лист B4. */
     private var typoOpen = false
+    // --- B28 «Поиск по книге» (R4.3): полноэкранный список поверх страницы, как B10
+    private val searchView = SearchBookScreen(ink, icons)
+    /** Открыт поиск по книге. */
+    private var searchOpen = false
+    /** Оглавление для подписей «Место» на B28: страницы и названия пунктов, считается один раз. */
+    private var tocPages: List<Int> = emptyList()
+    private var tocNames: List<String> = emptyList()
     /**
      * Типографика B4 на листе: значения из `Prefs`, пока лист открыт — его
      * [TypographySheet.result]. Пишется и из потока движка (применение), читается в [render] —
@@ -228,7 +235,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
 
     /** Читалка: шторка B5 открывается касанием центральной трети в верхней части страницы. */
     override val shadeZone: Float
-        get() = if (sheetOpen || menuOpen || tocOpen || gotoOpen || typoOpen) 0f
+        get() = if (sheetOpen || menuOpen || tocOpen || gotoOpen || typoOpen || searchOpen) 0f
         else ShadeScreen.ZONE_READER
 
 
@@ -248,6 +255,12 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         if (tocOpen) {
             ink.rect(c, 0f, 0f, W, H, T.BG)
             tocView.draw(c, menuSub(), toc, tocPage, hereOf(), tocTab, marks, markCnt)
+            return
+        }
+        // B28 «Поиск по книге» (R4.3): тоже полный экран поверх страницы, фон экрана G12.
+        if (searchOpen) {
+            ink.rect(c, 0f, 0f, W, H, T.BG)
+            searchView.draw(c, title, chapterStart, chapterEnd)
             return
         }
         // B29 «Переход на страницу»: та же страница, но приглушённая (макет: текст G10),
@@ -448,7 +461,9 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
             Trace.step("b3: marks FAIL ${t.javaClass.simpleName}: ${t.message}")
             emptyList()
         }
-        markCnt = marks.size
+        // В списке B27 теперь лежат и цитаты с заметками (R4.3), а подпись вкладки считает
+        // только закладки — «Закладки · N» в макете про них.
+        markCnt = marks.count { it.kind == LibraryDb.MARK_BOOKMARK }
     }
 
     /**
@@ -471,6 +486,125 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         }
         redraw()
         Trace.step("b3: toc tab=$tab page=$tocPage marks=$markCnt")
+    }
+
+    // ------------------------------------------------------------------ B28 «Поиск по книге» (R4.3)
+
+    /**
+     * Открыть B28 (кнопка «Поиск» в шапке меню B9). Книга должна быть открыта; у DjVu текстового
+     * слоя нет — поиска и заметок там не будет (READER_SPEC, R4), экран не открывается вовсе.
+     *
+     * Заметки читаются из базы сразу: они и так есть, а поиск по книге — только по «Найти».
+     */
+    private fun openSearch() {
+        if (searchOpen || loading || pages <= 0) return
+        if (Engine.djvu) {
+            Trace.step("b28: DjVu — поиска нет")
+            return
+        }
+        searchView.open()
+        // Оглавление для подписей «Место»: страницы и названия пунктов, один раз на книгу.
+        if (tocPages.size != toc.size) {
+            tocPages = toc.map { it.page }
+            tocNames = toc.map { it.title }
+        }
+        searchView.setChapters(tocPages, tocNames)
+        reloadNotes()
+        searchOpen = true
+        redraw()
+        Trace.step("b28: open pages=$pages главы=${toc.size} заметок=${searchView.notesCount()}")
+    }
+
+    private fun closeSearch() {
+        if (!searchOpen) return
+        searchOpen = false
+        redraw()
+        Trace.step("b28: close")
+    }
+
+    /** Заметки и цитаты книги из базы — вкладка «Заметки» (B28) и метки B52. */
+    private fun reloadNotes() {
+        val e = entry
+        if (e == null || e.id <= 0) {
+            searchView.setNotes(emptyList())
+            return
+        }
+        val list = try { act.db.notes(e.id) } catch (t: Throwable) {
+            Trace.step("b28: notes FAIL ${t.javaClass.simpleName}: ${t.message}")
+            emptyList()
+        }
+        searchView.setNotes(list)
+    }
+
+    /**
+     * Запустить поиск по набранному запросу. `Engine.search` читает разметку движка и на книге
+     * в 420 страниц идёт около секунды (замер R4.3) — только в `Engine.worker`.
+     *
+     * Результат кладётся в экран одним куском ([SearchBookScreen.setHits]): фрагмент и позиция
+     * каждого совпадения спрашиваются у движка здесь же, чтобы [render] не ходил в движок.
+     */
+    private fun runSearch() {
+        val q = searchView.searchQuery()
+        if (q.isBlank()) return
+        searchView.markSearching()
+        redraw()
+        val my = ++epoch
+        Engine.worker.execute {
+            val t0 = SystemClock.uptimeMillis()
+            val n = Engine.search(q)
+            if (my != epoch) return@execute
+            if (n < 0) {
+                Trace.step("b28: search '$q' rc=$n ${Engine.codeText(n)}")
+                post {
+                    if (!attached) return@post
+                    searchView.failSearch()
+                    redraw()
+                }
+                return@execute
+            }
+            val list = ArrayList<SearchBookScreen.Hit>(n)
+            for (i in 0 until n) {
+                val page = Engine.searchPage(i)
+                if (page < 0) continue
+                list.add(SearchBookScreen.Hit(
+                    page = page,
+                    text = Engine.searchText(i).orEmpty(),
+                    pos = Engine.searchPos(i),
+                ))
+            }
+            val ms = SystemClock.uptimeMillis() - t0
+            Trace.step("b28: search '$q' n=$n ${ms}ms")
+            post {
+                if (!attached || !searchOpen) return@post
+                searchView.setHits(list, q)
+                redraw()
+            }
+        }
+    }
+
+    /** Перейти на найденное: позиция движка (xpointer) надёжнее номера страницы. */
+    private fun gotoSearchHit(h: SearchBookScreen.Hit) {
+        closeSearch()
+        gotoMarkPos(h.pos, h.page, "поиск")
+    }
+
+    /**
+     * Перейти на позицию [pos]; [page] — запасной путь, если позиция не принята (книга
+     * переверстана, другой файл). Общий для заметок B28 и закладок B27.
+     */
+    private fun gotoMarkPos(pos: String?, page: Int, what: String) {
+        val my = ++epoch
+        Engine.worker.execute {
+            var target = if (pos.isNullOrEmpty()) -1 else try { Engine.gotoPos(pos) } catch (t: Throwable) { -1 }
+            if (target < 0) target = page
+            if (my != epoch) return@execute
+            if (target < 0 || target >= pages) return@execute
+            post {
+                if (!attached) return@post
+                show(target, 0)
+            }
+        }
+        Trace.step("b28: $what goto стр.${page + 1}")
     }
 
     /** Открыть B29 «Переход на страницу» (шкала меню B9): поле сразу с номером текущей страницы. */
@@ -894,6 +1028,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         tocOpen = false
         gotoOpen = false
         typoOpen = false
+        searchOpen = false
         relayouting = false
 
         tocPage = 0
@@ -1243,6 +1378,33 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
             }
             return
         }
+        // B28 «Поиск по книге» (R4.3): касания только его (клавиатура, вкладки, строки, «Назад»).
+        if (searchOpen) {
+            val a = searchView.hit(x, y, chapterStart, chapterEnd)
+            when {
+                a == SearchBookScreen.ACT_CLOSE -> closeSearch()
+                a == SearchBookScreen.ACT_PREV -> { searchView.prev(); redraw() }
+                a == SearchBookScreen.ACT_NEXT -> { searchView.next(); redraw() }
+                a == SearchBookScreen.ACT_OPEN -> {
+                    val hit = searchView.hitAt(chapterStart, chapterEnd)
+                    if (hit != null) gotoSearchHit(hit)
+                }
+                a == SearchBookScreen.ACT_NOTE -> {
+                    val m = searchView.noteAt()
+                    if (m != null) gotoMarkPos(m.pos, m.page, "заметка")
+                }
+                a == SearchBookScreen.ACT_CHANGED -> redraw()
+                a == SearchBookScreen.ACT_SEARCH -> runSearch()
+                // Смена вкладки — коды 10…12; проверяется после ACT_CHANGED/ACT_SEARCH (20/21).
+                a >= SearchBookScreen.ACT_TAB -> {
+                    redraw()
+                    // Новая вкладка могла потребовать поиска: набрано, но не искали.
+                    if (searchView.needSearch()) runSearch()
+                }
+                else -> closeSearch()
+            }
+            return
+        }
         // B10/B27: касания только списка (вкладки, строки, пагинация, «Назад»).
         if (tocOpen) {
             val a = tocView.hit(x, y, tocTab, tocPage, toc, marks)
@@ -1290,6 +1452,9 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
                 ReaderMenu.ACT_SCALE -> { closeMenu(); openSheet() }
                 // «Текст» у crengine — лист B4 «Типографика» (R3.5); у DjVu это «Масштаб».
                 ReaderMenu.ACT_TEXT -> { closeMenu(); openTypo() }
+
+                // «Поиск» в шапке меню — экран B28 «Поиск по книге» (R4.3).
+                ReaderMenu.ACT_SEARCH -> { closeMenu(); openSearch() }
 
                 // Шкала и подпись «Стр. N из M» на нижней панели — дверь в B29 (R3.3).
                 ReaderMenu.ACT_GOTO -> { closeMenu(); openGoto() }
@@ -1375,7 +1540,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
      */
     override fun onSwipe(x0: Float, y0: Float, x1: Float, y1: Float): Boolean {
         if (!act.prefs.swipe) return false
-        if (dialogOpen || sheetOpen || menuOpen || tocOpen || gotoOpen || typoOpen) return false
+        if (dialogOpen || sheetOpen || menuOpen || tocOpen || gotoOpen || typoOpen || searchOpen) return false
         if (opening || loading || pages <= 0) return false
         val dx = x1 - x0
         val dy = y1 - y0
@@ -1391,6 +1556,10 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
 
     /** «Назад»: сначала B10 и меню B9, листы B4 и B31, диалоги, потом уход из книги. */
     override fun backPressed(): Boolean {
+        if (searchOpen) {
+            closeSearch()
+            return true
+        }
         if (typoOpen) {
             closeTypo()
             return true
@@ -1499,6 +1668,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         tocOpen = false
         gotoOpen = false
         typoOpen = false
+        searchOpen = false
         sheetOpen = false
         dialogOpen = false
         badPage = -1
@@ -1518,6 +1688,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         if (sheetOpen) return false    // B31: пока лист открыт, страница не листается
         if (menuOpen) return false     // B9: меню закрывается касанием или «Назад»
         if (tocOpen) return false      // B10: список листается своими кнопками
+        if (searchOpen) return false   // B28: список и клавиатура, страница не листается
         if (gotoOpen) return false     // B29: лист с клавиатурой, страница не листается
         if (opening) return false     // B58: страниц ещё нет, клавиши листания не наши
         val next = code == KEY_PAGEDOWN || (volumePaging() && code == KEY_VOLUME_DOWN)
