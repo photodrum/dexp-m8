@@ -54,17 +54,23 @@ class TocScreen(private val ink: Ink, private val icons: Icons) {
         private set
 
     /**
-     * Нарисовать экран. [tab] — открытая вкладка ([TAB_TOC] / [TAB_MARKS]), [marks] — закладки
-     * книги свежими сверху, [markCount] — их число для подписи вкладки. Заголовок шапки — имя
-     * вкладки, как в снимке B27 («Заметки» на третьей вкладке).
+     * Нарисовать экран. [tab] — открытая вкладка ([TAB_TOC] / [TAB_MARKS] / [TAB_NOTE]),
+     * [marks] — закладки книги свежими сверху, [notes] — заметки и цитаты, [markCount] и
+     * [noteCount] — их числа для подписей вкладок. Заголовок шапки — имя вкладки, как в снимке
+     * B27 («Заметки» на третьей вкладке).
      */
     fun draw(c: Canvas, sub: String, items: List<TocItem>, page: Int, here: Int,
-             tab: Int, marks: List<LibraryDb.Mark>, markCount: Int) {
-        val labels = tabLabels(markCount)
+             tab: Int, marks: List<LibraryDb.Mark>, markCount: Int,
+             notes: List<LibraryDb.Mark>, noteCount: Int) {
+        val labels = tabLabels(markCount, noteCount)
         header(c, TAB_NAMES[tab], sub)
         tabBar(c, labels, tab)
-        if (tab == TAB_MARKS) marksPanel(c, marks, page) else tocPanel(c, items, page, here)
-        pager(c, page, pageCount(tab, items.size, marks.size))
+        when (tab) {
+            TAB_MARKS -> marksPanel(c, marks, page)
+            TAB_NOTE -> notesPanel(c, notes, page)
+            else -> tocPanel(c, items, page, here)
+        }
+        pager(c, page, pageCount(tab, items.size, marks.size, notes.size))
     }
 
     // ------------------------------------------------------------------ шапка
@@ -80,7 +86,7 @@ class TocScreen(private val ink: Ink, private val icons: Icons) {
 
     /**
      * Вкладки: вдавленный желоб и выпуклый активный сегмент под открытой вкладкой.
-     * Третья («Заметки») рисуется, но касания не ловит — заметок нет до B50–B52.
+     * Все три нажимаются: «Заметки» открывают список цитат и заметок (R4.3).
      */
     private fun tabBar(c: Canvas, labels: Array<String>, tab: Int) {
         ink.inset(c, 43.9f, 248.6f, 1316.2f, 95.1f, 47.5312f)
@@ -137,6 +143,45 @@ class TocScreen(private val ink: Ink, private val icons: Icons) {
     }
 
     // ---------------------------------------------------------------- закладки
+
+    /**
+     * Вкладка «Заметки»: те же строки, что у закладок, но вид записи подписан —
+     * «Цитата» или «Заметка», а под ней текст заметки (у цитаты — её выделенный текст).
+     * Так человек видит, что именно он сохранил, не открывая книгу.
+     */
+    private fun notesPanel(c: Canvas, notes: List<LibraryDb.Mark>, page: Int) {
+        ink.convex(c, PANEL_X, PANEL_Y, PANEL_W, PANEL_H_MARKS, T.R_TILE)
+        val first = page * MARK_ROWS
+        val last = minOf(notes.size, first + MARK_ROWS)
+        for (i in first until last) note(c, notes[i], MARK_TOP + (i - first) * MARK_STEP)
+        if (notes.isEmpty()) empty(c, EMPTY_NOTES, EMPTY_NOTES_HINT)
+    }
+
+    /** Строка заметки: место, вид записи и её текст (у заметки — заметка, у цитаты — выделение). */
+    private fun note(c: Canvas, m: LibraryDb.Mark, top: Float) {
+        val kind = if (m.kind == LibraryDb.MARK_NOTE) "Заметка" else "Цитата"
+        icons.draw(c, "highlight@31.5x28", MARK_ICON_X, top + MARK_ICON_DY, 31.5f, 28f)
+        ink.text(c, kind, MARK_TEXT_X, T.base(top, T.TS_META, 1.25f), T.TS_META, 700, T.G5)
+        // Место — сразу за подписью вида, а не в колонке даты: у закладок там дата, а у заметки
+        // дата не нужна — важнее, где она стоит. Ширина ограничена до крестика.
+        val where = ink.ellipsize(place(m), NOTE_PLACE_W, T.TS_META, 600)
+        ink.text(c, where, MARK_TEXT_X + NOTE_KIND_W, T.base(top, T.TS_META, 1.25f),
+            T.TS_META, 600, T.G5)
+        circle(c, DEL_X, top + DEL_DY, T.G14, T.G15, T.G10, DEL_D)
+        val ix = DEL_X + T.SURFACE_DX + (DEL_D - DEL_ICON_W) / 2f
+        val iy = top + DEL_DY + T.SURFACE_DY + (DEL_D - DEL_ICON_H) / 2f
+        icons.draw(c, "close", ix, iy, DEL_ICON_W, DEL_ICON_H)
+        val body = (m.note ?: m.text.orEmpty()).replace('\u00A0', ' ')
+            .replace(NEWLINE, ". ").replace(WS, " ").trim()
+        if (body.isEmpty()) {
+            ink.rect(c, MARK_BAR_X, top + MARK_SEP_DY, MARK_SEP_W, 2f, T.G11)
+            return
+        }
+        val lit = T.literata(ink.res, 400)
+        ink.paragraph(c, body, QUOTE_X, top + QUOTE_DY, QUOTE_W, T.TS_LABEL_L, 400,
+            T.G1, 0f, lit, QUOTE_LINES)
+        ink.rect(c, MARK_BAR_X, top + MARK_SEP_DY, MARK_SEP_W, 2f, T.G11)
+    }
 
     private fun marksPanel(c: Canvas, marks: List<LibraryDb.Mark>, page: Int) {
         ink.convex(c, PANEL_X, PANEL_Y, PANEL_W, PANEL_H_MARKS, T.R_TILE)
@@ -240,29 +285,30 @@ class TocScreen(private val ink: Ink, private val icons: Icons) {
      * Смена вкладки и её номер страницы — забота читалки: она же перечитывает закладки из базы.
      */
     fun hit(x: Float, y: Float, tab: Int, page: Int, items: List<TocItem>,
-            marks: List<LibraryDb.Mark>): Int {
+            marks: List<LibraryDb.Mark>, notes: List<LibraryDb.Mark>): Int {
         chosen = -1
         chosenMark = -1
         if (y in 112.9f..225.5f && x >= 41.1f && x <= 41.1f + 102.4f + T.SHADOW_DX) return ACT_CLOSE
-        // Вкладки: желоб 43.9,248.6 1316.2×95.1, три равных сегмента. «Заметки» не нажимаются.
+        // Вкладки: желоб 43.9,248.6 1316.2×95.1, три равных сегмента — все нажимаются.
         if (y in TAB_HIT_Y0..TAB_HIT_Y1) {
             val i = ((x - TAB_X) / TAB_W).toInt()
-            if (x < TAB_X || i !in 0 until TAB_NOTE) return ACT_NONE
+            if (x < TAB_X || i !in 0 until TAB_NAMES.size) return ACT_NONE
             return if (i == tab) ACT_NONE else ACT_TAB + i
         }
+        val list = if (tab == TAB_MARKS) marks else if (tab == TAB_NOTE) notes else emptyList()
         if (y in 1708.3f..1825.4f) {
-            val rows = if (tab == TAB_MARKS) MARK_ROWS else ROWS
-            val count = if (tab == TAB_MARKS) marks.size else items.size
+            val rows = if (tab == TAB_TOC) ROWS else MARK_ROWS
+            val count = if (tab == TAB_TOC) items.size else list.size
             if (x <= 170f) return if (page > 0) ACT_PREV else ACT_NONE
             if (x >= 1240.4f) return if ((page + 1) * rows < count) ACT_NEXT else ACT_NONE
             return ACT_NONE
         }
-        if (tab == TAB_MARKS) {
+        if (tab != TAB_TOC) {
             if (y < MARK_TOP - MARK_STEP / 2f || y > MARK_TOP + MARK_STEP * MARK_ROWS) return ACT_NONE
             val i = page * MARK_ROWS + ((y - MARK_TOP + MARK_STEP / 2f) / MARK_STEP).toInt()
-            if (i < 0 || i >= marks.size) return ACT_NONE
+            if (i < 0 || i >= list.size) return ACT_NONE
             chosenMark = i
-            // Правая полоса строки — корзина: удалить закладку. Остальное — переход по ней.
+            // Правая полоса строки — корзина: удалить запись. Остальное — переход по ней.
             return if (x >= DEL_HIT_X0) ACT_DEL else ACT_MARK
         }
         if (y < ROW_TOP - ROW_STEP / 2f || y > ROW_TOP + ROW_STEP * ROWS) return ACT_NONE
@@ -298,19 +344,23 @@ class TocScreen(private val ink: Ink, private val icons: Icons) {
         const val MARK_ROWS = 5
 
         /** Сколько страниц займёт список вкладки [tab]: [items] пунктов или [marks] закладок. */
-        fun pageCount(tab: Int, items: Int, marks: Int): Int {
-            val n = if (tab == TAB_MARKS) marks else items
-            val rows = if (tab == TAB_MARKS) MARK_ROWS else ROWS
+        fun pageCount(tab: Int, items: Int, marks: Int, notes: Int): Int {
+            val n = when (tab) {
+                TAB_MARKS -> marks
+                TAB_NOTE -> notes
+                else -> items
+            }
+            val rows = if (tab == TAB_TOC) ROWS else MARK_ROWS
             return if (n <= 0) 1 else (n + rows - 1) / rows
         }
 
         /**
-         * Подписи вкладок: число выводится только у закладок — сколько их у книги.
+         * Подписи вкладок: число выводится только у закладок и заметок — сколько их у книги.
          * Заголовок шапки числа не берёт: в снимке B27 он «Заметки», а «Заметки · 4» стоят
          * под вкладкой.
          */
-        fun tabLabels(markCount: Int): Array<String> =
-            arrayOf("Оглавление", "Закладки · $markCount", "Заметки")
+        fun tabLabels(markCount: Int, noteCount: Int): Array<String> =
+            arrayOf("Оглавление", "Закладки · $markCount", "Заметки · $noteCount")
 
         /** Имена вкладок для заголовка шапки — без числа; индекс совпадает с [tabLabels]. */
         val TAB_NAMES = arrayOf("Оглавление", "Закладки", "Заметки")
@@ -341,6 +391,9 @@ class TocScreen(private val ink: Ink, private val icons: Icons) {
         private const val MARK_TEXT_X = 155f
         /** «Стр. N · Глава» не залезает под дату (1009 − 155 − 12). */
         private const val PLACE_W = 720f
+        /** Подпись вида записи на вкладке «Заметки» и место за ней (до крестика 1222). */
+        private const val NOTE_KIND_W = 150f
+        private const val NOTE_PLACE_W = 880f
         /** Правый край даты — 1197: правее стоит корзина (в макете дата доходила до 1309). */
         private const val DATE_RIGHT = 1197f
         /**
@@ -382,6 +435,8 @@ class TocScreen(private val ink: Ink, private val icons: Icons) {
         private const val EMPTY_TOC_HINT = "Переход по книге — трети экрана и листание"
         private const val EMPTY_MARKS = "Закладок пока нет"
         private const val EMPTY_MARKS_HINT = "Закладка ставится кнопкой в меню чтения"
+        private const val EMPTY_NOTES = "Заметок пока нет"
+        private const val EMPTY_NOTES_HINT = "Заметка и цитата — долгим нажатием на слово"
 
         private val DATE_FMT = SimpleDateFormat("d MMM", Locale("ru"))
 

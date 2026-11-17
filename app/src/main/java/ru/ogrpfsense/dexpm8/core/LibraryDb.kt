@@ -867,14 +867,19 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
             arrayOf(bookId.toString(), pos)).use { it.moveToFirst() }
 
     /**
-     * Все записи книги, свежие сверху (список B27). Порядок — по `created`: человек ищет
+     * Закладки книги, свежие сверху (список B27). Порядок — по `created`: человек ищет
      * последнюю закладку, а не первую по тексту.
+     *
+     * Только вид [MARK_BOOKMARK]: цитаты и заметки живут в той же таблице, но у них своя
+     * вкладка «Заметки» ([notes]). Раньше отдавались все строки без фильтра, и сохранённая
+     * заметка появлялась в списке закладок — замечание пользователя 2026-11-17.
      */
     fun marks(bookId: Long): List<Mark> {
         val out = ArrayList<Mark>()
         writableDatabase.rawQuery(
             "SELECT _id, pos, page, chapter, text, created, kind, pos_end, note FROM bookmarks " +
-                "WHERE book_id = ? ORDER BY created DESC", arrayOf(bookId.toString())).use { c ->
+                "WHERE book_id = ? AND kind = 0 ORDER BY created DESC",
+            arrayOf(bookId.toString())).use { c ->
             while (c.moveToNext()) {
                 out.add(Mark(c.getLong(0), c.getString(1), c.getInt(2),
                     c.getString(3), c.getString(4), c.getLong(5), c.getInt(6),
