@@ -1,8 +1,7 @@
 {
-  "versionCode": 2,
-  "versionName": "0.1.1",
+  "versionCode": 1,
+  "versionName": "0.1.0",
   "url": "https://git.ogrpfsense.ru/denisle/dexp-m8/-/releases",
   "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
-  "notes": "Тестовая публикация новой версии для проверки проверки обновлений."
+  "notes": "Текущая сборка. Публикуется вручную: при выпуске версии обновляются versionCode, versionName, url и sha256."
 }
-

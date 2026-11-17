@@ -194,6 +194,29 @@ adb shell 'run-as ru.ogrpfsense.dexpm8 sh -c \
 «db v7: открыта, версия 7» и «db v7: уборка после перешифрования готова». Вход в каталог после
 обновления должен работать без повторного ввода пароля — это и есть проверка, что ключ прочитан.
 
+## Публикация версии (проверка обновлений на B43)
+
+Кнопка «Проверить обновления» на B43 читает манифест `update.json` из корня ветки `main`:
+сначала со своего GitLab (`https://git.ogrpfsense.ru/denisle/dexp-m8/-/raw/main/update.json`),
+при недоступности — с GitHub-зеркала (`https://raw.githubusercontent.com/photodrum/dexp-m8/main/update.json`).
+Оба адреса публичные, токен в APK не нужен (`core/UpdateCheck.kt`).
+
+Выпуск версии — правка `update.json` и обычный коммит в `main` (GitHub-зеркало подхватит само):
+
+```json
+{ "versionCode": 2, "versionName": "0.1.1",
+  "url": "https://…/app-release.apk", "sha256": "<sha256 APK>", "notes": "что нового" }
+```
+
+```bash
+sha256sum app/build/outputs/apk/release/app-release.apk      # в "sha256"
+python3 tools/gl_publish_apk.py app/build/outputs/apk/release/app-release.apk 0.1.1   # APK в GitLab Packages
+```
+
+`versionCode` обязан расти монотонно — сравнение идёт по нему, а не по `versionName`.
+Ответ 404 на обоих хостах B43 показывает как «версия ещё не опубликована», код 5xx и обрыв — «сервер не ответил».
+Проверить манифест без книги: `curl -s https://git.ogrpfsense.ru/denisle/dexp-m8/-/raw/main/update.json`.
+
 ## Установка на книгу
 
 ```bash

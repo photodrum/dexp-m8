@@ -6,7 +6,12 @@ import android.graphics.Canvas
 import android.os.Build
 import android.os.Environment
 import android.os.StatFs
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import ru.ogrpfsense.dexpm8.R
+import ru.ogrpfsense.dexpm8.core.UpdateCheck
+import ru.ogrpfsense.dexpm8.ui.Trace
 
 /**
  * B43 · Настройки · Об устройстве. Числа — из design/v5/B43.json.
@@ -14,9 +19,16 @@ import ru.ogrpfsense.dexpm8.R
  * Читается: версия и номер сборки оболочки — `PackageInfo`, Android — `Build.VERSION`, число ядер —
  * `Runtime`, ОЗУ — `ActivityManager.MemoryInfo`, накопитель — `StatFs`.
  * Из макета без чтения: «Экран» («7,8″ · 1404×1872 · 300 ppi») и название процессора — модель одна.
- * Не рисуются: строка «Серийный номер» (скрыта по решению — личные данные), дата сборки в строке
- * версии (её нет в манифесте) и «Последняя проверка обновлений» (проверки ещё нет).
- * Ввод не обрабатывается, работает только «Назад» (лицензии, сброс и обновления — позже).
+ * Не рисуются: строка «Серийный номер» (скрыта по решению — личные данные) и дата сборки в строке
+ * версии (её нет в манифесте).
+ *
+ * **«Проверить обновления»** (внизу) — [UpdateCheck]: манифест `update.json` сначала со своего
+ * GitLab, при недоступности — с GitHub-зеркала. Проверка идёт в фоновом потоке, экран
+ * перерисовывается один раз по результату (на E-Ink нельзя дёргать `invalidate` по таймеру).
+ * Строка «Последняя проверка обновлений — …» взята из макета: время и итог хранятся в `Prefs`,
+ * поэтому видны и после перезапуска оболочки. Сам APK пока не скачивается — установка это п. 13.
+ *
+ * Остальной ввод: «Назад» и полоса «Сбросить настройки оболочки» (лицензии — позже, B75).
  */
 class SetAboutScreen(act: EinkActivity) : Screen(act) {
 
@@ -24,12 +36,18 @@ class SetAboutScreen(act: EinkActivity) : Screen(act) {
     private val kit = SettingsKit(ink, icons)
 
     private val NAME = act.getString(R.string.app_name)
+    private val upd = UpdateCheck(act)
 
     private var version = ""
     private var android = "Android ${Build.VERSION.RELEASE}"
     private var cpu = "Rockchip PX30"
     private var mem = ""
     private var reset = 0   // 0 — обычно, 1 — ждём второго нажатия, 2 — сброшено
+
+    /** 0 — нет данных, 1 — проверяем, 2 — готово (итог в [check]). */
+    private var checking = 0
+    /** Строка «Последняя проверка обновлений — …»; пусто — ещё не проверяли. */
+    private var check = ""
 
     override fun render(c: Canvas) {
         ink.rect(c, 0f, 0f, W, H, T.BG)
@@ -67,9 +85,21 @@ class SetAboutScreen(act: EinkActivity) : Screen(act) {
         }, 1406f, 237f)
         icons.draw(c, "next@11x23.8", 1302f, 1390.5f, 11f, 23.8f)
 
+        // «Последняя проверка обновлений — …»: x 59, y 1520, 32/600 G4 (слой «Проверка» B43).
+        // 795 px в макете — авто-ширина той подписи, а не предел: берём всю строку до полей.
+        if (check.isNotEmpty()) {
+            ink.text(c, ink.ellipsize(check, 1300f, T.TS_BODY_S, 600), 59f,
+                T.base(1520f, T.TS_BODY_S, 1.25f), T.TS_BODY_S, 600, T.G4)
+        }
+
         ink.convexDark(c, 41f, 1693f, 1321f, 142f, 66f)
         icons.draw(c, "refresh@27.3x28.8", 107.2f, 1747.6f, 27.3f, 28.8f)
-        ink.text(c, "Проверить обновления", 170f, T.base(1735.7f, T.TS_ACTION, 1.25f),
+        val label = when (checking) {
+            1 -> "Проверяем…"
+            2 -> "Проверить снова"
+            else -> "Проверить обновления"
+        }
+        ink.text(c, label, 170f, T.base(1735.7f, T.TS_ACTION, 1.25f),
             T.TS_ACTION, 700, T.G15)
     }
 
@@ -101,6 +131,62 @@ class SetAboutScreen(act: EinkActivity) : Screen(act) {
         }
         val flash = SettingsData.storage()?.let { SettingsData.capacityGb(it.first).toString() + " ГБ встроенной" } ?: ""
         mem = if (ram.isNotEmpty() && flash.isNotEmpty()) "$ram · $flash" else ram + flash
+
+        check = storedLine()
+    }
+
+    // ------------------------------------------------------------- обновления
+
+    /**
+     * Строка из `Prefs`: «Последняя проверка — сегодня, 09:12 · обновлений нет».
+     * Ширина ограничена 795 px, как в макете B43 (слой «Проверка»), поэтому длинные итоги
+     * вроде «есть версия 0.2.0» обрезаются многоточием, а не наезжают на край экрана.
+     */
+    private fun storedLine(): String {
+        val at = act.prefs.updateCheckedAt
+        if (at <= 0L) return ""
+        val res = act.prefs.updateResult
+        val head = "Последняя проверка — " + when {
+            isToday(at) -> "сегодня, " + SimpleDateFormat("HH:mm", Locale("ru")).format(Date(at))
+            else -> SimpleDateFormat("d MMMM, HH:mm", Locale("ru")).format(Date(at))
+        }
+        return if (res.isEmpty()) head else "$head · $res"
+    }
+
+    private fun isToday(at: Long): Boolean {
+        val a = java.util.Calendar.getInstance().apply { timeInMillis = at }
+        val b = java.util.Calendar.getInstance()
+        return a.get(java.util.Calendar.YEAR) == b.get(java.util.Calendar.YEAR) &&
+            a.get(java.util.Calendar.DAY_OF_YEAR) == b.get(java.util.Calendar.DAY_OF_YEAR)
+    }
+
+    /**
+     * Проверка в фоне: сеть в главном потоке на Android 8.1 роняет `NetworkOnMainThreadException`.
+     * Пока идёт — кнопка пишет «Проверяем…», после — один `redraw()` с итогом.
+     */
+    private fun checkUpdates() {
+        if (checking == 1) return
+        checking = 1
+        redraw()
+        Thread({
+            val f = upd.fetch()
+            val res: String
+            if (f == null) {
+                res = upd.why ?: "нет ответа"
+            } else if (upd.isNewer(f)) {
+                res = "есть версия ${f.versionName}"
+            } else {
+                res = "обновлений нет"
+            }
+            Trace.step("update: $res")
+            act.prefs.updateCheckedAt = System.currentTimeMillis()
+            act.prefs.updateResult = res
+            post {
+                checking = 2
+                check = storedLine()
+                redraw()
+            }
+        }, "update-check").start()
     }
 
     private fun cores(n: Int): String {
@@ -117,6 +203,10 @@ class SetAboutScreen(act: EinkActivity) : Screen(act) {
     override fun onUp(x: Float, y: Float) {
         if (kit.isBack(x, y)) {
             act.pop()
+            return
+        }
+        if (y >= 1693f && y <= 1835f) {
+            checkUpdates()
             return
         }
         if (y >= 1320f && y <= 1490f) {

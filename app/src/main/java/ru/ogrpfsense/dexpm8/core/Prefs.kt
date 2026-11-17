@@ -140,6 +140,16 @@ class Prefs(ctx: Context) {
         get() = sp.getString("pinned_app", "") ?: ""
         set(v) = sp.edit().putString("pinned_app", v).apply()
 
+    /** Когда последний раз проверяли обновления (мс от эпохи); 0 — ещё не проверяли (B43). */
+    var updateCheckedAt: Long
+        get() = sp.getLong("update_checked_at", 0L)
+        set(v) = sp.edit().putLong("update_checked_at", v).apply()
+    /** Результат последней проверки обновлений одной строкой для B43; пусто — нет данных. */
+    var updateResult: String
+        get() = sp.getString("update_result", "") ?: ""
+        set(v) = sp.edit().putString("update_result", v).apply()
+
+
 
     /** Сброс к значениям макета (B43 «Сбросить настройки оболочки» — после диалога подтверждения). */
     fun reset() = sp.edit().clear().apply()
