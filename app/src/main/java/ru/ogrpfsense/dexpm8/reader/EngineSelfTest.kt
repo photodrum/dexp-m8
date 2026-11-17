@@ -237,6 +237,52 @@ object EngineSelfTest {
             Trace.step("selftest: после setFont выделение='${Engine.selectionText() ?: "нет"}' " +
                 "поиск=${Engine.searchCount()}")
         }
+
+        // R5.1: сноска — ссылка под точкой (`linkAt`) и её текст по якорю (`linkText`).
+        noteStep(buf)
+    }
+
+    /**
+     * R5.1 на книге: сноска. `href=#…` в тексте FB2 — значок сноски; координат его в
+     * тексте страницы нет, поэтому сначала спрашиваем у движка отрезки ссылок
+     * ([Engine.linkRects]), затем бьём точкой в середину первого — как это сделает
+     * касание по значку.
+     *
+     * Что должно сойтись:
+     *  - `linkAt` на отрезке ссылки отдаёт непустой якорь (`n_1`, `FbAutId_1`);
+     *  - `linkText(якорь)` отдаёт непустой текст сноски без номера;
+     *  - на странице без сносок `linkAt` молчит — это не ошибка.
+     *
+     * Текст сноски печатается в трассу: его видно глазами и можно сверить с книгой.
+     */
+    private fun noteStep(buf: ByteArray) {
+        val pages = Engine.pageCount()
+        if (pages <= 0) return
+        /* Сноски в FB2 стоят в конце раздела и разбросаны по книге: смотрим каждую
+           pages/40-ю страницу до двух находок — полный перебор на 1 ГБ ОЗУ долгий. */
+        val step = Math.max(1, pages / 40)
+        var found = 0
+        var p = 0
+        while (p < pages && found < 2) {
+            Engine.page(p, W, H, buf)
+            val rects = Engine.linkRects(64)
+            if (rects != null && rects.isNotEmpty()) {
+                found++
+                val x = rects[0] + rects[2] / 2
+                val y = rects[1] + rects[3] / 2
+                val anchor = Engine.linkAt(p, x, y)
+                Trace.step("selftest: сноска стр.$p отрезков=${rects.size / 4} " +
+                    "точка $x,$y → #${anchor ?: "НЕТ"}")
+                if (anchor != null) {
+                    val text = Engine.linkText(anchor)
+                    Trace.step("selftest: сноска #$anchor текст='${cut(text)}' " +
+                        if (text.isNullOrEmpty()) "ПУСТО" else "ок")
+                }
+            }
+            p += step
+        }
+        if (found == 0)
+            Trace.step("selftest: сноска — на просмотренных страницах ссылок нет")
     }
 
     /**

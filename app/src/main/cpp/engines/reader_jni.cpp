@@ -108,6 +108,11 @@ DEXP_PROBE_API int dexp_reader_selection_rects(int *out, int outLen);
 DEXP_PROBE_API int dexp_reader_range_rects(const char *startPos, const char *endPos,
                                            int *out, int outLen);
 
+/* Сноски и ссылки (R5.1, вкладка «Сноска» B30). */
+DEXP_PROBE_API int dexp_reader_link_at(int x, int y, char *out, int outLen);
+DEXP_PROBE_API int dexp_reader_link_text(const char *href, char *out, int outLen);
+DEXP_PROBE_API int dexp_reader_link_rects(int *out, int outLen);
+
 /* Поиск по книге (R4.3, B28). */
 DEXP_PROBE_API int dexp_reader_search(const char *query, int look);
 DEXP_PROBE_API int dexp_reader_search_count();
@@ -464,6 +469,69 @@ Java_ru_ogrpfsense_dexpm8_reader_Engine_rectsNative(JNIEnv *env, jclass cls,
         if (b)
             env->ReleaseStringUTFChars(end, b);
     }
+    if (n > 0)
+        env->SetIntArrayRegion(out, 0, n * 4, buf);
+    delete[] buf;
+    return n;
+}
+
+/* -------------------------------------------- сноски и ссылки (R5.1, вкладка B30) */
+
+/**
+ * Якорь ссылки под точкой (B30, вкладка «Сноска»): `n_1` без решётки или NULL,
+ * если под точкой не ссылка. Пустая строка не возвращается — NULL значит «нет».
+ */
+JNIEXPORT jstring JNICALL
+Java_ru_ogrpfsense_dexpm8_reader_Engine_linkAtNative(JNIEnv *env, jclass cls,
+                                                     jint x, jint y)
+{
+    (void)cls;
+    /* Якорь FB2 — «n_1», «fn12», реже длинная строка из генератора книги:
+       512 байт хватает с большим запасом. */
+    char buf[512];
+    int rc = dexp_reader_link_at(x, y, buf, (int) sizeof(buf));
+    if (rc <= 0)
+        return NULL;
+    return utf8ToJString(env, buf, rc);
+}
+
+/** Текст сноски по якорю [href] или NULL, если якоря в книге нет. */
+JNIEXPORT jstring JNICALL
+Java_ru_ogrpfsense_dexpm8_reader_Engine_linkTextNative(JNIEnv *env, jclass cls,
+                                                       jstring href)
+{
+    (void)cls;
+    if (!href)
+        return NULL;
+    const char *h = env->GetStringUTFChars(href, NULL);
+    if (!h)
+        return NULL;
+    /* Сноска — до абзаца: 4 КБ UTF-8, как у цитаты B50. Лист B30 показывает
+       три строки, но отдаём текст целиком: обрезку делает раскладка. */
+    char buf[4096];
+    int rc = dexp_reader_link_text(h, buf, (int) sizeof(buf));
+    env->ReleaseStringUTFChars(href, h);
+    if (rc <= 0)
+        return NULL;
+    return utf8ToJString(env, buf, rc);
+}
+
+/**
+ * Прямоугольники ссылок страницы (`<a href="#…">`) в `int[]` по 4 числа на отрезок —
+ * для самотеста сноски и будущей подсветки. Возвращает число отрезков или `< 0`.
+ */
+JNIEXPORT jint JNICALL
+Java_ru_ogrpfsense_dexpm8_reader_Engine_linkRectsNative(JNIEnv *env, jclass cls,
+                                                        jintArray out)
+{
+    (void)cls;
+    if (!out)
+        return DEXP_PROBE_EARG;
+    jsize cap = env->GetArrayLength(out);
+    if (cap < 4)
+        return DEXP_PROBE_EARG;
+    jint *buf = new jint[cap];
+    int n = dexp_reader_link_rects(buf, (int) cap);
     if (n > 0)
         env->SetIntArrayRegion(out, 0, n * 4, buf);
     delete[] buf;

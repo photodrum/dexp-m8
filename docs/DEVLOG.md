@@ -14,6 +14,19 @@
 > Формат: заголовок `## <дата> — <что> (<модель>)`, в записи ≤ 6 строк-маркеров, подробности —
 > сразу в `docs/archive/DEVLOG-<дата>-<пункт>.md`. Не больше ~5 записей: пункт закрылся — в архив.
 
+## 2026-11-17 — R5.1: натив сносок, вкладка «Сноска» B30 (Opus)
+
+- `dexp_reader_link_at` / `dexp_reader_link_text` / `dexp_reader_link_rects` в
+  `cre_session.cpp` + JNI; `Engine.linkAt/linkText/linkRects`; вкладка «Сноска» в
+  `DictSheet` получила свои поля, якорь берётся тем же удержанием (`ReaderScreen.selHref`).
+- Грабли: рамка элемента `<a>` вырожденная (1 px) — отрезки берутся диапазоном узла;
+  счётчик рекурсии по значению терялся; `href` бывает без решётки; `attr_href`/`el_title`
+  требуют `#include "fb2def.h"`; `extern "C"` не принимает `lString32`.
+- **Проверено на книге** (`testdata/notes.fb2`): `linkRects -> 3`, точка `1266,239` →
+  `#n_1`, текст сноски без номера; на слове без ссылки — «Это слово не ссылка».
+- `typecheck` 225/0, `check_design` 331/0, `assembleDebug` — успешно. Подробности —
+  `docs/archive/DEVLOG-2026-11-17-r5-notes.md`.
+
 ## 2026-11-17 — R5.2а: лист B30 «Словарь» и вкладка «Перевод» (Sonnet)
 
 - Словарь — **Викисловарь онлайн** (`action=api&prop=extracts&explaintext=1`; REST

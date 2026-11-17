@@ -182,6 +182,12 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
     /** Начало и конец выделения (xpointer) — для `addQuote`/`addNote`. */
     private var selStart: String? = null
     private var selEnd: String? = null
+    /**
+     * Якорь ссылки под выделенным словом (`n_1`), если слово — сноска. Берётся тем же
+     * касанием, что и слово ([Engine.linkAt] рядом с [Engine.wordAt]): у вкладки «Сноска»
+     * нет ни сети, ни второго запроса к движку, а после листания выделение снимается.
+     */
+    private var selHref: String? = null
     /** Верх панели B50 на кадре: считается один раз при отрисовке, нужен касанию. */
     private var selBarY = 0f
     /** Касание выделения обрабатывается в потоке движка: плашки нужны для меню. */
@@ -792,6 +798,9 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
             // сменить номер страницы: берём актуальный, снимок с UI-потока уже устарел.
             val page = if (relayouting) page0 else cur
             val word = try { Engine.wordAt(page, px, py) } catch (t: Throwable) { null }
+            // Якорь сноски — тем же касанием: у значка сноски слово есть, и лист B30
+            // на вкладке «Сноска» покажет её текст без второго запроса.
+            val href = try { Engine.linkAt(page, px, py) } catch (t: Throwable) { null }
             if (word.isNullOrEmpty()) {
                 selecting = false
                 // Промах по пустому месту: удержание не состоялось — отпускание должно
@@ -815,6 +824,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
                 selText = text
                 selStart = a
                 selEnd = b
+                selHref = href
                 selRects = rects
                 Trace.step("b50: выделено '${text.take(40)}' отрезков=${rects.size / 4}")
                 redraw()
@@ -829,6 +839,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         selText = ""
         selStart = null
         selEnd = null
+        selHref = null
         Engine.worker.execute { Engine.selectionClear() }
         redraw()
         Trace.step("b50: выделение снято")
@@ -1112,8 +1123,42 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
     }
 
     /**
-     * Касание листа B30. Вкладка «Сноска» пока без нативного `linkAt()` (R5.1, нужен Opus):
-     * на ней лист честно говорит, что сносок ещё нет, а не показывает пустоту.
+     * Вкладка «Сноска» (R5.1): текст берётся из самой книги по якорю, который нашёлся
+     * под словом ещё при удержании ([selHref]). Сеть не нужна, ответ приходит сразу —
+     * поэтому ожидания в листе нет, а [dictGen] всё равно двигаем: ответ сети, идущий
+     * с вкладки «Словарь», не должен перерисовать чужую вкладку.
+     *
+     * Текст сноски читает движок, поэтому вызов — в [Engine.worker]; до ответа лист
+     * показывает [DictSheet.WAIT] (анимаций на E-Ink нет, кадр один).
+     */
+    private fun askNote() {
+        val href = selHref
+        if (href == null) {
+            dictView.showNote(null, null)
+            redraw()
+            Trace.step("b30: сноска — слово не ссылка")
+            return
+        }
+        dictView.waitNote()
+        redraw()
+        val my = ++dictGen
+        Engine.worker.execute {
+            val text = try { Engine.linkText(href) } catch (t: Throwable) {
+                Trace.step("b30: linkText FAIL ${t.javaClass.simpleName}: ${t.message}")
+                null
+            }
+            Trace.step("b30: сноска #$href -> ${text?.take(40) ?: "нет"}")
+            post {
+                if (!attached || my != dictGen || !dictOpen) return@post
+                dictView.showNote(href, text)
+                redraw()
+            }
+        }
+    }
+
+    /**
+     * Касание листа B30: вкладки (у «Сноски» — текст из книги, у «Перевода» — сеть),
+     * четыре действия внизу и «Закрыть».
      */
     private fun dictTouch(x: Float, y: Float) {
         val a = dictView.hit(x, y)
@@ -1126,7 +1171,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
                 redraw()
                 when (t) {
                     DictSheet.TAB_TRANSLATE -> askTranslate()
-                    DictSheet.TAB_NOTE -> Trace.step("b30: вкладка «Сноска» — натив R5.1")
+                    DictSheet.TAB_NOTE -> askNote()
                 }
             }
         }
@@ -1482,6 +1527,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         selText = ""
         selStart = null
         selEnd = null
+        selHref = null
         pageMarks = emptyList()
         prevShown = null
         prevA = null
@@ -1727,6 +1773,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
             selText = ""
             selStart = null
             selEnd = null
+            selHref = null
             Engine.worker.execute { Engine.selectionClear() }
         }
         if (page == shownPage && nextPage == -1) {    // уже на экране
@@ -2333,6 +2380,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         selText = ""
         selStart = null
         selEnd = null
+        selHref = null
         pageMarks = emptyList()
         badPage = -1
         Trace.step("b3: назад в оболочку со стр.${cur + 1}/$pages")

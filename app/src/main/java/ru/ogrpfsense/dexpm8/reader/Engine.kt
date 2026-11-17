@@ -550,6 +550,63 @@ object Engine {
         }
     }
 
+    // ------------------------------------------------- сноски и ссылки (R5.1, B30)
+
+    /**
+     * Якорь ссылки под точкой [x],[y] (дизайн-px окна) — вкладка «Сноска» листа B30.
+     * Возвращается якорь БЕЗ решётки (`n_1`), его принимает [linkText]; `null` — под
+     * точкой не ссылка (обычный текст, поле, картинка).
+     *
+     * [page] — страница, которая сейчас на экране: как [wordAt], сначала возвращаем
+     * движок на неё ([syncPage]), иначе фоновая отрисовка соседней страницы ответила
+     * бы про следующую.
+     *
+     * У DjVu ссылок в тексте нет. Только в [worker].
+     */
+    fun linkAt(page: Int, x: Int, y: Int): String? {
+        if (!open || djvu) return null
+        if (page >= 0) syncPage(page)
+        return try {
+            linkAtNative(x, y)
+        } catch (t: Throwable) {
+            Trace.step("reader: linkAt FAIL ${t.javaClass.simpleName}: ${t.message}")
+            null
+        }
+    }
+
+    /**
+     * Текст сноски по якорю [href] (из [linkAt]) — одной строкой, без разметки и без
+     * номера сноски. `null` — якоря в книге нет (битая ссылка). Только в [worker].
+     */
+    fun linkText(href: String): String? {
+        if (!open || djvu) return null
+        if (href.isEmpty()) return null
+        return try {
+            linkTextNative(href)
+        } catch (t: Throwable) {
+            Trace.step("reader: linkText FAIL ${t.javaClass.simpleName}: ${t.message}")
+            null
+        }
+    }
+
+    /**
+     * Отрезки ссылок текущей страницы в окне — плоский `IntArray` по 4 числа
+     * (`x, y, w, h`), как у [rangeRects]. Нужно самотесту сноски: координат значка
+     * сноски в тексте нет, а перебор точек кадра — десятки тысяч вызовов JNI.
+     * Пустой массив — ссылок на странице нет. Только в [worker].
+     */
+    fun linkRects(cap: Int = 256): IntArray? {
+        if (!open || djvu) return null
+        return try {
+            val out = IntArray(cap)
+            val n = linkRectsNative(out)
+            if (n <= 0) IntArray(0) else out.copyOf(n * 4)
+        } catch (t: Throwable) {
+            Trace.step("reader: linkRects FAIL ${t.javaClass.simpleName}: ${t.message}")
+            null
+        }
+    }
+
     // ----------------------------------------------------- поиск по книге (R4.3, B28)
 
     /**
@@ -665,6 +722,9 @@ object Engine {
     @JvmStatic private external fun tocStringNative(index: Int, which: Int): String?
     @JvmStatic private external fun posOnPageNative(pos: String): Int
     @JvmStatic private external fun wordAtNative(x: Int, y: Int): String?
+    @JvmStatic private external fun linkAtNative(x: Int, y: Int): String?
+    @JvmStatic private external fun linkTextNative(href: String): String?
+    @JvmStatic private external fun linkRectsNative(out: IntArray): Int
     @JvmStatic private external fun selectionTextNative(): String?
     @JvmStatic private external fun selectionExtendNative(dir: Int): Int
     @JvmStatic private external fun selectionClearNative(): Int

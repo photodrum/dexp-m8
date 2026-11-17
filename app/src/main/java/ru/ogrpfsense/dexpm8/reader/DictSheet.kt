@@ -31,23 +31,37 @@ import ru.ogrpfsense.dexpm8.ui.T
  */
 class DictSheet(private val ink: Ink, private val icons: Icons) {
 
-    /** Что показано в листе: слово, строка грамматики (направление перевода), текст, источник. */
+    /** Слово под пальцем (заголовок листа): одинаково для всех вкладок. */
     private var word = ""
-    private var grammar = ""
-    private var body = ""
-    private var source = ""
-    /** Ответ ещё не пришёл — на месте определения стоит [WAIT]. */
-    private var waiting = false
+    /** Вкладка «Словарь»: грамматика, определение, источник, ожидание ответа сети. */
+    private var dictGrammar = ""
+    private var dictBody = ""
+    private var dictSource = ""
+    private var dictWaiting = false
+    /** Вкладка «Перевод»: направление, перевод, источник, ожидание. */
+    private var trGrammar = ""
+    private var trBody = ""
+    private var trSource = ""
+    private var trWaiting = false
+    /** Вкладка «Сноска»: текст сноски из книги, ожидания сети нет — только движок. */
+    private var noteBody = ""
+    private var noteWaiting = false
     /** Открытая вкладка: [TAB_DICT], [TAB_NOTE], [TAB_TRANSLATE]. */
     private var tab = TAB_DICT
 
     /** Открыть лист на вкладке «Словарь»: сразу ожидание ответа по слову [w]. */
     fun open(w: String) {
         word = w
-        grammar = ""
-        body = ""
-        source = ""
-        waiting = true
+        dictGrammar = ""
+        dictBody = ""
+        dictSource = ""
+        dictWaiting = true
+        trGrammar = ""
+        trBody = ""
+        trSource = ""
+        trWaiting = false
+        noteBody = ""
+        noteWaiting = false
         tab = TAB_DICT
     }
 
@@ -58,27 +72,52 @@ class DictSheet(private val ink: Ink, private val icons: Icons) {
      */
     fun show(w: String, g: String, d: String?, src: String, why: String?) {
         word = w
-        grammar = g
-        body = d ?: (why ?: NOT_FOUND)
-        source = if (d == null) SOURCE_NONE else src
-        waiting = false
+        dictGrammar = g
+        dictBody = d ?: (why ?: NOT_FOUND)
+        dictSource = if (d == null) SOURCE_NONE else src
+        dictWaiting = false
     }
 
     /** Перевод пришёл на вкладку «Перевод»: [dir] — «ru → en», [t] — текст, [src] — источник. */
     fun showTranslate(dir: String, t: String?, why: String?) {
-        grammar = dir
-        body = t ?: (why ?: NOT_FOUND_TR)
-        source = SOURCE_TR
-        waiting = false
+        trGrammar = dir
+        trBody = t ?: (why ?: NOT_FOUND_TR)
+        trSource = SOURCE_TR
+        trWaiting = false
     }
 
     /** Вкладка «Перевод» открыта и ждёт ответа. */
     fun waitTranslate(dir: String) {
-        grammar = dir
-        body = ""
-        source = ""
-        waiting = true
+        trGrammar = dir
+        trBody = ""
+        trSource = ""
+        trWaiting = true
         tab = TAB_TRANSLATE
+    }
+
+    /**
+     * Вкладка «Сноска» открыта: пока движок читает текст, лист показывает [WAIT_NOTE].
+     * Текст уходит в лист через [showNote].
+     */
+    fun waitNote() {
+        noteBody = ""
+        noteWaiting = true
+    }
+
+    /**
+     * Вкладка «Сноска»: [href] — якорь под словом (`null` — слово не ссылка),
+     * [text] — текст сноски из книги (`null` — якоря в книге нет или он пуст).
+     *
+     * Сеть здесь ни при чём: движок отдаёт готовую строку сразу, поэтому ожидания
+     * в листе не бывает — бывает «Это слово не ссылка» и «Сноска пуста».
+     */
+    fun showNote(href: String?, text: String?) {
+        noteBody = when {
+            href == null -> NOT_A_LINK
+            text == null -> NOTE_EMPTY
+            else -> text
+        }
+        noteWaiting = false
     }
 
     fun tab(): Int = tab
@@ -93,6 +132,33 @@ class DictSheet(private val ink: Ink, private val icons: Icons) {
     /** Слово, по которому открыт лист (его берёт перевод). */
     fun word(): String = word
 
+    /** Строка грамматики/направления для открытой вкладки. */
+    private fun grammar(): String = when (tab) {
+        TAB_TRANSLATE -> trGrammar
+        else -> dictGrammar
+    }
+
+    /** Текст под заголовком для открытой вкладки. */
+    private fun bodyText(): String = when (tab) {
+        TAB_NOTE -> noteBody
+        TAB_TRANSLATE -> trBody
+        else -> dictBody
+    }
+
+    /** Подпись источника для открытой вкладки (у сноски — откуда она взялась). */
+    private fun sourceText(): String = when (tab) {
+        TAB_NOTE -> if (noteBody == NOT_A_LINK || noteBody == NOTE_EMPTY) "" else SOURCE_NOTE
+        TAB_TRANSLATE -> trSource
+        else -> dictSource
+    }
+
+    /** Ответ ещё не пришёл: на месте текста стоит ожидание, а не пустота. */
+    private fun waiting(): Boolean = when (tab) {
+        TAB_NOTE -> noteWaiting
+        TAB_TRANSLATE -> trWaiting
+        else -> dictWaiting
+    }
+
     // ------------------------------------------------------------------ рисование
 
     fun draw(c: Canvas) {
@@ -101,13 +167,15 @@ class DictSheet(private val ink: Ink, private val icons: Icons) {
         tabs(c)
         closeKey(c)
         title(c)
-        if (grammar.isNotEmpty()) {
-            ink.text(c, ink.ellipsize(grammar, GRAMMAR_W, TS_GRAMMAR, 600), X,
+        val g = grammar()
+        if (g.isNotEmpty()) {
+            ink.text(c, ink.ellipsize(g, GRAMMAR_W, TS_GRAMMAR, 600), X,
                 T.base(GRAMMAR_Y, TS_GRAMMAR, 1.25f), TS_GRAMMAR, 600, T.G4)
         }
         bodyLines(c)
-        if (source.isNotEmpty()) {
-            ink.text(c, ink.ellipsize(source, SOURCE_W, TS_SOURCE, 600), X,
+        val s = sourceText()
+        if (s.isNotEmpty()) {
+            ink.text(c, ink.ellipsize(s, SOURCE_W, TS_SOURCE, 600), X,
                 T.base(SOURCE_Y, TS_SOURCE, 1.25f), TS_SOURCE, 600, T.G5)
         }
         actions(c)
@@ -141,7 +209,12 @@ class DictSheet(private val ink: Ink, private val icons: Icons) {
 
     /** Определение: до трёх строк 40/400 с шагом 64 (межстрочный 1.6 из макета). */
     private fun bodyLines(c: Canvas) {
-        val text = if (waiting) if (tab == TAB_TRANSLATE) WAIT_TR else WAIT else body
+        val text = when {
+            !waiting() -> bodyText()
+            tab == TAB_NOTE -> WAIT_NOTE
+            tab == TAB_TRANSLATE -> WAIT_TR
+            else -> WAIT
+        }
         val lines = ink.ellipsize2(text, DEF_W, TS_DEF, 400, lines = DEF_LINES)
         var y = T.base(DEF_Y, TS_DEF, 1.6f)
         for (s in lines) {
@@ -217,9 +290,16 @@ class DictSheet(private val ink: Ink, private val icons: Icons) {
         /** Строки, которые лист показывает вместо ответа: ожидание и «не нашлось». */
         const val WAIT = "Ищу в словаре…"
         const val WAIT_TR = "Перевожу…"
+        /** Сноска читается из книги: движок отдаёт её без сети. */
+        const val WAIT_NOTE = "Ищу сноску…"
         private const val NOT_FOUND = "Значения в словаре нет."
         private const val NOT_FOUND_TR = "Перевода не нашлось."
         private const val SOURCE_NONE = "Словарь недоступен"
+        /** Вкладка «Сноска»: слово не ссылка и сноска пустая — это не ошибка, а факт. */
+        private const val NOT_A_LINK = "Это слово не ссылка: сноски в книге нет."
+        private const val NOTE_EMPTY = "Сноска в книге пустая."
+        /** Подпись под сноской: текст взят из самой книги, сеть не нужна. */
+        private const val SOURCE_NOTE = "Сноска книги"
         /** Подпись под переводом: сервис тот же, что и в ответе, но без опоры на сеть. */
         private const val SOURCE_TR = "MyMemory · перевод по сети"
 

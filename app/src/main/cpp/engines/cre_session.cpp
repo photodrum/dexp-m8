@@ -26,6 +26,7 @@
 #include FT_TRUETYPE_IDS_H
 
 #include "crengine.h"
+#include "fb2def.h"      /* перечисления el_* / attr_*: el_title, attr_href (сноска B30) */
 #include "hyphman.h"
 #include "textlang.h"
 #include "cre_fonts.h"
@@ -570,6 +571,110 @@ int range_rects_to_window(ldomXRange &range, int *out, int outLen)
         n++;
     }
     return n;
+}
+
+/* ------------------------------------------------------ сноски и ссылки (R5.1, B30) */
+
+/**
+ * Сноска в FB2 — внутренняя ссылка: `<a href="#n_1">1</a>` в тексте и
+ * `<section id="n_1">` в конце книги. crengine держит `id` элементов в индексе
+ * `_idNodeMap` (`onAttributeSet`), а `href` — атрибутом `<a>`, поэтому якорь ищется
+ * без разбора HTML руками.
+ *
+ * Отдаём только ВНУТРЕННИЕ ссылки (`#…`): внешний URL открывать в читалке нечем.
+ */
+
+/** Снять с [href] решётку и всё, что до неё: `#n_1` → `n_1`. Пусто — ссылка не наша. */
+lString32 href_anchor(const lString32 &href)
+{
+    if (href.empty())
+        return lString32::empty_str;
+    /* Уже якорь (так его отдаёт `dexp_reader_link_at` и так его зовёт `link_text`):
+       решётки нет — берём как есть. Внешний URL (`http://…`) якорем не считается. */
+    int p = href.pos((lChar32) '#');
+    lString32 anchor = p >= 0 ? href.substr(p + 1) : href;
+    if (p < 0 && (anchor.pos(lString32(U"://")) >= 0 || anchor.pos((lChar32) '/') >= 0))
+        return lString32::empty_str;
+    /* `#n_1?text` — якорь кончается на знаке запроса. */
+    int q = anchor.pos((lChar32) '?');
+    if (q >= 0)
+        anchor = anchor.substr(0, q);
+    return anchor.trim();
+}
+
+/**
+ * Текст элемента [node] как одна строка: обходом дерева, без разметки.
+ *
+ * Почему не `ldomNode::getText`: он отдаёт текст `<title>` тоже, а в FB2 тело сноски
+ * начинается с `<title><p>1</p></title>` — номер попал бы в текст («1. См. …»).
+ *
+ * Имя элемента сравнивается через `el_title` из `fb2def.h`.
+ *
+ * [depth] — глубина, чтобы не уйти в бесконечность на испорченном дереве.
+ */
+void node_text(ldomNode *node, lString32 &out, int depth)
+{
+    if (!node || depth > 64)
+        return;
+    if (node->isText()) {
+        out << node->getText();
+        return;
+    }
+    if (!node->isElement())
+        return;
+    if (node->getNodeId() == el_title)
+        return;
+    int n = node->getChildCount();
+    for (int i = 0; i < n; i++)
+        node_text(node->getChildNode((lUInt32) i), out, depth + 1);
+}
+
+/**
+ * Собрать в [out] прямоугольники ссылок (`<a href="#…">`) в окне — тех, что попали
+ * между строками страницы [y0]…[y1] (координаты документа). [cap] — сколько отрезков
+ * влезет в буфер; [n] — счётчик накопленного, общий для рекурсии (по значению потерялся
+ * бы: родительский вызов перезаписал бы результат детей своим нулём).
+ *
+ * Ссылка в FB2 — `<a l:href="#n_1">1</a>`; важна внутренняя (решётка): внешних ссылок
+ * в книге нет, и открывать их читалке нечем.
+ *
+ * Почему диапазон по узлу, а не `ldomXPointer::getRect`: рамка элемента вырожденная
+ * (ширина 1 px, проверено на книге), а `getSegmentRects` даёт по отрезку на строку —
+ * как у выделения B50.
+ */
+void collect_link_rects(ldomNode *node, int y0, int y1, int *out, int cap, int &n)
+{
+    if (!node || n >= cap)
+        return;
+    if (node->isElement()) {
+        lString32 href = node->getAttributeValue(LXML_NS_ANY, attr_href);
+        if (!href.empty() && href.pos((lChar32) '#') >= 0) {
+            ldomXRange range(node);
+            LVArray<lvRect> rects;
+            range.getSegmentRects(rects, false);
+            for (int i = 0; i < rects.length() && n < cap; i++) {
+                lvRect rc = rects[i];
+                if (rc.isEmpty() || rc.bottom <= y0 || rc.top >= y1)
+                    continue;
+                lvPoint p0 = rc.topLeft();
+                lvPoint p1 = rc.bottomRight();
+                if (!g_view->docToWindowPoint(p0) || !g_view->docToWindowPoint(p1, true))
+                    continue;
+                int w = p1.x - p0.x;
+                int h = p1.y - p0.y;
+                if (w > 0 && h > 0) {
+                    out[n * 4 + 0] = p0.x;
+                    out[n * 4 + 1] = p0.y;
+                    out[n * 4 + 2] = w;
+                    out[n * 4 + 3] = h;
+                    n++;
+                }
+            }
+        }
+        int cc = node->getChildCount();
+        for (int i = 0; i < cc && n < cap; i++)
+            collect_link_rects(node->getChildNode((lUInt32) i), y0, y1, out, cap, n);
+    }
 }
 
 } // namespace
@@ -1207,6 +1312,107 @@ DEXP_PROBE_API int dexp_reader_range_rects(const char *startPos, const char *end
     if (range.isNull())
         return DEXP_READER_EPOS;
     return range_rects_to_window(range, out, outLen);
+}
+
+/* ------------------------------------------------------ сноски и ссылки (R5.1, B30) */
+
+/* ------------------------------------------------------ сноски и ссылки (R5.1, B30) */
+
+/**
+ * Ссылка под точкой [x],[y] (вкладка «Сноска» листа B30): координаты — окно (тот же
+ * буфер, что у [dexp_reader_page]), дизайн-px. В [out] — якорь БЕЗ решётки (`n_1`),
+ * его же принимает [dexp_reader_link_text]. Длина или код `< 0`; `0` — ссылки нет.
+ *
+ * `forTextSelection=true` — как у [dexp_reader_word_at]: без него касание края
+ * абзаца и пробела между словами не даёт узла, и сноска у значка не открывалась бы.
+ */
+DEXP_PROBE_API int dexp_reader_link_at(int x, int y, char *out, int outLen)
+{
+    if (!g_view)
+        return DEXP_READER_ENOSESSION;
+    if (!out || outLen <= 1)
+        return DEXP_PROBE_EARG;
+    ldomXPointer ptr = g_view->getNodeByPoint(lvPoint(x, y), false, true);
+    if (ptr.isNull())
+        return 0;
+    /* getHRef сам поднимается по родителям до <a> — точка может стоять на тексте
+       внутри ссылки, а не на самом элементе. */
+    lString32 anchor = href_anchor(ptr.getHRef());
+    if (anchor.empty())
+        return 0;
+    lString8 s = UnicodeToUtf8(anchor);
+    DEXP_LOG("reader: linkAt %d,%d -> #%s", x, y, s.c_str());
+    return copy_utf8(s, out, outLen);
+}
+
+/**
+ * Текст сноски по якорю [href] (`n_1` или `#n_1`) в [out]. Длина или код `< 0`;
+ * `0` — якоря в книге нет.
+ *
+ * `getElementById` ищет по индексу `id`-атрибутов — ровно то, что нужно: `<section
+ * id="n_1">` есть в DOM и у FB2, и у EPUB. Ведущий номер («1.»), если он остался
+ * отдельным текстом, отрезается: подпись сноски на листе — отдельная строка.
+ */
+DEXP_PROBE_API int dexp_reader_link_text(const char *href, char *out, int outLen)
+{
+    if (!g_view)
+        return DEXP_READER_ENOSESSION;
+    if (!href || !href[0] || !out || outLen <= 1)
+        return DEXP_PROBE_EARG;
+    lString32 anchor = href_anchor(Utf8ToUnicode(href));
+    if (anchor.empty())
+        return DEXP_PROBE_EARG;
+    ldomNode *node = g_view->getDocument()->getElementById(anchor.c_str());
+    if (!node) {
+        DEXP_LOG("reader: linkText #%s — якоря нет в индексе id", UnicodeToUtf8(anchor).c_str());
+        return 0;
+    }
+    lString32 txt;
+    node_text(node, txt, 0);
+    /* Сноска в источнике разбита переносами и отступами — в листе это одна строка. */
+    txt.trimDoubleSpaces(false, false);
+    txt.trim();
+    /* Номер сноски отдельным текстом («1. См. …») — в листе он уже есть подписью. */
+    int i = 0;
+    while (i < (int) txt.length() && txt[i] >= (lChar32) '0' && txt[i] <= (lChar32) '9')
+        i++;
+    if (i > 0 && i < (int) txt.length()
+        && (txt[i] == (lChar32) '.' || txt[i] == (lChar32) ')' || txt[i] == (lChar32) ' ')) {
+        while (i < (int) txt.length()
+               && (txt[i] == (lChar32) '.' || txt[i] == (lChar32) ')' || txt[i] == (lChar32) ' '))
+            i++;
+        txt = txt.substr(i);
+    }
+    lString8 s = UnicodeToUtf8(txt);
+    DEXP_LOG("reader: linkText #%s -> %d симв.", UnicodeToUtf8(anchor).c_str(), (int) s.length());
+    if (s.empty())
+        return 0;
+    return copy_utf8(s, out, outLen);
+}
+
+/**
+ * Прямоугольники ссылок (`<a href="#…">`) текущей страницы в окне — для самотеста
+ * сноски `noteStep`: координат значка сноски в тексте нет, а перебирать точки кадра
+ * в Kotlin — десятки тысяч вызовов JNI.
+ *
+ * Формат — как у [dexp_reader_selection_rects]: плоский массив по 4 числа на отрезок.
+ * Возвращает число отрезков или код `< 0`.
+ */
+DEXP_PROBE_API int dexp_reader_link_rects(int *out, int outLen)
+{
+    if (!g_view)
+        return DEXP_READER_ENOSESSION;
+    if (!out || outLen < 4)
+        return DEXP_PROBE_EARG;
+    int page = g_view->getCurPage();
+    if (page < 0 || page >= g_pages)
+        return DEXP_PROBE_EPAGE;
+    int n = 0;
+    collect_link_rects(g_view->getDocument()->getRootNode(), g_view->getPageStartY(page),
+                       g_view->getPageStartY(page) + g_view->getPageHeight(page),
+                       out, outLen / 4, n);
+    DEXP_LOG("reader: linkRects page %d -> %d", page, n);
+    return n;
 }
 
 /* ------------------------------------------------------------- поиск по книге (B28) */
