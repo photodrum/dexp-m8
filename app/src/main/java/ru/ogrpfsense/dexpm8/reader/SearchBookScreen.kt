@@ -245,9 +245,14 @@ class SearchBookScreen(private val ink: Ink, private val icons: Icons) {
     private fun panel(c: Canvas, chapterStart: Int, chapterEnd: Int) {
         ink.convex(c, PANEL_X, PANEL_Y, PANEL_W, PANEL_H, T.R_TILE)
         if (tab == TAB_NOTES) {
+            // Номера заметок — от начала книги, тем же правилом, что метки на полях B52:
+            // свежие сверху, поэтому номер растёт снизу вверх.
+            val numbers = LibraryDb.noteNumbers(notes)
             val first = page * rows()
             val last = minOf(notes.size, first + rows())
-            for (i in first until last) noteRow(c, notes[i], ROW_TOP + (i - first) * ROW_STEP)
+            for (i in first until last) {
+                noteRow(c, notes[i], numbers[notes[i].id] ?: 0, ROW_TOP + (i - first) * ROW_STEP)
+            }
             if (notes.isEmpty()) empty(c, EMPTY_NOTES, EMPTY_NOTES_HINT)
             return
         }
@@ -277,9 +282,16 @@ class SearchBookScreen(private val ink: Ink, private val icons: Icons) {
         ink.rect(c, ROW_X, top + SEP_DY, SEP_W, 2f, T.G11)
     }
 
-    /** Строка заметки: то же место, а под ним текст заметки (нет заметки — выделение). */
-    private fun noteRow(c: Canvas, m: LibraryDb.Mark, top: Float) {
-        ink.text(c, ink.ellipsize(place(m.page), PLACE_W, T.TS_META, 700), ROW_X,
+    /**
+     * Строка заметки: то же место, а под ним текст заметки (нет заметки — выделение).
+     *
+     * [number] — номер заметки от начала книги, тот же, что стоит на полях B52 (`0` — цитата,
+     * у неё номера нет). В снимке B28 номера нет: без него «Заметка 2» на полях не с чем
+     * сверить, а метка времени в строке ничего не говорит (решение 2026-11-17).
+     */
+    private fun noteRow(c: Canvas, m: LibraryDb.Mark, number: Int, top: Float) {
+        val head = if (number > 0) "№ $number · ${place(m.page)}" else place(m.page)
+        ink.text(c, ink.ellipsize(head, PLACE_W, T.TS_META, 700), ROW_X,
             T.base(top, T.TS_META, 1.25f), T.TS_META, 700, T.G5)
         icons.draw(c, "next@11x23.8", NEXT_X, top + NEXT_DY, 11f, 23.8f)
         val body = (m.note ?: m.text.orEmpty()).replace('\u00A0', ' ').replace(WS, " ").trim()

@@ -899,13 +899,18 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
     /**
      * Заметки и цитаты книги, свежие сверху — вкладка «Заметки» экрана B28 и метки B52.
      * [kind] — [MARK_QUOTE] или [MARK_NOTE]; −1 — обе.
+     *
+     * Второй ключ — `_id`: две записи могут лечь в одну миллисекунду (`created` —
+     * `currentTimeMillis`), и без него порядок между ними был бы случайным. Номера
+     * заметок на полях B52 и в списке B28 считаются по этому же порядку ([noteNumbers]),
+     * так что метки времени врозь их развести уже не могут.
      */
     fun notes(bookId: Long, kind: Int = -1): List<Mark> {
         val out = ArrayList<Mark>()
         val where = if (kind < 0) "book_id = ? AND kind <> 0" else "book_id = ? AND kind = $kind"
         writableDatabase.rawQuery(
             "SELECT _id, pos, page, chapter, text, created, kind, pos_end, note FROM bookmarks " +
-                "WHERE $where ORDER BY created DESC", arrayOf(bookId.toString())).use { c ->
+                "WHERE $where ORDER BY created DESC, _id DESC", arrayOf(bookId.toString())).use { c ->
             while (c.moveToNext()) {
                 out.add(Mark(c.getLong(0), c.getString(1), c.getInt(2),
                     c.getString(3), c.getString(4), c.getLong(5), c.getInt(6),
@@ -950,6 +955,25 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         const val MARK_BOOKMARK = 0
         const val MARK_QUOTE = 1
         const val MARK_NOTE = 2
+
+        /**
+         * Номера заметок книги от начала книги: `_id` заметки → её номер «1, 2, 3…».
+         * Цитаты ([MARK_QUOTE]) номера не получают.
+         *
+         * Порядок — от старшей записи к младшей: `created`, при равных метках — `_id`
+         * (в обратном порядке к [notes]. В списке B28 свежие сверху, значит номер заметки
+         * там растёт снизу вверх — номер у записи один и тот же, на полях B52 и в списке.
+         *
+         * Это единственное место, где номер считается: `refreshPageMarks` и `noteRow` B28
+         * берут его отсюда, иначе две формулы разъедутся.
+         */
+        fun noteNumbers(notes: List<Mark>): HashMap<Long, Int> {
+            val ordered = notes.filter { it.kind == MARK_NOTE }
+                .sortedWith(compareBy<Mark>({ it.created }, { it.id }))
+            val map = HashMap<Long, Int>(ordered.size * 2)
+            for (i in ordered.indices) map[ordered[i].id] = i + 1
+            return map
+        }
 
         /** Автоматические полки: `_id` отрицательные, в таблице `shelves` их нет. */
         const val SHELF_READING = -1L

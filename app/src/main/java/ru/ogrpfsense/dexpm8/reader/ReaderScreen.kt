@@ -1216,8 +1216,9 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
      * свои отрезки через `Engine.rangeRects(start, end)`; не попавшие на эту страницу дают
      * пустой массив и отбрасываются. Только в `Engine.worker`.
      *
-     * Номер заметки — её порядок от начала книги (`created`): он стоит на полях и совпадает
-     * с порядком во вкладке «Заметки» B28.
+     * Номер заметки — её порядок от начала книги: его считает [LibraryDb.noteNumbers], то же
+     * правило берёт вкладка «Заметки» B28. Поэтому номер на полях и в списке один и тот же:
+     * в списке свежие сверху, и номер растёт снизу вверх.
      */
     private fun refreshPageMarks() {
         val e = entry
@@ -1230,17 +1231,15 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
             pageMarks = emptyList()
             return
         }
-        val ordered = list.sortedBy { it.created }
+        val numbers = LibraryDb.noteNumbers(list)
         val out = ArrayList<PageMark>(4)
-        var noteNo = 0
-        for (m in ordered) {
-            if (m.kind == LibraryDb.MARK_NOTE) noteNo++
+        for (m in list) {
             if (m.page != cur) continue
             val end = m.posEnd
             if (end.isNullOrEmpty()) continue
             val rects = try { Engine.rangeRects(m.pos, end) } catch (t: Throwable) { null }
             if (rects == null || rects.isEmpty()) continue
-            out.add(PageMark(m.kind, rects, if (m.kind == LibraryDb.MARK_NOTE) noteNo else 0))
+            out.add(PageMark(m.kind, rects, numbers[m.id] ?: 0))
         }
         pageMarks = out
     }
