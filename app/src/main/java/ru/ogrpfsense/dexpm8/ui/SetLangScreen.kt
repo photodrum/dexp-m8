@@ -7,16 +7,17 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+import ru.ogrpfsense.dexpm8.core.DictOnline
 
 /**
  * B41 · Настройки · Дата, время, язык. Числа — из design/v5/B41.json.
  *
  * Читается: время и дата, 12/24-часовой формат, язык, часовой пояс, «Время по сети»
- * (`Settings.Global.auto_time`). Не рисуются (данных нет): значения «Раскладки клавиатуры»
- * и «Словари». Время не обновляется само (на E-Ink нет таймеров) — только при открытии экрана
+ * (`Settings.Global.auto_time`). Не рисуется (данных нет) значение «Раскладки клавиатуры».
+ * Время не обновляется само (на E-Ink нет таймеров) — только при открытии экрана
  * и при перерисовке. Пишется (шаг 4.6) только «24-часовой формат» — `Settings.System.TIME_12_24`
  * (WRITE_SETTINGS). «Время по сети» — Settings.Global, обычному приложению закрыт: только чтение.
- * Пояс, язык, раскладки и словари не нажимаются (своих экранов в макете нет).
+ * Пояс, язык и раскладки не нажимаются (своих экранов в макете нет), «Словари» ведёт на B73.
  */
 class SetLangScreen(act: EinkActivity) : Screen(act) {
 
@@ -24,6 +25,9 @@ class SetLangScreen(act: EinkActivity) : Screen(act) {
     private val kit = SettingsKit(ink, icons)
 
     private var autoTime = true
+
+    /** Сеть для строки «Словари»: словарь онлайн, без сети он не откроется (B73). */
+    private var online = false
 
     override fun render(c: Canvas) {
         val now = Date()
@@ -70,6 +74,7 @@ class SetLangScreen(act: EinkActivity) : Screen(act) {
         kit.divider(c, 1484f)
 
         kit.title(c, "Словари", 1526.5f)
+        kit.valueRow(c, if (online) "по сети" else "нет сети", 1534.5f)
         kit.next(c, 1542.5f)
     }
 
@@ -87,10 +92,15 @@ class SetLangScreen(act: EinkActivity) : Screen(act) {
 
     private fun refresh() {
         autoTime = Settings.Global.getInt(act.contentResolver, "auto_time", 1) != 0
+        online = DictOnline(act).online()
     }
 
     override fun onUp(x: Float, y: Float) {
         if (kit.isBack(x, y)) { act.pop(); return }
+        if (kit.inRow(x, y, 1484f, 142f)) {
+            act.go(EinkActivity.SCR_SET_DICT)
+            return
+        }
         if (kit.inRow(x, y, 934f, 144f)) {
             val want = !DateFormat.is24HourFormat(act)
             act.withWriteSettings {

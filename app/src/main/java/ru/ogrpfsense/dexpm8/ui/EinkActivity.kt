@@ -57,6 +57,9 @@ class EinkActivity : Activity() {
         /** B70 «Шрифт и размер» — настройки чтения по умолчанию; дверь — строка на B39. */
         const val SCR_SET_FONT = 25
 
+        /** B73 «Словари» — источники словаря и перевода; дверь — строка на B41. */
+        const val SCR_SET_DICT = 26
+
         private const val REQ_STORAGE = 1
         private const val REQ_WRITE_SETTINGS = 2
         private const val REQ_ADMIN = 3
@@ -765,6 +768,7 @@ class EinkActivity : Activity() {
             SCR_SET_FONT -> FontSizeScreen(this)
             SCR_SET_SLEEP -> SetSleepScreen(this)
             SCR_SET_LANG -> SetLangScreen(this)
+            SCR_SET_DICT -> SetDictScreen(this)
             SCR_SET_STORAGE -> SetStorageScreen(this)
             SCR_SET_ABOUT -> SetAboutScreen(this)
             SCR_FILES -> FilesScreen(this)
