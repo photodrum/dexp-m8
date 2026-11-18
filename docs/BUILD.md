@@ -266,6 +266,27 @@ adb kill-server; adb start-server; adb devices
   правка дома, `adb shell "run-as <пакет> sh -c 'cat > /data/data/<пакет>/shared_prefs/shell.xml'" < /tmp/shell.xml`.
   На живом процессе файл перезапишется из памяти — сначала `am force-stop`.
 
+**Грабли проверки заряда (2026-11-18, B20):**
+
+- `adb shell dumpsys battery set level N` **не меняет** `status`: при `status: 5` (`FULL`) оболочка
+  считает книгу заряжающейся и диалог низкого заряда не покажет. Нужна вся тройка:
+  ```bash
+  adb shell dumpsys battery set ac 0
+  adb shell dumpsys battery set usb 0
+  adb shell dumpsys battery unplug
+  adb shell dumpsys battery set status 3    # разряжается
+  adb shell dumpsys battery set level 14
+  ```
+  Вернуть как было — `adb shell dumpsys battery reset` (плюс `settings put system screen_brightness`
+  и `svc wifi enable`, если опыт шёл через экономию: она их меняет).
+- Экономия B20 меняет **системные** яркость и Wi-Fi. После опыта проверить
+  `adb shell settings get system screen_brightness` и `settings get global wifi_on`, а `saver_applied`
+  в `shell.xml` должен быть `false` — иначе следующая проверка начнётся с чужого состояния.
+- Правка `shell.xml` в `adb shell "run-as … sh -c 'sed -i …'"` **ломается на кавычках**
+  (`sed: no pattern`, файл не найден). Работает путь `run-as … cat > /tmp/shell.xml` → правка
+  на хосте → `adb push /tmp/shell.xml /data/local/tmp/` → `run-as … cp /data/local/tmp/shell.xml
+  shared_prefs/shell.xml` (и `am force-stop` заранее).
+
 ## adb на Windows (PowerShell)
 
 Папка `C:\platform-tools` не в `PATH`, а PowerShell не запускает программы из текущей папки
