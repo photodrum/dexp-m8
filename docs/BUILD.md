@@ -227,6 +227,18 @@ $ANDROID_HOME/platform-tools/adb install -r -d \
 
 `-r` — переустановка с сохранением данных, `-d` — разрешает откат на более старую версию.
 
+**SDK здесь — `~/.local/android-sdk`** (`local.properties`), в `PATH` `adb` нет: писать
+`~/.local/android-sdk/platform-tools/adb`. **Грабля (2026-11-18):** при подключённой книге
+`adb devices` отдаёт пустой список — помогает перезапуск сервера, после него устройство
+`6IVJ8C68AP` появляется:
+
+```bash
+adb kill-server; adb start-server; adb devices
+```
+
+Для снимков экрана без сети — `adb shell svc wifi disable` / `enable` (проверка «нет сети»),
+плюс `adb shell input keyevent KEYCODE_WAKEUP` перед `screencap` (иначе чёрный кадр).
+
 ## adb на Windows (PowerShell)
 
 Папка `C:\platform-tools` не в `PATH`, а PowerShell не запускает программы из текущей папки
