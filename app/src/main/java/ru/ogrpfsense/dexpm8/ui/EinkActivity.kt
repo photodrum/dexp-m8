@@ -60,9 +60,13 @@ class EinkActivity : Activity() {
         /** B73 «Словари» — источники словаря и перевода; дверь — строка на B41. */
         const val SCR_SET_DICT = 26
 
+        /** B76 «Обновления» — скачивание и установка APK (п. 13); дверь — строка на B43. */
+        const val SCR_SET_UPDATES = 27
+
         private const val REQ_STORAGE = 1
         private const val REQ_WRITE_SETTINGS = 2
         private const val REQ_ADMIN = 3
+        private const val REQ_INSTALL = 4
 
         /**
          * Сколько держать белый кадр после системного диалога. Полное обновление Carta —
@@ -120,6 +124,7 @@ class EinkActivity : Activity() {
     // экран WRITE_SETTINGS ничего не возвращает, поэтому право проверяется заново.
     private var writeWaiter: ((Boolean) -> Unit)? = null
     private var adminWaiter: ((Boolean) -> Unit)? = null
+    private var installWaiter: ((Boolean) -> Unit)? = null
 
     private lateinit var host: android.widget.FrameLayout
     private val stack = ArrayList<Int>(8)
@@ -329,6 +334,27 @@ class EinkActivity : Activity() {
         requestAdmin { ok -> if (ok) sys.lockNow() }
     }
 
+    /**
+     * Выполнить [action], когда разрешена установка из оболочки («Неизвестные источники», B76).
+     * Права нет — открывается системный экран для нашего пакета; [action] выполнится после
+     * возврата, если право выдали. Как и с WRITE_SETTINGS, действие с неудачей не повторяется.
+     */
+    fun withInstallPermission(action: () -> Unit) {
+        if (ru.ogrpfsense.dexpm8.core.ApkInstall.canInstall(this)) {
+            action()
+            return
+        }
+        installWaiter = { ok -> if (ok) action() }
+        Trace.step("install_perm: request")
+        try {
+            startActivityForResult(ru.ogrpfsense.dexpm8.core.ApkInstall.sourcesIntent(this), REQ_INSTALL)
+            cleanOnFocus = true
+        } catch (t: Throwable) {
+            Trace.step("install_perm: no screen ${t.javaClass.simpleName}")
+            installWaiter = null
+        }
+    }
+
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         when (requestCode) {
@@ -345,6 +371,14 @@ class EinkActivity : Activity() {
                 adminWaiter = null
                 val ok = sys.adminActive()
                 Trace.step("admin: ${if (ok) "granted" else "denied"}")
+                w?.invoke(ok)
+            }
+            REQ_INSTALL -> {
+                // Экран «Неизвестные источники» тоже ничего не возвращает: проверяем само право.
+                val w = installWaiter
+                installWaiter = null
+                val ok = ru.ogrpfsense.dexpm8.core.ApkInstall.canInstall(this)
+                Trace.step("install_perm: ${if (ok) "granted" else "denied"}")
                 w?.invoke(ok)
             }
         }
@@ -475,6 +509,7 @@ class EinkActivity : Activity() {
      * --es probe /sdcard/Books/x.pdf` открывает файл на отладочном экране движков без базы.
      * `--es screen wifi` — экран B26 «Загрузка по Wi-Fi»: кнопка входа есть только на пустой
      * библиотеке, а на книге база не пуста (шаг 9.7, проверка на железе).
+     * `--es screen updates` — B76 «Обновления» (п. 13): за ним два уровня стека.
      */
     private fun probeFromIntent(intent: android.content.Intent?) {
         if (!ru.ogrpfsense.dexpm8.BuildConfig.DEBUG) return
@@ -498,11 +533,13 @@ class EinkActivity : Activity() {
                 else go(SCR_READER)
                 return
             }
-            if (intent?.getStringExtra("screen") != "wifi") return
+            val sc = intent?.getStringExtra("screen")
+            if (sc != "wifi" && sc != "updates") return
             intent.removeExtra("screen")
-            Trace.step("debug: screen wifi")
-            if (stack.isNotEmpty() && stack[stack.size - 1] == SCR_WIFI) changeTo(SCR_WIFI)
-            else go(SCR_WIFI)
+            Trace.step("debug: screen $sc")
+            val id = if (sc == "updates") SCR_SET_UPDATES else SCR_WIFI
+            if (stack.isNotEmpty() && stack[stack.size - 1] == id) changeTo(id)
+            else go(id)
             return
         }
         intent.removeExtra("probe")
@@ -769,6 +806,7 @@ class EinkActivity : Activity() {
             SCR_SET_SLEEP -> SetSleepScreen(this)
             SCR_SET_LANG -> SetLangScreen(this)
             SCR_SET_DICT -> SetDictScreen(this)
+            SCR_SET_UPDATES -> SetUpdateScreen(this)
             SCR_SET_STORAGE -> SetStorageScreen(this)
             SCR_SET_ABOUT -> SetAboutScreen(this)
             SCR_FILES -> FilesScreen(this)
@@ -791,6 +829,7 @@ class EinkActivity : Activity() {
         storageListeners.clear()
         writeWaiter = null
         adminWaiter = null
+        installWaiter = null
         screens.clear()
         shade = null
         if (lastInstance === this) lastInstance = null

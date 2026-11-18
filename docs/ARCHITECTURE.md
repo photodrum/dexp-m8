@@ -130,6 +130,7 @@ app/src/main/java/ru/ogrpfsense/dexpm8/
         FilesScreen B25 (обзор папок; плитка «Файлы» в B6 синтетическая — пакета нет)
         SettingsScreen B13 · SetScreenScreen B37 · SetNetScreen B38 · SetReadScreen B39
         SetSleepScreen B40 · SetLangScreen B41 · SetStorageScreen B42 · SetAboutScreen B43
+        SetUpdateScreen B76 (п. 13): проверка, скачивание и установка обновления
         SettingsKit, SettingsData   общие элементы и данные настроек
         SimpleScreen, CrashScreen, Trace   заглушка, экран сбоя, трассировка
         ShadeScreen    B5: шторка поверх экрана (зона открытия — Screen.shadeZone, приглушение — Screen.dimmed)
@@ -137,6 +138,8 @@ app/src/main/java/ru/ogrpfsense/dexpm8/
         Prefs          настройки оболочки (SharedPreferences)
         LibraryDb, Scanner   база на SQLiteDatabase, сканер книг
         AdminReceiver  device admin (сон по кнопке B5)
+        ApkInstall     установка скачанного APK: сессия PackageInstaller, право «Неизвестные источники»
+        UpdateCheck    манифест update.json, скачивание со сверкой sha256 (B43, B76)
         PowerService   служба спецвозможностей: меню питания («Выключение» B5), включается через adb
         NativeBook     JNI-мост к C-ядру, грузится лениво
   reader/ Engine, EngineSelfTest   R1: сеанс чтения (открытие, страницы, кегль, позиции); движок — по

@@ -20,6 +20,10 @@
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
 
+    <!-- Установка обновления (B76, core/ApkInstall.kt): с Android 8 право запрашивается,
+         а человек выдаёт его на системном экране «Неизвестные источники». -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
     <uses-feature
         android:name="android.hardware.touchscreen"
         android:required="true" />
@@ -73,6 +77,12 @@
                 <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
             </intent-filter>
         </receiver>
+
+        <!-- Итог установки обновления (core/ApkInstall.kt, B76): PendingIntent из PackageInstaller.
+             Не exported: систему устраивает, что приёмник наш. -->
+        <receiver
+            android:name=".core.ApkInstall$Receiver"
+            android:exported="false" />
 
         <!-- Служба спецвозможностей только для меню питания (core/PowerService.kt, «Выключение» на B5).
              Включается пользователем в «Спец. возможностях»; система подключается по BIND_ACCESSIBILITY_SERVICE. -->

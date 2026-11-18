@@ -149,6 +149,20 @@ class Prefs(ctx: Context) {
         get() = sp.getString("update_result", "") ?: ""
         set(v) = sp.edit().putString("update_result", v).apply()
 
+    // B76 «Обновления»
+    /** «Проверять автоматически · раз в неделю при Wi-Fi»: пока только хранится (проверка — по кнопке). */
+    var updateAuto: Boolean
+        get() = sp.getBoolean("update_auto", true)
+        set(v) = sp.edit().putBoolean("update_auto", v).apply()
+    /** «Скачивать только при зарядке»: с зарядкой не спешим, но и не качаем на батарее. */
+    var updateChargeOnly: Boolean
+        get() = sp.getBoolean("update_charge_only", false)
+        set(v) = sp.edit().putBoolean("update_charge_only", v).apply()
+    /** `versionCode`, который человек отложил кнопкой «Позже»; 0 — ничего не отложено. */
+    var updateSkipCode: Long
+        get() = sp.getLong("update_skip_code", 0L)
+        set(v) = sp.edit().putLong("update_skip_code", v).apply()
+
 
 
     /** Сброс к значениям макета (B43 «Сбросить настройки оболочки» — после диалога подтверждения). */
