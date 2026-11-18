@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Canvas
+import android.net.ConnectivityManager
 import android.net.wifi.WifiManager
 import android.os.Build
 import ru.ogrpfsense.dexpm8.R
@@ -34,6 +35,26 @@ class FirstDoneScreen(act: EinkActivity) : Screen(act) {
     private var android = "Android ${Build.VERSION.RELEASE}"
     private var grantedCount = 0
     private var wifi = ""
+
+    /**
+     * Wi-Fi: сначала `ConnectivityManager` (как на шаге B61) — `connectionInfo.ssid` на 8.1 без
+     * геолокации отдаёт `<unknown ssid>`, и «Не подключено» рядом с подключённой сетью было бы
+     * неправдой.
+     */
+    private fun refreshWifi() {
+        val linked = try {
+            val cm = act.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            val ni = cm.activeNetworkInfo
+            ni != null && ni.isConnected && ni.type == ConnectivityManager.TYPE_WIFI
+        } catch (t: Throwable) {
+            false
+        }
+        wifi = when {
+            !act.sys.wifiOn() -> "Выключено"
+            !linked -> "Не подключено"
+            else -> currentSsid() ?: "Подключено"
+        }
+    }
 
     /** Шторку B5 на шаге мастера не открываем: панель управления здесь ни к чему. */
     override val shadeZone: Float get() = 0f
@@ -102,7 +123,7 @@ class FirstDoneScreen(act: EinkActivity) : Screen(act) {
         android = "Android ${Build.VERSION.RELEASE}"
         grantedCount = (if (act.hasStorage()) 1 else 0) + (if (act.sys.canWrite()) 1 else 0) +
             (if (act.sys.adminActive()) 1 else 0) + (if (homeIsUs()) 1 else 0)
-        wifi = currentSsid() ?: if (act.sys.wifiOn()) "Не подключено" else "Выключено"
+        refreshWifi()
     }
 
     /** Мы ли домашний экран: разрешить HOME и сравнить пакет. */

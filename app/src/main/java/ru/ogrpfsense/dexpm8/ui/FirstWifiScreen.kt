@@ -16,11 +16,12 @@ import android.net.wifi.WifiManager
  *
  * **Отступление от макета (2026-11-18).** Список соседних сетей в макете — четыре строки, но на
  * Android 8.1 `WifiManager.getScanResults()` без геолокации (`ACCESS_COARSE_LOCATION` + включённое
- * определение местоположения) возвращает пустой список. Права просить ещё раз на шаге Wi-Fi не
- * хотим: рисуем тумблер Wi-Fi и **текущую** сеть (`getConnectionInfo().wifiInfo`, на 8.1 SSID
- * доступен без геолокации), а касание по строке открывает системный экран Wi-Fi, где список есть.
- * Список соседей вернётся, если решим просить `ACCESS_COARSE_LOCATION` (вопрос в ROADMAP).
- * Тумблер переключается сразу, через [SETTLE_MS] экран один раз сверяется с системой.
+ * определение местоположения) возвращает пустой список, а `connectionInfo.ssid` отдаёт
+ * `<unknown ssid>`. Права просить ещё раз на шаге Wi-Fi не хотим: рисуем тумблер Wi-Fi и **текущую**
+ * сеть (по `ConnectivityManager`, имя — если система его отдала), а касание по строке открывает
+ * системный экран Wi-Fi, где список есть. Поэтому панель сжата с 870 до 420 (как на B38):
+ * одна строка вместо четырёх. Список соседей вернётся, если решим просить
+ * `ACCESS_COARSE_LOCATION` (вопрос в ROADMAP).
  */
 class FirstWifiScreen(act: EinkActivity) : Screen(act) {
 
@@ -47,7 +48,7 @@ class FirstWifiScreen(act: EinkActivity) : Screen(act) {
             "Нужен для каталогов, загрузки книг и точного времени. Можно пропустить и подключить позже.")
 
         kit.section(c, "WI-FI", 480f)
-        kit.panel(c, 528f, 870f)
+        kit.panel(c, 528f, 420f)
         kit.key(c, 88f, 562.5f)
         icons.draw(c, "wifi@33.1x30.6", 129.4f, 606.3f, 33.1f, 30.6f)
         kit.title(c, "Wi-Fi", 572f, 237f)
@@ -56,10 +57,10 @@ class FirstWifiScreen(act: EinkActivity) : Screen(act) {
         kit.divider(c, 710f, 237f, 1076f)
 
         // Сеть 66,752.9 1266×150. Подключённая — вдавленная (как «нажато» в макете), иначе выпуклая.
-        val name = ssid.ifEmpty { "Сети рядом" }
+        val name = if (linked) ssid.ifEmpty { "Текущая сеть" } else "Сети рядом"
         val note = when {
             !wifiOn -> "Wi-Fi выключен"
-            linked -> "Подключено"
+            linked -> if (ssid.isEmpty()) "Подключено · имя скрыто системой" else "Подключено"
             else -> "Не подключено · открыть настройки системы"
         }
         if (linked) ink.inset(c, 66f, 752.9f, 1266f, 150f, 40f, T.G12)
@@ -76,7 +77,7 @@ class FirstWifiScreen(act: EinkActivity) : Screen(act) {
 
     private fun wifiText() = when {
         !wifiOn -> "Выключено"
-        linked -> "Подключено к «${ssid.ifEmpty { "сети" }}»"
+        linked -> if (ssid.isEmpty()) "Подключено" else "Подключено к «$ssid»"
         else -> "Не подключено"
     }
 
