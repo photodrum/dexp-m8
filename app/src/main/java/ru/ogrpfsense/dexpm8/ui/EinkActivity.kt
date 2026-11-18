@@ -93,6 +93,19 @@ class EinkActivity : Activity() {
          */
         private const val CLEAN_MS = 300L
 
+        /**
+         * За сколько до системного гашения показывать заставку B19. Кадр рисуется на ещё
+         * горящей панели и остаётся на выключенном E-Ink; после гашения перерисовать его
+         * нельзя. При коротком сне («5 мин») запас урезается до четверти тайм-аута.
+         */
+        private const val SLEEP_LEAD_MS = 20_000
+
+        /**
+         * Пауза между кадром заставки и `lockNow` по кнопке «Сон» на B5: полный кадр Carta идёт
+         * ~0,45 с, и выключение подсветки раньше оставило бы на панели прошлый экран.
+         */
+        private const val LOCK_MS = 700L
+
         /** Одна группа STORAGE: система показывает один диалог на оба. */
         private val STORAGE_PERMS = arrayOf(
             Manifest.permission.READ_EXTERNAL_STORAGE,
@@ -235,6 +248,9 @@ class EinkActivity : Activity() {
         if (!storageOk && savedInstanceState == null) requestStorage()
         if (savedInstanceState == null) probeFromIntent(intent)
         if (savedInstanceState == null) autoUpdate(firstRun)
+        // Заставка B19 (п. 13): показывается за 20 с до системного гашения. В мастере первого
+        // запуска не нужна — человек ещё настраивает книгу.
+        if (!firstRun) planSleep()
     }
 
     /**
@@ -390,10 +406,97 @@ class EinkActivity : Activity() {
         }
     }
 
-    /** Сон сейчас: админ есть — экран гаснет; нет — сначала системный запрос. */
+    /**
+     * Сон сейчас (кнопка «Сон» на B5): сначала заставка B19, потом гашение. Админа нет — сначала
+     * системный запрос, как раньше; без него `lockNow` не сработает.
+     */
     fun sleepNow() {
-        if (sys.lockNow()) return
-        requestAdmin { ok -> if (ok) sys.lockNow() }
+        if (sys.adminActive()) {
+            sleepWithCurtain()
+            return
+        }
+        requestAdmin { ok -> if (ok) sleepWithCurtain() }
+    }
+
+    /** Заставка, затем гашение: кадр должен успеть выйти на панель до выключения подсветки. */
+    private fun sleepWithCurtain() {
+        curtain()
+        ui.postDelayed({ sys.lockNow() }, LOCK_MS)
+    }
+
+    // ------------------------------------------------------------ заставка сна (B19)
+
+    /** Заставка B19 поверх экрана; null — не показывалась ни разу. */
+    private var sleep: SleepScreen? = null
+
+    /** План показа заставки: `postDelayed` на ([SLEEP_LEAD_MS] до системного гашения). */
+    private val sleepAt = Runnable { curtain() }
+
+    /**
+     * Показать заставку B19 сейчас: по тайм-ауту сна ([sleepAt]) или по кнопке «Сон» на B5
+     * (`sleepNow`). Кадр рисуется полной перерисовкой — за ним уже ничего не меняется.
+     */
+    private fun curtain() {
+        if (!this::host.isInitialized || sleepShown()) return
+        Trace.step("sleep: curtain")
+        val s = sleep ?: SleepScreen(this).also { sleep = it }
+        host.addView(s, android.widget.FrameLayout.LayoutParams(
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT
+        ))
+        bigFrame("sleep")
+    }
+
+    /** Заставка на экране. */
+    private fun sleepShown(): Boolean = sleep?.parent != null
+
+    /**
+     * Заново назначить показ заставки по системному тайм-ауту сна (B40 «Засыпать через»).
+     * Тайм-аут в системе отсчитывается от последнего касания, поэтому и мы считаем так же —
+     * [onUserInteraction] и [wakeUp] перезапускают план.
+     *
+     * Не планируется, когда сна нет («Никогда»), а также если до гашения меньше половины
+     * тайм-аута: при коротком сне заставка показалась бы сразу после касания.
+     */
+    private fun planSleep() {
+        ui.removeCallbacks(sleepAt)
+        val ms = sys.sleepTimeout()
+        if (ms <= 0 || ms == Int.MAX_VALUE) return
+        val lead = minOf(SLEEP_LEAD_MS, ms / 4)
+        val before = ms - lead
+        if (before <= 0) return
+        ui.postDelayed(sleepAt, before.toLong())
+    }
+
+    /**
+     * Касание, клавиша или возврат из фона: если заставка показана, убрать её — прежний экран
+     * остаётся под ней как был. Время сна отсчитывается заново.
+     */
+    fun wakeUp() {
+        val s = sleep
+        if (s != null && s.parent != null) {
+            Trace.step("sleep: wake")
+            host.removeView(s)
+            // Под заставкой на E-Ink остаётся её след: кадр экрана рисуется заново, полной
+            // перерисовкой (частичная оставила бы серые пятна от обложки и названия).
+            fullOnSwitch()
+        }
+        planSleep()
+    }
+
+    /** Поле «Засыпать через» на B40 сменили — план пересчитать. */
+    fun rescheduleSleep() {
+        if (sleepShown()) return
+        planSleep()
+    }
+
+    /**
+     * Касание или клавиша в любом месте окна: план заставки пересчитывается от текущего момента,
+     * как и системный тайм-аут сна (`Settings.System.SCREEN_OFF_TIMEOUT`).
+     */
+    override fun onUserInteraction() {
+        super.onUserInteraction()
+        planSleep()
     }
 
     /**
@@ -488,12 +591,17 @@ class EinkActivity : Activity() {
         // Экран в кеше переживает выключение экрана: дата и приветствие B1 к утру устарели.
         // Перерисовка внутри — только при смене строки.
         (screens[SCR_HOME] as? HomeScreen)?.refreshTime()
+        // Заставка B19 снимается: будильник и возврат из фона — одно и то же событие,
+        // эхо после подъёма ничего не должно оставлять. План сна — от текущего момента.
+        wakeUp()
     }
 
     override fun onPause() {
         // Читалка уходит в фон (кнопка «Домой», выключение экрана): сохраняем место чтения
         // сейчас, не дожидаясь закрытия экрана — процесс могут убить в фоне (R1.4).
         (current() as? ru.ogrpfsense.dexpm8.reader.ReaderScreen)?.saveNow()
+        // В фоне заставка не нужна и план не работает: система сама погасит экран.
+        ui.removeCallbacks(sleepAt)
         super.onPause()
     }
 
@@ -627,6 +735,12 @@ class EinkActivity : Activity() {
      */
     override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
         val code = event.keyCode
+        // Заставка B19: любая клавиша (кроме «Назад» — ею занимается onBackPressed) только будит.
+        // Иначе листание вслепую перевернуло бы страницу под заставкой.
+        if (sleepShown() && code != android.view.KeyEvent.KEYCODE_BACK) {
+            if (event.action == android.view.KeyEvent.ACTION_DOWN && event.repeatCount == 0) wakeUp()
+            return true
+        }
         if (code != android.view.KeyEvent.KEYCODE_BACK) {
             val top = current()
             if (top is ru.ogrpfsense.dexpm8.reader.ReaderScreen && shade?.parent == null) {
@@ -644,6 +758,12 @@ class EinkActivity : Activity() {
     }
 
     override fun onBackPressed() {
+        // Заставка перехватывает «Назад»: это пробуждение, а не выход с экрана и не закрытие
+        // шторки (шторку под заставкой не открывали).
+        if (sleepShown()) {
+            wakeUp()
+            return
+        }
         // Сначала экран: у читалки поверх страницы бывает лист B31 — «Назад» закрывает его,
         // а не уводит из книги.
         if (current()?.onBack() == true) return
@@ -716,6 +836,8 @@ class EinkActivity : Activity() {
     private fun changeTo(screenId: Int, switch: Boolean = true) {
         // Шторка уходит вместе с экраном; затемнение с прежнего экрана снимаем (он в кэше).
         for (i in 0 until host.childCount) (host.getChildAt(i) as? Screen)?.dimmed = false
+        // Заставка B19 тоже уходит: под ней мог остаться экран, с которого пользователь ушёл.
+        sleep?.let { if (it.parent != null) host.removeView(it) }
         host.removeAllViews()
         host.addView(obtain(screenId))
         if (switch) fullOnSwitch()

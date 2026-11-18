@@ -12,10 +12,12 @@ import android.provider.Settings
  * Читается: заряд (липкий `ACTION_BATTERY_CHANGED`, право не нужно), «Засыпать через» —
  * `Settings.System.SCREEN_OFF_TIMEOUT`, порог экономии — `Settings.Global.low_power_trigger_level`.
  * Пишется (шаг 4.6): «Засыпать через» — `act.sys.setSleepTimeout` (WRITE_SETTINGS; «Никогда» —
- * Int.MAX_VALUE); «Экономия заряда» и «Показывать заряд на заставке» — `act.prefs` (исполнятся
- * с B19/B20). Порог экономии не пишется: Settings.Global закрыт для обычных приложений.
+ * Int.MAX_VALUE); «Экономия заряда» и «Показывать заряд на заставке» — `act.prefs`. Строка
+ * «Показывать заряд» исполняется заставкой B19 (`SleepScreen`), «Экономия» ждёт B20. Порог
+ * экономии не пишется: Settings.Global закрыт для обычных приложений.
  * Не рисуются (данных нет): «Хватит примерно на…» и «Последняя зарядка — …» — отступ от макета,
- * место справа от «78 %» остаётся пустым. «Заставка сна» и «Выключать после сна» не нажимаются.
+ * место справа от «78 %» остаётся пустым. «Заставка сна» и «Выключать после сна» не нажимаются:
+ * у первой настроек нет (всё по макету), у второй нет правила в ROADMAP.
  */
 class SetSleepScreen(act: EinkActivity) : Screen(act) {
 
@@ -98,6 +100,8 @@ class SetSleepScreen(act: EinkActivity) : Screen(act) {
         if (s >= 0) {
             if (s != active) act.withWriteSettings {
                 if (act.sys.setSleepTimeout(timeoutMs[s])) active = s
+                // Заставка B19 показывается за 20 с до гашения — срок надо пересчитать (п. 13).
+                act.rescheduleSleep()
                 redraw()
             }
             return
