@@ -12,6 +12,18 @@ class Prefs(ctx: Context) {
 
     private val sp = ctx.applicationContext.getSharedPreferences("shell", Context.MODE_PRIVATE)
 
+    // Первый запуск — мастер B60–B63 и B8 (п. 13)
+    /**
+     * Мастер первого запуска пройден (или пропущен). false — `EinkActivity` открывает B60
+     * вместо B1. Ставится на B63 «Библиотека»/«Начать чтение» и на «Пропустить и настроить
+     * позже» (B8). После «Сбросить настройки оболочки» (`reset`) мастер не возвращается:
+     * ключ сбрасывается вместе с остальными, но `EinkActivity` показывает мастер только при
+     * пустой библиотеке.
+     */
+    var firstRunDone: Boolean
+        get() = sp.getBoolean("first_run_done", false)
+        set(v) = sp.edit().putBoolean("first_run_done", v).apply()
+
     // B37 «Экран»
     /**
      * Тёплый свет и «Усиленный контраст» убраны 2026-11-18: первый ничего не делал (подсветка

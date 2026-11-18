@@ -69,6 +69,17 @@ class EinkActivity : Activity() {
          */
         const val SCR_SET_AUTHOR = 28
 
+        /**
+         * Мастер первого запуска (п. 13): B60 шаг 1 язык и время, B61 шаг 2 Wi-Fi,
+         * B8 шаг 3 разрешения, B62 шаг 4 чтение, B63 «готово». Открывается вместо B1,
+         * пока `Prefs.firstRunDone` = false и библиотека пуста.
+         */
+        const val SCR_FIRST_LANG = 29
+        const val SCR_FIRST_WIFI = 30
+        const val SCR_FIRST_PERM = 31
+        const val SCR_FIRST_READ = 32
+        const val SCR_FIRST_DONE = 33
+
         private const val REQ_STORAGE = 1
         private const val REQ_WRITE_SETTINGS = 2
         private const val REQ_ADMIN = 3
@@ -203,11 +214,14 @@ class EinkActivity : Activity() {
         }
 
         try {
-            stack.add(SCR_HOME)
-            changeTo(SCR_HOME, switch = false)   // первый кадр окна — и так полный
-            Trace.step("HomeScreen attached")
+            // Мастер первого запуска (п. 13) — только при пустой библиотеке: после «Сбросить
+            // настройки оболочки» (ключ сбрасывается) или переустановки база уже с книгами.
+            val firstRun = savedInstanceState == null && !prefs.firstRunDone && booksEmpty()
+            stack.add(if (firstRun) SCR_FIRST_LANG else SCR_HOME)
+            changeTo(stack[stack.size - 1], switch = false)   // первый кадр окна — и так полный
+            Trace.step(if (firstRun) "FirstLangScreen attached" else "HomeScreen attached")
         } catch (t: Throwable) {
-            Trace.step("changeTo(SCR_HOME) FAIL: ${t.javaClass.simpleName}: ${t.message}")
+            Trace.step("changeTo(start) FAIL: ${t.javaClass.simpleName}: ${t.message}")
             showCrashSafely(t)
             return
         }
@@ -540,6 +554,16 @@ class EinkActivity : Activity() {
                 return
             }
             val sc = intent?.getStringExtra("screen")
+            // `first` — мастер первого запуска на книге с непустой библиотекой (п. 13):
+            // ключ `firstRunDone` не трогаем, мастер открывается синтетически.
+            if (sc == "first") {
+                intent.removeExtra("screen")
+                Trace.step("debug: screen first")
+                stack.clear()
+                stack.add(SCR_FIRST_LANG)
+                changeTo(SCR_FIRST_LANG)
+                return
+            }
             if (sc != "wifi" && sc != "updates") return
             intent.removeExtra("screen")
             Trace.step("debug: screen $sc")
@@ -611,6 +635,40 @@ class EinkActivity : Activity() {
             stack.removeAt(stack.size - 1)
         }
         changeTo(stack[stack.size - 1])
+    }
+
+    /** Пустая ли библиотека: мастер первого запуска показывается только тогда. */
+    private fun booksEmpty(): Boolean = try {
+        db.count() == 0
+    } catch (t: Throwable) {
+        Trace.step("first run: db FAIL ${t.javaClass.simpleName}: ${t.message}")
+        false
+    }
+
+    /**
+     * Полная перерисовка после возврата из системного экрана (настройки Wi-Fi, права).
+     * Экран делает это сам: [cleanOnFocus] сработает только при следующей смене фокуса.
+     */
+    fun markCleanOnFocus() {
+        cleanOnFocus = true
+    }
+
+    /**
+     * Мастер первого запуска пройден: ставим `Prefs.firstRunDone` и уводим мастер из стека.
+     * [target] — куда идти: [SCR_HOME] или [SCR_LIBRARY]. Стек заменяется целиком, чтобы
+     * «Назад» с главного не возвращал в мастер.
+     */
+    fun finishFirstRun(target: Int) {
+        prefs.firstRunDone = true
+        Trace.step("first run: done -> screen $target")
+        stack.clear()
+        stack.add(SCR_HOME)
+        if (target != SCR_HOME && target != SCR_LIBRARY) {
+            go(target)
+            return
+        }
+        changeTo(SCR_HOME)
+        if (target == SCR_LIBRARY) go(SCR_LIBRARY)
     }
 
     private fun changeTo(screenId: Int, switch: Boolean = true) {
@@ -816,6 +874,11 @@ class EinkActivity : Activity() {
             SCR_SET_STORAGE -> SetStorageScreen(this)
             SCR_SET_ABOUT -> SetAboutScreen(this)
             SCR_SET_AUTHOR -> SetAuthorScreen(this)
+            SCR_FIRST_LANG -> FirstLangScreen(this)
+            SCR_FIRST_WIFI -> FirstWifiScreen(this)
+            SCR_FIRST_PERM -> FirstPermScreen(this)
+            SCR_FIRST_READ -> FirstReadScreen(this)
+            SCR_FIRST_DONE -> FirstDoneScreen(this)
             SCR_FILES -> FilesScreen(this)
             SCR_WIFI -> WifiUploadScreen(this)
             SCR_CATALOGS -> CatalogsScreen(this)
