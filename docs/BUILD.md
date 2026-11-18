@@ -248,8 +248,15 @@ alias `dexp-m8`, `CN=DEXP M8, O=ogrpfsense, C=RU`, срок до 2054. `tools/bu
 
 ```bash
 sha256sum app/build/outputs/apk/release/app-release.apk      # в "sha256"
-python3 tools/gl_publish_apk.py app/build/outputs/apk/release/app-release.apk 0.1.1   # APK в GitLab Packages
+python3 tools/gl_publish_apk.py app/build/outputs/apk/release/app-release.apk 0.3.0   # APK в GitLab Packages
 ```
+
+Скрипт сам печатает `sha256`, `size` и готовый кусок `update.json` — вписывать их руками
+по `sha256sum` не нужно. **Токену нужен scope `api`:** git push хватает `write_repository`,
+а `/projects/:id/packages/generic/…` с ним отвечает `403 insufficient_scope` (2026-11-18).
+Токен — «Настройки → Токены доступа» в GitLab, галочка `api`, файл
+`~/.config/dexp-m8/git-push-token`. Прямая ссылка на файл открывается **без токена**
+(проект публичный) — именно поэтому B76 может качать APK.
 
 `versionCode` обязан расти монотонно — сравнение идёт по нему, а не по `versionName`.
 Ответ 404 на обоих хостах B43 показывает как «версия ещё не опубликована», код 5xx и обрыв — «сервер не ответил».

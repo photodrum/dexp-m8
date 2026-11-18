@@ -1,7 +1,8 @@
 {
-  "versionCode": 2,
-  "versionName": "0.2.0",
-  "url": "https://git.ogrpfsense.ru/denisle/dexp-m8/-/releases",
-  "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
-  "notes": "Первая сборка на своём ключе подписи (п. 20). APK в GitLab Packages: см. tools/gl_publish_apk.py."
+  "versionCode": 3,
+  "versionName": "0.3.0",
+  "url": "https://git.ogrpfsense.ru/api/v4/projects/denisle%2Fdexp-m8/packages/generic/dexp-m8/0.3.0/app-release.apk",
+  "sha256": "dde03fe673e763a3d3d49b9f121519aa76382aca6add6db58738fb18ee3b24cb",
+  "size": 4413268,
+  "notes": "0.3.0: «Контраст» на B37 ползунком, кнопка «Автор» с QR-кодом на Бусти (B43), имя автора в строке версии."
 }
