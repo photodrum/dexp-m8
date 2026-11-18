@@ -10,19 +10,23 @@
 1. **Ровно один** `run_commands` на ответ: терминал один на чат, второй параллельный вызов теряет
    вывод. Несколько команд — массивом внутри одного вызова.
    Act: `GIT_ASKPASS=$PWD/tools/git-askpass.sh GIT_TERMINAL_PROMPT=0 git pull --ff-only; git status -sb;
-   git config user.name; cat docs/CONTEXT.md; grep -n '^## ' docs/DEVLOG.md | head -2`
-   Plan: то же, но `git fetch` вместо `git pull --ff-only` (правки запрещены).
+   git config user.name; sed -n '12,$p' docs/CONTEXT.md; grep -n '^## ' docs/DEVLOG.md | head -2`
+   Plan: то же без `git pull` (правки и слияние запрещены; при сильном расхождении — `git fetch`).
    Не прошло, есть незакоммиченное, `user.name` ≠ `denisle` — стоп, показать вывод, не сливать.
-2. «СЛЕДУЮЩИЙ ШАГ» — `docs/CONTEXT.md`. `docs/ROADMAP.md` не целиком: `grep -nE '^(## |[0-9]+\.)'
+2. «СЛЕДУЮЩИЙ ШАГ» — `docs/CONTEXT.md` (в п. 1 уже прочитан с 12-й строки — шаблон первого
+   сообщения выше не нужен). `docs/ROADMAP.md` не целиком: `grep -nE '^(## |[0-9]+\.)'
    docs/ROADMAP.md`, затем нужный пункт `sed -n 'A,Bp'` (пункты плана — `15.`, `16.`, не `##`).
    `awk` с русским шаблоном в терминале зависает.
-3. `docs/DEVLOG.md` — только верхняя запись: `sed -n 'A,Bp'` по двум номерам из `grep -n '^## '`
-   (`head -2` не годится — там шапка).
+3. `docs/DEVLOG.md` — только верхняя запись: `grep -n '^## ' docs/DEVLOG.md | head -2` даёт номер
+   первой записи и следующего заголовка, тело — `sed -n 'A,Bp'`. Шапка в файле начинается с `>`
+   и `#`, а не с `##`, поэтому `head -2` попадает в запись.
 4. По теме: макеты и UI — `docs/DESIGN_USAGE.md`, `design/README.md` (числа — `tools/design_flat.py`,
    JSON целиком — если не хватило поля), `docs/DESIGN.md` — справочно; читалка — `docs/READER_SPEC.md`;
-   сборка, установка, git, токены, ошибки — `docs/BUILD.md`; рендер, структура кода, E-Ink —
-   `docs/ARCHITECTURE.md`; чат дизайна — `docs/DESIGN_QUESTIONS.md`; карта документов — `README.md`.
-
+   сборка, установка, git, токены, ошибки — `docs/BUILD.md`, тесты и проверки на хосте —
+   `docs/CHECKS.md`; рендер, структура кода, E-Ink — `docs/ARCHITECTURE.md`; чат дизайна —
+   `docs/DESIGN_QUESTIONS.md`; карта документов — `README.md`.
+5. Бюджет стартового чтения — до ~8 КБ: CONTEXT с 12-й строки, заголовки ROADMAP, одна запись
+   DEVLOG, дальше — по теме. Не влезло — сжимать документ, а не добирать `sed`.
 
 ## Как работаем
 

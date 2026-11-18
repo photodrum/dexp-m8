@@ -21,6 +21,7 @@
 | [`design/README.md`](design/README.md) | снимок макета в JSON: как снимать, формат, проверка |
 | [`docs/READER_SPEC.md`](docs/READER_SPEC.md) | ТЗ читалки: движки, `ReaderEngine`, этапы R0–R6, приёмка |
 | [`docs/BUILD.md`](docs/BUILD.md) | окружение (`~/.local`), сборка, установка на книгу, git и доступы, частые ошибки |
+| [`docs/CHECKS.md`](docs/CHECKS.md) | проверки на хосте: тесты C-ядра, разбор OPDS, срезы каталога, пароль каталога |
 | [`docs/COMPARISON.md`](docs/COMPARISON.md) | чем своё ядро отличается от Book's Story и KOReader |
 | [`app/src/main/cpp/README.md`](app/src/main/cpp/README.md) | C-ядро: типы блоков, тесты, грабли |
 

@@ -105,102 +105,10 @@ CMake (`engines/cre.cmake`): `git apply` идемпотентен, уже нал
 |---|---|
 | `crengine-19-glyph-align.patch` | `LVFontGlyphCacheItem::newItem` берёт память `posix_memalign` (Z19): `alignas(16)` на `bmp` заставлял clang писать NEON-инструкцией по 16 байт, а bionic `malloc` даёт 8 — SIGBUS на кегле 8…12 |
 
-## Тесты C-ядра на хосте
+## Проверки на хосте
 
-Без NDK и без устройства — обычным `gcc`:
-
-```bash
-cd ~/projects/dexp-m8/app/src/main/cpp
-gcc -std=gnu99 -O1 -g -Wall -Wextra -Icore -fsanitize=address,undefined \
-    -o /tmp/test_core core/book.c test/test_core.c
-cd test && setarch -R /tmp/test_core testdata/sample.fb2
-```
-
-Ожидаемый вывод: `parse rc=0`, `paras=4 titles=3 poems=2`, `meta rc=0 … complete=1`, `all good`.
-`setarch -R` (без ASLR) обязателен: ASan из gcc 12 на ядре хоста (7.0, высокая энтропия mmap)
-примерно в 1 запуске из 7 падает до `main` с `AddressSanitizer:DEADLYSIGNAL` — и на старом коде тоже.
-
-### Раскладка DjVu (R2.4)
-
-`engines/djvu_layout.h` — чистая арифметика без DjVuLibre, поэтому проверяется `g++`
-без NDK:
-
-```bash
-cd ~/projects/dexp-m8
-g++ -std=c++17 -O1 -Wall -Wextra -Iapp/src/main/cpp/engines \
-    -o /tmp/test_djvu_layout app/src/main/cpp/test/test_djvu_layout.cpp
-/tmp/test_djvu_layout          # «140 проверок, 0 провалов», «all good»
-```
-
-Стенд на настоящем файле (`test/host_djvu_view.cpp`) требует хостовой libdjvu; рецепт —
-`app/src/main/cpp/README.md`, раздел «Раскладка DjVu». В APK он не входит.
-
-
-## Проверка разбора OPDS на хосте
-
-Ядро сетевых каталогов (`core/Opds.kt`) разбирается на JVM без устройства и без Gradle:
-`parse` и `parseTemplate` — чистые функции в `companion object`.
-
-```bash
-export JAVA_HOME=$HOME/.local/jdk PATH=$HOME/.local/jdk/bin:$PATH
-KX=~/.gradle/caches/modules-2/files-2.1/net.sf.kxml/kxml2/2.3.0/ccbc77a5fd907ef863c29f3596c6f54ffa4e9442/kxml2-2.3.0.jar
-# стабы android.content.Context / ConnectivityManager / Base64 / ui.Trace — в /tmp/optest/stub
-# companion object в Opds — private, поэтому для теста копия без слова private:
-sed 's/    private companion object {/    companion object {/' \
-    app/src/main/java/ru/ogrpfsense/dexpm8/core/Opds.kt > /tmp/optest/h/Opds.kt
-$HOME/.local/kotlinc/bin/kotlinc -cp $KX -d /tmp/optest/out \
-    /tmp/optest/stub/*.kt /tmp/optest/h/Opds.kt /tmp/optest/TplTest.kt
-java -Dfile.encoding=UTF-8 -cp "/tmp/optest/out:$KX:$HOME/.local/kotlinc/lib/kotlin-stdlib.jar" TplTestKt
-```
-
-Проверяет то, что живёт в разборе, а не в сети: `rel="search"` из фида, OpenSearch-описание
-BookLore → абсолютный шаблон, выбор `<Url kind="acquisition">`, шаблон без `{searchTerms}`,
-снятие лишних подстановок (`{startIndex?}`, `{language}`), шаблон Calibre. Успех — строки `OK…`
-и `=== ВСЁ ОК`; `FAIL` в выводе — падение разбора.
-
-## Проверка срезов каталога на хосте
-
-`sliceHref`/`findSlice` (`core/Opds.kt`) — чистая функция, проверяется без устройства: BookLore
-отдаёт срезы записями-навигациями, Calibre — названиями «By Author»/«Tags», часть каталогов —
-только ссылками `rel="subsection"` фида. Харнесс — тот же, что у поиска (стабы и `kxml2`),
-файл теста `SliceTest.kt`:
-
-```bash
-# в харнессе /tmp/optest (см. выше), реальные фиды: /tmp/opds/f5b1d4f9d.xml — корень,
-# /tmp/authors.xml — /api/v1/opds/authors, /tmp/series.xml — /api/v1/opds/series
-$HOME/.local/kotlinc/bin/kotlinc -cp $KX -d /tmp/optest/out2 \
-    /tmp/optest/stub/*.kt /tmp/optest/h/Opds.kt /tmp/optest/SliceTest.kt
-java -Dfile.encoding=UTF-8 -cp "/tmp/optest/out2:$KX:$HOME/.local/kotlinc/lib/kotlin-stdlib.jar" SliceTestKt
-```
-
-19 проверок: срезы BookLore (`authors`/`series`, жанров нет), 442 автора и 147 серий, ссылки
-записей (`catalog?author=`, `catalog?series=`), поиск по названию («By Author», «Tags»,
-«Авторы/Серии/Жанры»), срез только ссылкой фида, `null` для отсутствующего среза. Успех —
-`=== ВСЁ ОК`.
-
-**Грабли харнесса:** `Opds.slice(...)` в тесте не компилируется — `slice` перехватывает
-стандартное расширение `List.slice(indices: IntRange)`; метод называется `findSlice`, в тесте
-вызывать через экземпляр (`opds.findSlice(feed, kind)`). Фикстуры `<feed>` не должны начинаться
-с `<?xml …?>` после `trimIndent()` — `KXmlParser` на это падает (`PI must not start with xml`).
-
-## Проверка шифрования пароля каталога
-
-Пароль OPDS в базе — шифртекст (`core/Pass.kt`, `v1:` + Base64). Проверяется только на книге:
-`AndroidKeyStore` на JVM нет. После установки APK и одного запуска:
-
-```bash
-adb shell 'run-as ru.ogrpfsense.dexpm8 sqlite3 databases/library.db \
-  "pragma user_version; select substr(pass,1,16) from catalogs"'
-# ожидается: 7   и   v1:BUt/ZJpRRCRbPrY
-
-adb shell 'run-as ru.ogrpfsense.dexpm8 sh -c \
-  "grep -c <старый-пароль> databases/library.db databases/library.db-wal"'
-# ожидается: 0 в обоих файлах — иначе уборка (VACUUM) не прошла
-```
-
-В трассе (`files/DexpM8-trace.txt`) должны быть строки «pass: перешифровано N паролей каталогов»,
-«db v7: открыта, версия 7» и «db v7: уборка после перешифрования готова». Вход в каталог после
-обновления должен работать без повторного ввода пароля — это и есть проверка, что ключ прочитан.
+Тесты C-ядра, разбор OPDS, срезы авторов и серий, шифрование пароля каталога —
+[`docs/CHECKS.md`](CHECKS.md) (вынесено отсюда 2026-11-18: при сборке не нужны).
 
 ## Подпись APK (п. 20)
 
@@ -506,7 +414,7 @@ GIT_ASKPASS=$PWD/tools/git-askpass.sh GIT_TERMINAL_PROMPT=0 \
 | `tools/typecheck.sh`: `unresolved reference: BuildConfig` | `BuildConfig` генерирует только Gradle; в `typecheck.sh` и `build.sh` есть заглушка (`DEBUG = true`) с 2026-11-12 |
 | `tools/typecheck.sh` / `tools/build.sh`: `OutOfMemoryError` в psi2ir или на `ShelfScreen.kt` | **решено 2026-11-13:** оба скрипта сами ставят `JAVA_OPTS=-Xmx1600m` (если переменная не задана); нужен только `JAVA_HOME` и PATH JDK. Раньше требовалось передавать вручную |
 | `tools/typecheck.sh` без JDK в PATH: пишет «классов собрано: 0» и **выходит с кодом 0** | `kotlinc` не нашёл `java` и умер молча — без ошибки в логе. Всегда `export JAVA_HOME=$HOME/.local/jdk PATH=$HOME/.local/jdk/bin:$PATH`; признак успеха — «классов собрано: 135» и выше |
-| JVM-харнесс ядра OPDS: `cannot access 'Companion': it is private in 'Opds'` | `companion object` в `Opds` — `private` (с 10.6); для теста собирать копию без слова `private` и вызывать `searchUrl` через экземпляр (`docs/BUILD.md`, «Проверка разбора OPDS на хосте») |
+| JVM-харнесс ядра OPDS: `cannot access 'Companion': it is private in 'Opds'` | `companion object` в `Opds` — `private` (с 10.6); для теста собирать копию без слова `private` и вызывать `searchUrl` через экземпляр (`docs/CHECKS.md`, «Проверка разбора OPDS на хосте») |
 | `db v7: VACUUM FAIL: cannot VACUUM from within a transaction` | `VACUUM` нельзя внутри `onUpgrade` (там уже открыта транзакция). Уборка после перешифрования паролей — в `LibraryDb.scrub()`, вызывается из `LibraryDb.open()` после открытия базы, не из `onUpgrade` (10.12) |
 | JNI-строки из движка роняют процесс: `input is not valid Modified UTF-8: illegal continuation byte 0` (SIGABRT в `dexp-engine`) | `NewStringUTF` ждёт **Modified** UTF-8, а текст книги — обычный UTF-8; обрезка по лимиту байт ещё и рвёт символ посреди кода. Обрезать по границе символа (`10xxxxxx` в конце — отступить) и отдавать строку через UTF-16 (`utf8ToJString` в `engines/reader_jni.cpp`, R1.1) |
 | Gradle, запущенный фоном (`nohup … &`), падает с `Bad file descriptor` / зависает с пустым логом | терминал Cline закрывает stdin фонового процесса: `setsid ./gradlew assembleDebug --offline </dev/null > /tmp/build.log 2>&1 &`, затем читать `/tmp/build.log` |
