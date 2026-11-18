@@ -1,7 +1,28 @@
+import java.io.File
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
+
+/**
+ * Ключ подписи — вне репозитория (п. 20): `~/.dexp-m8-keys/release.properties`
+ * (`storeFile`, `storePassword`, `keyAlias`, `keyPassword`, права 600).
+ *
+ * Один ключ и для debug, и для release. Зачем: Android пускает APK поверх
+ * установленного только при совпадающей подписи. Пока release был неподписан,
+ * а debug — ключом `~/.android/debug.keystore`, перейти на свой ключ можно было
+ * лишь удалением приложения вместе с базой и настройками. С общим ключом
+ * переход делается один раз (старая debug-сборка → наша), дальше debug и release
+ * ставятся друг поверх друга без потери данных.
+ *
+ * Файла нет — release собирается неподписанным (`app-release-unsigned.apk`),
+ * сборка не ломается: ключ нужен только для выпуска версии.
+ */
+val dexpKeyFile = File(System.getProperty("user.home"), ".dexp-m8-keys/release.properties")
+val dexpKey: Properties? =
+    if (dexpKeyFile.isFile) Properties().apply { dexpKeyFile.inputStream().use { load(it) } } else null
 
 android {
     namespace = "ru.ogrpfsense.dexpm8"
@@ -12,8 +33,11 @@ android {
         applicationId = "ru.ogrpfsense.dexpm8"
         minSdk = 27
         targetSdk = 27
-        versionCode = 1
-        versionName = "0.1.0"
+        // versionCode только вверх: B43 сравнивает его с `update.json`, а Android —
+        // при установке (`INSTALL_FAILED_VERSION_DOWNGRADE`). П. 20 — первый
+        // подписанный выпуск, поэтому 2 (0.1.0 ходила без подписи).
+        versionCode = 2
+        versionName = "0.2.0"
 
         ndk {
             // Прошивка книги может быть 32-битной даже на 64-битном PX30:
@@ -37,11 +61,32 @@ android {
         }
     }
 
+    /**
+     * Подпись (п. 20). Один ключ на debug и release — см. комментарий к [dexpKey] выше.
+     * Ключа нет — `signingConfig` не создаётся, release собирается неподписанным.
+     */
+    signingConfigs {
+        if (dexpKey != null) {
+            create("dexp") {
+                storeFile = File(dexpKey.getProperty("storeFile"))
+                storePassword = dexpKey.getProperty("storePassword")
+                keyAlias = dexpKey.getProperty("keyAlias")
+                keyPassword = dexpKey.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.findByName("dexp")
+        }
+        debug {
+            // Тот же ключ, что у release: иначе смена подписи при выпуске версии
+            // стирает данные приложения на книге (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`).
+            signingConfig = signingConfigs.findByName("dexp")
         }
     }
 

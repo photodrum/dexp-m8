@@ -43,7 +43,7 @@ export PATH=$JAVA_HOME/bin:$PATH
 | Что | Команда | Результат |
 |---|---|---|
 | Debug APK | `~/.local/gradle-8.7/bin/gradle -p ~/projects/dexp-m8 assembleDebug` | `app/build/outputs/apk/debug/app-debug.apk` (5,8 МиБ, 5 815 104 б; внутри `libdexp_core.so`, `libdexp_cre.so`, `libdexp_djvu.so`; +73 КБ шрифтов PT Serif) |
-| Release APK | `... assembleRelease` | `app/build/outputs/apk/release/app-release-unsigned.apk` (145 КБ) |
+| Release APK | `... assembleRelease` | `app/build/outputs/apk/release/app-release.apk` (4,4 МиБ, 4 396 812 б, подписан ключом `dexp-m8`; внутри те же три `.so`) |
 | Быстро, без Gradle | `~/projects/dexp-m8/tools/build.sh` | `build/app-debug.apk` (~0,9 МБ) — **без `.so`**; Kotlin stdlib в dex, подпись как у Gradle (ставится поверх без удаления) |
 | Только типы Kotlin | `~/projects/dexp-m8/tools/typecheck.sh` | ~10 сек |
 | Тесты C-ядра | см. ниже | 34 проверки |
@@ -194,6 +194,36 @@ adb shell 'run-as ru.ogrpfsense.dexpm8 sh -c \
 «db v7: открыта, версия 7» и «db v7: уборка после перешифрования готова». Вход в каталог после
 обновления должен работать без повторного ввода пароля — это и есть проверка, что ключ прочитан.
 
+## Подпись APK (п. 20)
+
+Свой ключ, **один на debug и release** — `signingConfigs` в `app/build.gradle.kts` читает
+`~/.dexp-m8-keys/release.properties`:
+
+```properties
+storeFile=/home/denisle/.dexp-m8-keys/release.jks
+storePassword=< случайные 48 hex >
+keyAlias=dexp-m8
+keyPassword=< те же 48 hex >
+```
+
+Каталог `~/.dexp-m8-keys` — права 700, файлы 600, в `.gitignore` (`*.jks`, `*.keystore`).
+Отпечаток сертификата (`SHA-256`): `9E:DF:F2:D1:58:8A:20:A9:FE:13:7F:05:69:74:1D:21:A3:6C:9F:87:30:4D:10:9F:A2:A0:48:16:A7:73:17:FC`,
+alias `dexp-m8`, `CN=DEXP M8, O=ogrpfsense, C=RU`, срок до 2054. `tools/build.sh` берёт тот же файл.
+
+**Почему один ключ на оба типа сборки:** Android пускает APK поверх установленного только при
+совпадающей подписи. Пока release был неподписан, а debug — ключом `~/.android/debug.keystore`,
+переход на свой ключ требовал `adb uninstall` и терял базу, настройки и ключ `AndroidKeyStore`
+(пароли каталогов). Теперь `assembleDebug` и `assembleRelease` подписываются одинаково и ставятся
+друг поверх друга без потери данных — проверено 2026-11-18 (debug → release → debug).
+
+**Ключ нельзя терять:** с другим ключом обновление не встанет
+(`INSTALL_FAILED_UPDATE_INCOMPATIBLE`) и данные придётся снести. Копия — минимум в двух местах
+вне этой машины (у п. 20 копия ещё не сделана — сделать перед первой публикацией).
+
+Нет файла `release.properties` — release собирается неподписанным
+(`app-release-unsigned.apk`), сборка не падает; подписывать им нельзя, книга обновление не поставит.
+Проверка: `apksigner verify --print-certs app/build/outputs/apk/release/app-release.apk`.
+
 ## Публикация версии (проверка обновлений на B43)
 
 Кнопка «Проверить обновления» на B43 читает манифест `update.json` из корня ветки `main`:
@@ -216,6 +246,45 @@ python3 tools/gl_publish_apk.py app/build/outputs/apk/release/app-release.apk 0.
 `versionCode` обязан расти монотонно — сравнение идёт по нему, а не по `versionName`.
 Ответ 404 на обоих хостах B43 показывает как «версия ещё не опубликована», код 5xx и обрыв — «сервер не ответил».
 Проверить манифест без книги: `curl -s https://git.ogrpfsense.ru/denisle/dexp-m8/-/raw/main/update.json`.
+
+## Смена подписи без потери данных
+
+Понадобится, если ключ всё же меняется (новый `release.jks`, потерянный файл) или при первом
+переходе с отладочного ключа. `run-as` работает только на **debuggable** сборке, поэтому порядок
+такой: снять данные → поставить debug с новым ключом → залить данные → поставить release поверх.
+
+```bash
+ADB=~/.local/android-sdk/platform-tools/adb; P=ru.ogrpfsense.dexpm8
+B=~/dexpm8-backup-$(date +%F); mkdir -p $B/databases $B/shared_prefs
+# 1. снять данные (на живой базе копия приходит с нулями — сначала остановить)
+$ADB shell am force-stop $P; sleep 1
+for f in library.db library.db-wal library.db-shm; do
+    $ADB exec-out run-as $P cat databases/$f > $B/databases/$f; done
+$ADB exec-out run-as $P cat shared_prefs/shell.xml > $B/shared_prefs/shell.xml
+python3 -c "import sqlite3;c=sqlite3.connect('$B/databases/library.db');print(c.execute('pragma integrity_check').fetchone(),c.execute('select count(*) from books').fetchone())"
+# 2. снять админа (см. грабли) и удалить пакет
+$ADB uninstall $P
+# 3. поставить debug с новым ключом, один раз запустить (создаст каталоги), остановить
+$ADB install app/build/outputs/apk/debug/app-debug.apk
+$ADB shell am start -W -n $P/.ui.EinkActivity; sleep 6; $ADB shell am force-stop $P
+# 4. залить данные (абсолютный путь обязателен) и выдать права заново
+$ADB shell run-as $P rm -f databases/library.db-wal databases/library.db-shm databases/library.db-journal
+$ADB shell "run-as $P sh -c 'cat > /data/data/$P/databases/library.db'" < $B/databases/library.db
+$ADB shell "run-as $P sh -c 'cat > /data/data/$P/shared_prefs/shell.xml'" < $B/shared_prefs/shell.xml
+$ADB shell run-as $P chmod 660 shared_prefs/shell.xml
+$ADB shell pm grant $P android.permission.READ_EXTERNAL_STORAGE
+$ADB shell pm grant $P android.permission.WRITE_EXTERNAL_STORAGE
+# 5. release поверх debug — данные остаются, подпись та же
+$ADB install -r app/build/outputs/apk/release/app-release.apk
+```
+
+Проверка после: `run-as … sha256sum` совпадает с копией (база может отличаться, если приложение
+уже писало — тогда сверять число книг и `pos`); на B1 «Сейчас читаю» с тем же процентом.
+
+Что восстановление **не** вернёт: ключ `AndroidKeyStore` (`dexpm8.catalog.pass.v1`) — он жил в
+отдельном хранилище пакета и удалён вместе с ним, поэтому пароли каталогов OPDS придётся ввести
+заново (`catalogs.pass` станет нерасшифровываемым). Кэш движка `cache/cre` перестроится сам.
+Книги на `/sdcard` не затрагиваются — `uninstall` внешнее хранилище не трогает.
 
 ## Установка на книгу
 
@@ -406,7 +475,9 @@ GIT_ASKPASS=$PWD/tools/git-askpass.sh GIT_TERMINAL_PROMPT=0 \
 | Два вызова терминала **параллельно** (два `run_commands` в одном ответе): вывод перемешивается, «command completion could not be observed», команды попадают в чужую строку | терминал один на чат. Несколько команд — одним вызовом массивом (внутри вызов они идут последовательно) |
 | «Быстрый» (B5/B37): шторка или новый экран рисуются кашей поверх старого | A2-режим на большой кадр с серым; такие кадры должны идти через `EinkActivity.bigFrame` / `fullOnSwitch` (п. 8.2) |
 | `NoClassDefFoundError: kotlin.jvm.internal.Lambda` | APK без Kotlin stdlib (старый `build.sh`); исправлено 2026-11-11 |
-| `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | другой ключ подписи; `build.sh` и Gradle используют один `~/.android/debug.keystore`. Иначе `adb uninstall` (данные пропадут) |
+| `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | другой ключ подписи. С 2026-11-18 (п. 20) `build.sh` и Gradle подписывают одним ключом `~/.dexp-m8-keys/release.jks`, debug ставится поверх release и наоборот. Если ключа нет — `build.sh` откатывается на отладочный, и подписи расходятся. Иначе `adb uninstall` (данные пропадут; база и `shell.xml` снимаются `run-as` заранее — см. «Смена подписи без потери данных») |
+| `adb uninstall` → `Failure [DELETE_FAILED_DEVICE_POLICY_MANAGER]` (2026-11-18) | «Лист» был активным администратором устройства (`core/AdminReceiver`, политика `force-lock` для «Сна» на B5); активного админа система не даёт снести вместе с пакетом. Снять: `am start -n com.android.settings/.DeviceAdminSettings` → касание по «Лист» → «Отключить приложение администратора устройства» → «Отключить». `dpm remove-active-admin` без root не работает (`Attempt to remove non-test admin`), `ro.debuggable=1` этого не разрешает |
+| `adb shell run-as <pkg> sh -c 'cat > databases/library.db'` → `can't create …: No such file or directory` (2026-11-18) | редирект разбирает внешний shell: путь относительный и попадает не в каталог приложения, а `run-as` получает уже открытый поток. Писать с абсолютным путём: `adb shell "run-as $P sh -c 'cat > /data/data/$P/databases/library.db'" < library.db`. Перед заливкой удалить `-wal`/`-shm`/`-journal`, после — сверить `sha256sum` через `run-as` |
 | `run-as` не работает | APK не debuggable; значения проверять через `settings get`/`getprop` |
 | `git ls-remote` на `github.com/koreader/djvulibre` висит | брать с `gitlab.com/koreader/djvulibre` |
 | `penpot_dump.js` не запустить: в чате Cline нет инструментов MCP Penpot, хотя сервер включён | инструменты MCP подключаются при старте чата: включить сервер в Cline → MCP Servers, затем открыть **новый** чат |

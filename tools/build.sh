@@ -25,6 +25,9 @@ KSTD="$HOME/.local/kotlinc/lib/kotlin-stdlib.jar"
 MIN_SDK=27
 TARGET_SDK=27
 APP_ID=ru.ogrpfsense.dexpm8
+# Держать в согласии с `app/build.gradle.kts` (п. 20): versionCode только вверх.
+VERSION_CODE=2
+VERSION_NAME=0.2.0
 
 echo "==> окружение"
 echo "    SDK:     $SDK"
@@ -53,8 +56,8 @@ sed "s|<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\">|<
     --manifest "$OUT/stage/AndroidManifest.xml" \
     --min-sdk-version $MIN_SDK \
     --target-sdk-version $TARGET_SDK \
-    --version-code 1 \
-    --version-name 0.1.0 \
+    --version-code "$VERSION_CODE" \
+    --version-name "$VERSION_NAME" \
     -o "$OUT/stage/base.apk" \
     --java "$OUT/gen" \
     "$OUT/res/res.zip"
@@ -86,19 +89,32 @@ cp "$OUT/dex/classes.dex" "$OUT/stage/classes.dex"
 (cd "$OUT/stage" && zip -q -u base.apk classes.dex)
 "$BT/zipalign" -f -p 4 "$OUT/stage/base.apk" "$OUT/stage/aligned.apk"
 
-# Ключ — тот же, что у Gradle (~/.android/debug.keystore): подпись совпадает,
-# и APK из build.sh ставится поверх APK из Gradle без удаления данных.
-KEYSTORE="$HOME/.android/debug.keystore"
-if [ -f "$KEYSTORE" ]; then
-    KS_PASS=android; KEY_PASS=android; KEY_ALIAS=androiddebugkey
-else
-    KEYSTORE="$ROOT/tools/debug.keystore"
-    KS_PASS=dexpdebug; KEY_PASS=dexpdebug; KEY_ALIAS=dexp
-    if [ ! -f "$KEYSTORE" ]; then
- echo "==> ключ отладки"
- "$JDK/bin/keytool" -genkeypair -keystore "$KEYSTORE" \
-     -storepass $KS_PASS -keypass $KEY_PASS -alias $KEY_ALIAS \
-            -keyalg RSA -keysize 2048 -validity 10000 -dname 'CN=DEXP M8 Debug' >/dev/null 2>&1
+# Ключ — свой, тот же, что у Gradle (`~/.dexp-m8-keys/release.properties`, п. 20):
+# подпись совпадает, и APK из build.sh ставится поверх APK из Gradle без удаления данных.
+# Ключа нет — падаем в отладочный (старое поведение), но это уже другая подпись.
+KEYSTORE=""
+KS_PASS=""; KEY_PASS=""; KEY_ALIAS=""
+KEYS="$HOME/.dexp-m8-keys/release.properties"
+if [ -f "$KEYS" ]; then
+    KEYSTORE="$(sed -n 's/^storeFile=//p' "$KEYS")"
+    KS_PASS="$(sed -n 's/^storePassword=//p' "$KEYS")"
+    KEY_ALIAS="$(sed -n 's/^keyAlias=//p' "$KEYS")"
+    KEY_PASS="$(sed -n 's/^keyPassword=//p' "$KEYS")"
+fi
+if [ -z "$KEYSTORE" ] || [ ! -f "$KEYSTORE" ]; then
+    echo "    ключа $KEYS нет — подпись отладочным (данные на книге не сохранятся при смене)"
+    KEYSTORE="$HOME/.android/debug.keystore"
+    if [ -f "$KEYSTORE" ]; then
+        KS_PASS=android; KEY_PASS=android; KEY_ALIAS=androiddebugkey
+    else
+        KEYSTORE="$ROOT/tools/debug.keystore"
+        KS_PASS=dexpdebug; KEY_PASS=dexpdebug; KEY_ALIAS=dexp
+        if [ ! -f "$KEYSTORE" ]; then
+            echo "==> ключ отладки"
+            "$JDK/bin/keytool" -genkeypair -keystore "$KEYSTORE" \
+                -storepass $KS_PASS -keypass $KEY_PASS -alias $KEY_ALIAS \
+                -keyalg RSA -keysize 2048 -validity 10000 -dname 'CN=DEXP M8 Debug' >/dev/null 2>&1
+        fi
     fi
 fi
 
