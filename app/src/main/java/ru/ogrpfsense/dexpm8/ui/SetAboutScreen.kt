@@ -10,8 +10,6 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import ru.ogrpfsense.dexpm8.R
-import ru.ogrpfsense.dexpm8.core.UpdateCheck
-import ru.ogrpfsense.dexpm8.ui.Trace
 
 /**
  * B43 · Настройки · Об устройстве. Числа — из design/v5/B43.json.
@@ -22,16 +20,15 @@ import ru.ogrpfsense.dexpm8.ui.Trace
  * Не рисуются: строка «Серийный номер» (скрыта по решению — личные данные) и дата сборки в строке
  * версии (её нет в манифесте).
  *
- * **«Проверить обновления»** (внизу) — [UpdateCheck]: манифест `update.json` сначала со своего
- * GitLab, при недоступности — с GitHub-зеркала. Проверка идёт в фоновом потоке, экран
- * перерисовывается один раз по результату (на E-Ink нельзя дёргать `invalidate` по таймеру).
- * Строка «Последняя проверка обновлений — …» взята из макета: время и итог хранятся в `Prefs`,
- * поэтому видны и после перезапуска оболочки. Сама установка — на B76 (ниже, `SetUpdateScreen`).
+ * **Отступление от макета (решение 2026-11-18):** нижняя тёмная кнопка — «Автор» с чашкой кофе,
+ * а не «Проверить обновления». Касание открывает экран «Автор» ([SetAuthorScreen]) с QR-кодом
+ * на Бусти: приложение бесплатное, автора можно угостить чашкой кофе. Проверка обновлений
+ * осталась доступной — её делает B76 ([SetUpdateScreen]) сам при открытии, дверь к нему —
+ * строка «Обновления» в «ОБСЛУЖИВАНИИ». Поэтому состояние проверки (`checking`, `check`,
+ * `UpdateCheck`) с этого экрана убрано: строка «Последняя проверка — …» приходит из `Prefs`.
  *
- * **Отступление от макета (решение 2026-11-18):** в «ОБСЛУЖИВАНИИ» появилась третья строка —
- * «Обновления» с дверью в B76; панель выросла 350 → 525 (шаг строк 175, как в макете), а подпись
- * «Последняя проверка — …» из-под панели переехала описанием этой строки: иначе она налезала
- * на новую. Нижняя кнопка осталась проверкой, как в макете.
+ * Строка версии: «Оболочка 0.2.0 · сборка 2, автор Денис Лампусов» — имя автора вписано по
+ * просьбе человека, отдельной строки «Автор» в панели устройства нет.
  *
  * Остальной ввод: «Назад» и полоса «Сбросить настройки оболочки» (лицензии — позже, B75).
  */
@@ -41,7 +38,6 @@ class SetAboutScreen(act: EinkActivity) : Screen(act) {
     private val kit = SettingsKit(ink, icons)
 
     private val NAME = act.getString(R.string.app_name)
-    private val upd = UpdateCheck(act)
 
     private var version = ""
     private var android = "Android ${Build.VERSION.RELEASE}"
@@ -49,8 +45,6 @@ class SetAboutScreen(act: EinkActivity) : Screen(act) {
     private var mem = ""
     private var reset = 0   // 0 — обычно, 1 — ждём второго нажатия, 2 — сброшено
 
-    /** 0 — нет данных, 1 — проверяем, 2 — готово (итог в [check]). */
-    private var checking = 0
     /** Строка «Последняя проверка обновлений — …»; пусто — ещё не проверяли. */
     private var check = ""
 
@@ -102,15 +96,10 @@ class SetAboutScreen(act: EinkActivity) : Screen(act) {
             1020f, T.TS_BODY_S, 600), 1577f, 237f)
         icons.draw(c, "next@11x23.8", 1302f, 1561.5f, 11f, 23.8f)
 
+        // Кнопка «Автор» (решение 2026-11-18): QR-код на Бусти. Проверка обновлений — на B76.
         ink.convexDark(c, 41f, 1693f, 1321f, 142f, 66f)
-        icons.draw(c, "refresh@27.3x28.8", 107.2f, 1747.6f, 27.3f, 28.8f)
-        val label = when (checking) {
-            1 -> "Проверяем…"
-            2 -> "Проверить снова"
-            else -> "Проверить обновления"
-        }
-        ink.text(c, label, 170f, T.base(1735.7f, T.TS_ACTION, 1.25f),
-            T.TS_ACTION, 700, T.G15)
+        icons.draw(c, "cup", 107.2f, 1749.2f, 30f, 30f)
+        ink.text(c, "Автор", 170f, T.base(1735.7f, T.TS_ACTION, 1.25f), T.TS_ACTION, 700, T.G15)
     }
 
     /** Строка сведений: название слева (42/700), значение справа до 1316 (34/600 G4), разделитель на y + 86. */
@@ -128,7 +117,8 @@ class SetAboutScreen(act: EinkActivity) : Screen(act) {
         }
         val name = info?.versionName ?: ""
         val code = if (info == null) 0L else if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
-        version = "Оболочка " + name + (if (code > 0L) " · сборка $code" else "")
+        // «Оболочка 0.2.0 · сборка 2, автор Денис Лампусов» — имя автора по просьбе человека.
+        version = "Оболочка " + name + (if (code > 0L) " · сборка $code" else "") + ", автор " + AUTHOR
         android = "Android ${Build.VERSION.RELEASE}"
         cpu = "Rockchip PX30 · " + cores(Runtime.getRuntime().availableProcessors())
 
@@ -149,8 +139,8 @@ class SetAboutScreen(act: EinkActivity) : Screen(act) {
 
     /**
      * Строка из `Prefs`: «Последняя проверка — сегодня, 09:12 · обновлений нет».
-     * Ширина ограничена 795 px, как в макете B43 (слой «Проверка»), поэтому длинные итоги
-     * вроде «есть версия 0.2.0» обрезаются многоточием, а не наезжают на край экрана.
+     * Пишет её B76 при каждой проверке; ширина в описании строки ограничена 1020 px.
+     * Сама проверка здесь больше не запускается (решение 2026-11-18): кнопка внизу — «Автор».
      */
     private fun storedLine(): String {
         val at = act.prefs.updateCheckedAt
@@ -170,35 +160,6 @@ class SetAboutScreen(act: EinkActivity) : Screen(act) {
             a.get(java.util.Calendar.DAY_OF_YEAR) == b.get(java.util.Calendar.DAY_OF_YEAR)
     }
 
-    /**
-     * Проверка в фоне: сеть в главном потоке на Android 8.1 роняет `NetworkOnMainThreadException`.
-     * Пока идёт — кнопка пишет «Проверяем…», после — один `redraw()` с итогом.
-     */
-    private fun checkUpdates() {
-        if (checking == 1) return
-        checking = 1
-        redraw()
-        Thread({
-            val f = upd.fetch()
-            val res: String
-            if (f == null) {
-                res = upd.why ?: "нет ответа"
-            } else if (upd.isNewer(f)) {
-                res = "есть версия ${f.versionName}"
-            } else {
-                res = "обновлений нет"
-            }
-            Trace.step("update: $res")
-            act.prefs.updateCheckedAt = System.currentTimeMillis()
-            act.prefs.updateResult = res
-            post {
-                checking = 2
-                check = storedLine()
-                redraw()
-            }
-        }, "update-check").start()
-    }
-
     private fun cores(n: Int): String {
         val m = n % 100
         val w = when {
@@ -216,7 +177,9 @@ class SetAboutScreen(act: EinkActivity) : Screen(act) {
             return
         }
         if (y >= 1693f && y <= 1835f) {
-            checkUpdates()
+            // Нижняя кнопка «Автор» (решение 2026-11-18): QR-код на Бусти.
+            reset = 0
+            act.go(EinkActivity.SCR_SET_AUTHOR)
             return
         }
         if (y >= 1320f && y <= 1490f) {
@@ -251,5 +214,10 @@ class SetAboutScreen(act: EinkActivity) : Screen(act) {
     override fun onDetachedFromWindow() {
         status.detach()
         super.onDetachedFromWindow()
+    }
+
+    private companion object {
+        /** Автор оболочки — в строке версии: «… сборка 2, автор Денис Лампусов». */
+        const val AUTHOR = "Денис Лампусов"
     }
 }

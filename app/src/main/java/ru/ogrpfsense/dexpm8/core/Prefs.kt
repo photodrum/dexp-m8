@@ -13,9 +13,12 @@ class Prefs(ctx: Context) {
     private val sp = ctx.applicationContext.getSharedPreferences("shell", Context.MODE_PRIVATE)
 
     // B37 «Экран»
-    var warm: Int
-        get() = sp.getInt("warm", 30)
-        set(v) = sp.edit().putInt("warm", v).apply()
+    /**
+     * Тёплый свет и «Усиленный контраст» убраны 2026-11-18: первый ничего не делал (подсветка
+     * Carta температуру не меняет), второй заменён настоящим ползунком контраста —
+     * `Prefs.gammaLevel` ниже. Старые ключи `warm`/`contrast` остаются в `SharedPreferences`
+     * молча: читать их больше некому.
+     */
     /** 0 — «Чёткий», 1 — «Быстрый» (A2-режим внутри экрана, п. 8.2), 2 — «Без мерцания» (пока как «Чёткий»). */
     var refreshMode: Int
         get() = sp.getInt("refresh_mode", 0)
@@ -24,9 +27,6 @@ class Prefs(ctx: Context) {
     var cleanOnSwitch: Boolean
         get() = sp.getBoolean("clean_on_switch", true)
         set(v) = sp.edit().putBoolean("clean_on_switch", v).apply()
-    var contrast: Boolean
-        get() = sp.getBoolean("contrast", false)
-        set(v) = sp.edit().putBoolean("contrast", v).apply()
     /**
      * Последнее выставленное деление контраста (B5/B37, 0…15). Само значение живёт в системном
      * свойстве `sys.gray.gammalevel`, а `sys.*` сбрасываются при каждой загрузке книги — здесь

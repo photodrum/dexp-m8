@@ -82,19 +82,31 @@ class SettingsKit(private val ink: Ink, private val icons: Icons) {
     // ---------------------------------------------------------------- органы
 
     /**
-     * Ползунок. [handleY] — верх ручки (в макете: яркость 408.5, тёплый свет 624);
+     * Ползунок. [handleY] — верх ручки (в макете: яркость 408.5, контраст 624);
      * [pct] — 0…100. Дорожка на 28 ниже ручки, иконки по краям — по макету.
+     *
+     * [endIcon] — иконка правого конца: `sunHigh` (41×42.9) у яркости, `contrast` (41.2×42.9)
+     * у контраста. Раньше здесь был флаг «тёплый свет» с `moon`; тёплого света в B37 больше
+     * нет (решение 2026-11-18), поэтому иконка передаётся именем из снимка, а не рисуется тут.
+     * Правый край у обеих — 1316, как у значений строк.
      */
-    fun slider(c: Canvas, handleY: Float, pct: Int, warm: Boolean) {
+    fun slider(c: Canvas, handleY: Float, pct: Int, endIcon: String = "sunHigh") {
         val p = pct.coerceIn(0, 100)
         val fillW = 1055f * p / 100f
         icons.draw(c, "sunLow", 103f, handleY + 38.4f, 16.1f, 18f)
         ink.inset(c, 160f, handleY + 28f, 1060f, 37f, 18f, T.G12)
         if (fillW >= 28f) ink.roundRect(c, 163f, handleY + 34f, fillW, 28f, 14f, T.G3)
         ink.convex(c, 163f + fillW - 46f, handleY, 93f, 98f, 44f)
-        if (warm) icons.draw(c, "moon@29.1x31.1", 1286.9f, handleY + 31.9f, 29.1f, 31.1f)
-        else icons.draw(c, "sunHigh", 1275f, handleY + 26f, 41f, 42.9f)
+        if (endIcon == "contrast") icons.draw(c, endIcon, 1274.8f, handleY + 26f, 41.2f, 42.9f)
+        else icons.draw(c, endIcon, 1275f, handleY + 26f, 41f, 42.9f)
     }
+
+    /**
+     * Ползунок контраста (B37): 16 делений `Sys.GAMMA_STEPS`, заполнение — по делению,
+     * ручка на той же дорожке. Проценты в подписи считает экран (как в шторке B5).
+     */
+    fun sliderContrast(c: Canvas, handleY: Float, step: Int) =
+        slider(c, handleY, Math.round(step.coerceIn(0, 15) * 100f / 15f).toInt(), "contrast")
 
     /**
      * Сегменты в желобе (3 на B37, 4 на B40); [active] — номер активного (−1 — ни один),

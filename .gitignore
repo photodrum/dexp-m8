@@ -23,3 +23,6 @@ tools/debug.keystore
 # и лицензии OFL.
 tools/fonts/*.ttf
 !tools/fonts/OFL-*.txt
+
+# Кеш Python-скриптов из tools/ (создаётся при импорте preview_icon).
+__pycache__/

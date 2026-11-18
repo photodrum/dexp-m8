@@ -63,6 +63,12 @@ class EinkActivity : Activity() {
         /** B76 «Обновления» — скачивание и установка APK (п. 13); дверь — строка на B43. */
         const val SCR_SET_UPDATES = 27
 
+        /**
+         * «Автор» — QR-код на Бусти (решение 2026-11-18); дверь — нижняя кнопка B43.
+         * Своего борда в макете нет: собран из деталей B43/B76 (см. `SetAuthorScreen`).
+         */
+        const val SCR_SET_AUTHOR = 28
+
         private const val REQ_STORAGE = 1
         private const val REQ_WRITE_SETTINGS = 2
         private const val REQ_ADMIN = 3
@@ -809,6 +815,7 @@ class EinkActivity : Activity() {
             SCR_SET_UPDATES -> SetUpdateScreen(this)
             SCR_SET_STORAGE -> SetStorageScreen(this)
             SCR_SET_ABOUT -> SetAboutScreen(this)
+            SCR_SET_AUTHOR -> SetAuthorScreen(this)
             SCR_FILES -> FilesScreen(this)
             SCR_WIFI -> WifiUploadScreen(this)
             SCR_CATALOGS -> CatalogsScreen(this)
