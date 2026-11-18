@@ -106,7 +106,13 @@ class SetSleepScreen(act: EinkActivity) : Screen(act) {
             }
             return
         }
-        if (kit.inRow(x, y, 580f, 160f)) { p.saver = !p.saver; redraw(); return }
+        if (kit.inRow(x, y, 580f, 160f)) {
+            p.saver = !p.saver
+            // Экономия действует, а её выключили — Wi-Fi и подсветка возвращаются сразу (B20).
+            if (!p.saver) act.power.saverRelease()
+            redraw()
+            return
+        }
         if (kit.inRow(x, y, 1274f, 160f)) { p.coverCharge = !p.coverCharge; redraw() }
     }
 

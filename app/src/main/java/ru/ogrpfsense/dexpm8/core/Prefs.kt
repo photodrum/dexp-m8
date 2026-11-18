@@ -104,9 +104,28 @@ class Prefs(ctx: Context) {
         set(v) = sp.edit().putInt("volume_keys", v).apply()
 
     // B40 «Сон и питание»
+    /** Хочется ли экономия: включена — при заряде ниже порога она включается сама (B20). */
     var saver: Boolean
         get() = sp.getBoolean("saver", true)
         set(v) = sp.edit().putBoolean("saver", v).apply()
+
+    /**
+     * Экономия действует сейчас (её включила оболочка, а не система): сняты Wi-Fi и подсветка.
+     * Что было до неё — `saver_wifi`/`saver_bright`; при зарядке всё возвращается
+     * (`Power.saverRelease`). Отдельно от [saver]: выключить экономию на B40 можно и в то время,
+     * когда она действует, — тогда возврат делается сразу.
+     */
+    var saverApplied: Boolean
+        get() = sp.getBoolean("saver_applied", false)
+        set(v) = sp.edit().putBoolean("saver_applied", v).apply()
+    /** Был ли Wi-Fi включён до экономии. */
+    var saverWifi: Boolean
+        get() = sp.getBoolean("saver_wifi", true)
+        set(v) = sp.edit().putBoolean("saver_wifi", v).apply()
+    /** Яркость до экономии, %; −1 — не запомнена (не было права или уже 0). */
+    var saverBright: Int
+        get() = sp.getInt("saver_bright", -1)
+        set(v) = sp.edit().putInt("saver_bright", v).apply()
     var coverCharge: Boolean
         get() = sp.getBoolean("cover_charge", true)
         set(v) = sp.edit().putBoolean("cover_charge", v).apply()

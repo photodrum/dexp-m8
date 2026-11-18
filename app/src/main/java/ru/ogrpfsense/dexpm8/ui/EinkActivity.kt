@@ -151,6 +151,11 @@ class EinkActivity : Activity() {
     val sys: Sys by lazy { Sys(this) }
     val prefs: Prefs by lazy { Prefs(this) }
 
+    /** Заряд, экономия и порог выключения (B20, B40). */
+    val power: ru.ogrpfsense.dexpm8.core.Power by lazy {
+        ru.ogrpfsense.dexpm8.core.Power(this, prefs, sys)
+    }
+
     // Особые права через системные экраны (WRITE_SETTINGS, device admin). Итог — в onActivityResult:
     // экран WRITE_SETTINGS ничего не возвращает, поэтому право проверяется заново.
     private var writeWaiter: ((Boolean) -> Unit)? = null
@@ -251,6 +256,10 @@ class EinkActivity : Activity() {
         // Заставка B19 (п. 13): показывается за 20 с до системного гашения. В мастере первого
         // запуска не нужна — человек ещё настраивает книгу.
         if (!firstRun) planSleep()
+        // Заряд (B20): при низком — диалог, у нуля — выключение. Первый кадр к этому времени уже
+        // на панели, поэтому диалог рисуется поверх готового экрана.
+        batteryWatch()
+        if (!firstRun) checkBattery()
     }
 
     /**
@@ -497,6 +506,160 @@ class EinkActivity : Activity() {
     override fun onUserInteraction() {
         super.onUserInteraction()
         planSleep()
+        checkBattery()
+    }
+
+    // ------------------------------------------------------------ низкий заряд (B20)
+
+    /** Диалог B20; null — не показывался ни разу. */
+    private var low: LowBatteryScreen? = null
+
+    /** Заряд, на котором диалог уже показывали в этот разряд; −1 — не показывали. */
+    private var lowShownAt = -1
+
+    /** Заряд решается один раз — до следующей зарядки (иначе выключение повторилось бы). */
+    private var lowOffDone = false
+
+    /** Экономия уже включалась сама в этот разряд. */
+    private var lowSaverDone = false
+
+    /** Приёмник батареи: нас интересует только смена заряда и начало зарядки. */
+    private val batteryWatcher = object : android.content.BroadcastReceiver() {
+        override fun onReceive(ctx: android.content.Context?, intent: android.content.Intent?) {
+            if (intent?.action == android.content.Intent.ACTION_BATTERY_CHANGED) checkBattery()
+        }
+    }
+    private var batteryWatched = false
+
+    private fun batteryWatch() {
+        if (batteryWatched) return
+        try {
+            registerReceiver(batteryWatcher,
+                android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED))
+            batteryWatched = true
+        } catch (t: Throwable) {
+            Trace.step("power: battery watch FAIL ${t.javaClass.simpleName}")
+        }
+    }
+
+    private fun batteryUnwatch() {
+        if (!batteryWatched) return
+        batteryWatched = false
+        try {
+            unregisterReceiver(batteryWatcher)
+        } catch (ignored: IllegalArgumentException) {
+        }
+    }
+
+    /**
+     * Что делать с текущим зарядом (B20). Три исхода, по убыванию важности:
+     *
+     *  - **в зарядке** — экономия снимается, всё прежнее возвращается ([Power.saverRelease]);
+     *  - **≤ [Power.OFF_AT]** и зарядка не началась — один раз за разряд: сохранить место чтения,
+     *    заставка B19 и меню питания (своего выключения из APK нет — решение п. 8). Экономия при
+     *    этом уже включена, отдельный диалог человеку ни к чему;
+     *  - **≤ порога экономии** — диалог B20 один раз на заряд: «Включить экономию» или «Позже».
+     *    Экономия включена вручную на B40 — включается и без диалога (так обещает подпись B40).
+     *
+     * Заряд ниже −1 (система не отдала) не трогаем вовсе.
+     */
+    private fun checkBattery() {
+        if (!this::host.isInitialized) return
+        val r = power.read()
+        if (r.level < 0) return
+
+        if (r.charging) {
+            // Зарядка снимает экономию: Wi-Fi и подсветка возвращаются (Power.saverRelease).
+            // Диалог убираем, счётчики разряда — с нуля: в разряд пошли заново.
+            power.saverRelease()
+            lowSaverDone = false
+            lowOffDone = false
+            lowShownAt = -1
+            if (lowShown()) closeLow()
+            return
+        }
+
+        val at = power.saverAt()
+        if (r.level <= ru.ogrpfsense.dexpm8.core.Power.OFF_AT) {
+            if (lowOffDone) return
+            lowOffDone = true
+            Trace.step("power: off at ${r.level}%")
+            if (prefs.saver) power.saverApply()
+            if (lowShown()) closeLow()
+            shutdownNow()
+            return
+        }
+
+        if (r.level > at) return
+        if (prefs.saver) {
+            // Экономия сама, без вопросов: подпись B40 обещает именно это.
+            if (!lowSaverDone && power.saverApply()) lowSaverDone = true
+            return
+        }
+        // Диалог — один раз на разряд: каждый процент зарядки не повод мигать экраном.
+        if (lowShownAt >= 0 || lowShown()) return
+        showLow(r.level, at)
+    }
+
+    /** Диалог B20 поверх текущего экрана: экран затемняется, диалог — второй View в `host`. */
+    private fun showLow(level: Int, at: Int) {
+        if (!this::host.isInitialized || lowShown()) return
+        lowShownAt = level
+        val s = low ?: LowBatteryScreen(this).also { low = it }
+        s.open(level, power.hoursText(level), saverOn = prefs.saverApplied)
+        current()?.dimmed = true
+        host.addView(s, android.widget.FrameLayout.LayoutParams(
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT
+        ))
+        Trace.step("power: low $level% (saver at $at, applied=${prefs.saverApplied})")
+        bigFrame("battery")
+    }
+
+    private fun lowShown(): Boolean = low?.parent != null
+
+    private fun closeLow() {
+        val s = low ?: return
+        if (s.parent == null) return
+        host.removeView(s)
+        current()?.dimmed = false
+        Trace.step("power: low closed")
+        bigFrame("battery close")
+    }
+
+    /** «Позже» в B20 (и «Назад»): диалог уходит, экран остаётся как был. */
+    fun lowLater() {
+        closeLow()
+    }
+
+    /**
+     * «Включить экономию» в B20 (и строка режима): Wi-Fi и подсветка снимаются до зарядки.
+     * Тумблер B40 не трогаем: он про автоматику, а здесь человек выбрал режим разово.
+     */
+    fun lowSaver() {
+        val ok = power.saverApply()
+        Trace.step("power: saver from B20 -> $ok")
+        lowSaverDone = true
+        closeLow()
+    }
+
+    /**
+     * Выключение при [ru.ogrpfsense.dexpm8.core.Power.OFF_AT] %.
+     *
+     * Device admin для этого не нужен, поэтому и `sleepNow` не зовём: он бы выскочил системным
+     * запросом права на пустом месте. Порядок: место чтения в базу — сразу (процесс может не
+     * дожить), заставка B19 с обложкой (`curtain`), пауза на кадр и системное меню питания.
+     * Меню, а не прямое выключение: `GLOBAL_ACTION_POWER_DIALOG` — единственный путь из
+     * приложения, проверенный на прошивке (п. 8). Служба не включена — экран гаснет (`lockNow`
+     * при admin) либо остаётся заставка: это лучше, чем ничего.
+     */
+    private fun shutdownNow() {
+        (current() as? ru.ogrpfsense.dexpm8.reader.ReaderScreen)?.saveNow()
+        curtain()
+        if (!powerDialog()) {
+            Trace.step("power: off — нет службы питания")
+            sys.lockNow()
+        }
     }
 
     /**
@@ -593,7 +756,12 @@ class EinkActivity : Activity() {
         (screens[SCR_HOME] as? HomeScreen)?.refreshTime()
         // Заставка B19 снимается: будильник и возврат из фона — одно и то же событие,
         // эхо после подъёма ничего не должно оставлять. План сна — от текущего момента.
+        // Раньше заряда: если при пробуждении окажется 3 %, заставку поставит уже B20.
         wakeUp()
+        // Заряд мог упасть, пока оболочка была в фоне, а могла включиться зарядка — тогда
+        // экономия снимается и прежнее возвращается (B20).
+        batteryWatch()
+        checkBattery()
     }
 
     override fun onPause() {
@@ -602,6 +770,8 @@ class EinkActivity : Activity() {
         (current() as? ru.ogrpfsense.dexpm8.reader.ReaderScreen)?.saveNow()
         // В фоне заставка не нужна и план не работает: система сама погасит экран.
         ui.removeCallbacks(sleepAt)
+        // Батарею в фоне сторожит система; нам хватит проверки при возврате.
+        batteryUnwatch()
         super.onPause()
     }
 
@@ -764,6 +934,11 @@ class EinkActivity : Activity() {
             wakeUp()
             return
         }
+        // Диалог B20 — поверх экрана: «Назад» закрывает его, как «Позже».
+        if (lowShown()) {
+            lowLater()
+            return
+        }
         // Сначала экран: у читалки поверх страницы бывает лист B31 — «Назад» закрывает его,
         // а не уводит из книги.
         if (current()?.onBack() == true) return
@@ -836,8 +1011,9 @@ class EinkActivity : Activity() {
     private fun changeTo(screenId: Int, switch: Boolean = true) {
         // Шторка уходит вместе с экраном; затемнение с прежнего экрана снимаем (он в кэше).
         for (i in 0 until host.childCount) (host.getChildAt(i) as? Screen)?.dimmed = false
-        // Заставка B19 тоже уходит: под ней мог остаться экран, с которого пользователь ушёл.
+        // Заставка B19 и диалог B20 тоже уходят: под ними мог остаться экран, с которого ушли.
         sleep?.let { if (it.parent != null) host.removeView(it) }
+        low?.let { if (it.parent != null) host.removeView(it) }
         host.removeAllViews()
         host.addView(obtain(screenId))
         if (switch) fullOnSwitch()
@@ -1059,6 +1235,7 @@ class EinkActivity : Activity() {
 
     override fun onDestroy() {
         ui.removeCallbacksAndMessages(null)
+        batteryUnwatch()
         storageWaiters.clear()
         storageListeners.clear()
         writeWaiter = null
