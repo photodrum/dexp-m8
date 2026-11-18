@@ -97,6 +97,14 @@ git submodule update --init --depth 1
 
 Если в старом клоне остался `third_party/mupdf` (после `git pull` с 7.3б): `git submodule deinit -f third_party/mupdf; rm -rf third_party/mupdf .git/modules/third_party/mupdf`.
 
+**Правки движков поверх подмодулей** — патчами в `tools/patches/`, применяются при конфигурации
+CMake (`engines/cre.cmake`): `git apply` идемпотентен, уже наложенный патч пропускается.
+Правка, сделанная прямо в подмодуле, потеряется при `git submodule update` — сохранять патчем.
+
+| Патч | Что и зачем |
+|---|---|
+| `crengine-19-glyph-align.patch` | `LVFontGlyphCacheItem::newItem` берёт память `posix_memalign` (Z19): `alignas(16)` на `bmp` заставлял clang писать NEON-инструкцией по 16 байт, а bionic `malloc` даёт 8 — SIGBUS на кегле 8…12 |
+
 ## Тесты C-ядра на хосте
 
 Без NDK и без устройства — обычным `gcc`:

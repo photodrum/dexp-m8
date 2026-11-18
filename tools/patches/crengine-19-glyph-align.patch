@@ -1,0 +1,55 @@
+diff --git a/crengine/include/lvfntman.h b/crengine/include/lvfntman.h
+index c79a4a0..7a70332 100644
+--- a/crengine/include/lvfntman.h
++++ b/crengine/include/lvfntman.h
+@@ -145,6 +145,32 @@ struct LVFontGlyphCacheItem
+     //       We just use 16 everywhere, as this turned out to be mildly helpful on armv7 (c.f., https://github.com/koreader/crengine/pull/441).
+     alignas(16) lUInt8 bmp[1];
+     //=======================================================================
++    /**
++     * Замечание 19 (DEXP M8): память под объект — с выравниванием [bmp].
++     *
++     * `alignas(16)` на [bmp] делает и сам объект 16-байтно выровненным, поэтому clang
++     * на armv7 обнуляет поля NEON-записью по 16 байт (`vst1.64 {d16,d17}, [r1:128]`),
++     * а она требует адреса, кратного 16. bionic в `malloc` даёт лишь 8, и когда
++     * `malloc` возвращает блок по адресу ≡ 8 (mod 16), приложение падает с
++     * SIGBUS/BUS_ADRALN прямо в `newItem` (адрес падения 0xf1d1ddb8 % 16 == 8).
++     * Отсюда и нестабильность «3 падения из 5» на малых кеглях: зависит от того,
++     * какой адрес вернул `malloc`.
++     *
++     * `posix_memalign` возвращает указатель, который освобождается обычным `free()`,
++     * поэтому `freeItem` менять не нужно. На Windows и Symbian malloc и так даёт
++     * 16 байт выравнивания (см. комментарий выше) — там всё как было.
++     */
++    static void * allocItem( size_t size )
++    {
++#if defined(_WIN32) || defined(__SYMBIAN32__)
++        return malloc( size );
++#else
++        void * p = NULL;
++        if ( posix_memalign( &p, alignof(LVFontGlyphCacheItem), size ) != 0 )
++            return NULL;
++        return p;
++#endif
++    }
+     int getSize() const
+     {
+         // NOTE: Again, we stash the data *in place of* the bmp array, so, the effective size of our object is:
+@@ -155,7 +181,7 @@ struct LVFontGlyphCacheItem
+     static LVFontGlyphCacheItem * newItem( LVFontLocalGlyphCache * local_cache, lChar32 ch, int w, int h, int pitch = 0, lUInt8 pixfmt = 1 )
+     {
+         if (!pitch) pitch = w * pixfmt;
+-        LVFontGlyphCacheItem * item = (LVFontGlyphCacheItem *)malloc( offsetof(LVFontGlyphCacheItem, bmp)
++        LVFontGlyphCacheItem * item = (LVFontGlyphCacheItem *)allocItem( offsetof(LVFontGlyphCacheItem, bmp)
+                                                                         + (pitch * h) );
+ 	if (item) {
+ 	    item->data.ch = ch;
+@@ -178,7 +204,7 @@ struct LVFontGlyphCacheItem
+     static LVFontGlyphCacheItem *newItem(LVFontLocalGlyphCache* local_cache, lUInt32 glyph_index, int w, int h, int pitch = 0, lUInt8 pixfmt = 1)
+     {
+         if (!pitch) pitch = w * pixfmt;
+-        LVFontGlyphCacheItem * item = (LVFontGlyphCacheItem *)malloc( offsetof(LVFontGlyphCacheItem, bmp)
++        LVFontGlyphCacheItem * item = (LVFontGlyphCacheItem *)allocItem( offsetof(LVFontGlyphCacheItem, bmp)
+                                                                         + (pitch * h) );
+         if (item) {
+             item->data.gindex = glyph_index;

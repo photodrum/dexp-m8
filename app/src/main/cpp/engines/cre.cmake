@@ -12,6 +12,25 @@ set(CRE_HB ${DEXP_THIRD}/harfbuzz/src)
 set(CRE_FRIBIDI ${DEXP_THIRD}/fribidi/lib)
 set(CRE_GEN ${CMAKE_CURRENT_SOURCE_DIR}/engines/cre)
 
+# --- Правки crengine поверх подмодуля (замечание 19) ---
+# Подмодуль не наш: правим его патчем из `tools/patches/`, применяем при каждой
+# конфигурации. Так правка переживает `git submodule update`, а не потеряется вместе
+# с рабочей копией. Уже наложен — git apply пропускает (--reverse --check).
+set(DEXP_PATCHES ${CMAKE_CURRENT_SOURCE_DIR}/../../../../tools/patches)
+foreach(patch crengine-19-glyph-align.patch)
+    execute_process(
+            COMMAND git -C ${CRE_DIR} apply -q --reverse --check ${DEXP_PATCHES}/${patch}
+            RESULT_VARIABLE already)
+    if(NOT already EQUAL 0)
+        execute_process(
+                COMMAND git -C ${CRE_DIR} apply ${DEXP_PATCHES}/${patch}
+                RESULT_VARIABLE applied)
+        if(NOT applied EQUAL 0)
+            message(WARNING "cre.cmake: патч ${patch} не наложился — кеш глифов на малых кеглях снова падает (замечание 19)")
+        endif()
+    endif()
+endforeach()
+
 # NDEBUG всегда (и в Debug): assert'ы движков не отлаживаем, замеры 7.3 — как в release;
 # antiword без DEBUG/NDEBUG не собирается.
 set(CRE_LIB_OPTS -Os -ffunction-sections -fdata-sections -fvisibility=hidden -w -DNDEBUG)
