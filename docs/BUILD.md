@@ -256,6 +256,16 @@ adb kill-server; adb start-server; adb devices
 Для снимков экрана без сети — `adb shell svc wifi disable` / `enable` (проверка «нет сети»),
 плюс `adb shell input keyevent KEYCODE_WAKEUP` перед `screencap` (иначе чёрный кадр).
 
+**Грабли проверки на книге (2026-11-18, автопроверка обновлений):**
+
+- `adb shell pm clear ru.ogrpfsense.dexpm8` сносит **все** данные: базу, `shared_prefs/shell.xml`,
+  шрифты. Для проверки первого запуска это не нужно — хватает `--es screen first`. Восстановление —
+  «Смена подписи без потери данных» выше (шаги 3–4), бэкап `~/dexpm8-backup-<дата>`.
+- Править `shared_prefs/shell.xml` из `adb shell` нельзя (`Permission denied`): владелец — только
+  `run-as`. Порядок: `adb exec-out run-as <пакет> cat shared_prefs/shell.xml > /tmp/shell.xml`,
+  правка дома, `adb shell "run-as <пакет> sh -c 'cat > /data/data/<пакет>/shared_prefs/shell.xml'" < /tmp/shell.xml`.
+  На живом процессе файл перезапишется из памяти — сначала `am force-stop`.
+
 ## adb на Windows (PowerShell)
 
 Папка `C:\platform-tools` не в `PATH`, а PowerShell не запускает программы из текущей папки

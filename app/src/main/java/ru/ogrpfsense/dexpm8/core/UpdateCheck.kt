@@ -33,6 +33,10 @@ import ru.ogrpfsense.dexpm8.ui.Trace
  * [fetch] читает только версию — её показывает B43. Скачивание ([download]) и установка
  * (B76, `core/ApkInstall`) — п. 13. Сумма `sha256` обязательна: непроверенный APK в установку
  * не отдаём, а `size` (если есть) позволяет проверить место и показать размер до скачивания.
+ *
+ * **Автопроверка при старте** — [autoCheck]: раз в неделю ([dueWeekly]) и только на Wi-Fi
+ * ([onWifi]), тихо, без экрана и скачивания; включена тумблером `Prefs.updateAuto`.
+ * Наружу она выдаёт себя только строкой «Последняя проверка — …» на B43.
  */
 class UpdateCheck(private val ctx: Context) {
 
@@ -192,6 +196,58 @@ class UpdateCheck(private val ctx: Context) {
         null
     }
 
+    // ------------------------------------------------------------------ автопроверка (п. 13)
+
+    /**
+     * Пора ли проверять автоматически: неделя с прошлой проверки прошла или её не было.
+     * Считаем от `Prefs.updateCheckedAt` — его пишут и автопроверка, и ручная на B76,
+     * поэтому ручная проверка сдвигает и недельный срок.
+     */
+    fun dueWeekly(now: Long = System.currentTimeMillis()): Boolean {
+        val at = Prefs(ctx).updateCheckedAt
+        return at <= 0L || now - at >= WEEK_MS
+    }
+
+    /**
+     * Сеть сейчас — Wi-Fi. Тумблер на B76 обещает «раз в неделю **при Wi-Fi**»: на мобильном
+     * не проверяем, срок не сдвигаем — следующее включение на Wi-Fi проверит.
+     */
+    fun onWifi(): Boolean = try {
+        val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        val ni = cm?.activeNetworkInfo
+        ni != null && ni.isConnected && ni.type == ConnectivityManager.TYPE_WIFI
+    } catch (t: Throwable) {
+        Trace.step("update wifi FAIL ${t.javaClass.simpleName}: ${t.message}")
+        false
+    }
+
+    /**
+     * Проверка при старте оболочки (тумблер «Проверять автоматически»). Тихая: ни экрана,
+     * ни скачивания — только `Prefs`, откуда итог читают B43 (строка «Последняя проверка — …»)
+     * и B76 (при открытии проверит заново и покажет версию).
+     *
+     * Неудачу в `Prefs` не пишем: `updateCheckedAt` не сдвигаем, значит следующий старт
+     * попробует снова, а строка на B43 останется с прошлым честным итогом. Версию, отложенную
+     * кнопкой «Позже» (`Prefs.updateSkipCode`), не навязываем — так и говорим в итоге.
+     * Вызывать из фонового потока.
+     */
+    fun autoCheck() {
+        val p = Prefs(ctx)
+        val f = fetch()
+        val fail = why
+        if (f == null) {
+            Trace.step("update auto: не вышло — " + (fail ?: "нет ответа"))
+            return
+        }
+        p.updateCheckedAt = System.currentTimeMillis()
+        p.updateResult = when {
+            !isNewer(f) -> "обновлений нет"
+            f.versionCode <= p.updateSkipCode -> "версия ${f.versionName} отложена"
+            else -> "есть версия ${f.versionName}"
+        }
+        Trace.step("update auto: " + p.updateResult)
+    }
+
     // ------------------------------------------------------------------ скачивание (B76)
 
     /**
@@ -322,6 +378,9 @@ class UpdateCheck(private val ctx: Context) {
     companion object {
         private const val CONNECT_MS = 8000
         private const val READ_MS = 10000
+
+        /** Срок автопроверки: «раз в неделю при Wi-Fi» (B76). */
+        private const val WEEK_MS = 7L * 24 * 60 * 60 * 1000
         private const val UA = "List/1.0 (E-Ink reader; Android 8.1)"
 
         /** Запас места под APK: установщик распаковывает копию, и без него ловим ENOSPC. */

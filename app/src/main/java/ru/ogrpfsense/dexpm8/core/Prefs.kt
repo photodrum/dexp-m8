@@ -162,7 +162,11 @@ class Prefs(ctx: Context) {
         set(v) = sp.edit().putString("update_result", v).apply()
 
     // B76 «Обновления»
-    /** «Проверять автоматически · раз в неделю при Wi-Fi»: пока только хранится (проверка — по кнопке). */
+    /**
+     * «Проверять автоматически · раз в неделю при Wi-Fi» (B76). Включено — `EinkActivity` при
+     * холодном старте запускает `UpdateCheck.autoCheck` (раз в неделю, только на Wi-Fi, тихо:
+     * итог в `updateCheckedAt`/`updateResult`). Скачивание автопроверка не делает.
+     */
     var updateAuto: Boolean
         get() = sp.getBoolean("update_auto", true)
         set(v) = sp.edit().putBoolean("update_auto", v).apply()

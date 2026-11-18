@@ -13,6 +13,7 @@ import ru.ogrpfsense.dexpm8.core.LibraryDb
 import ru.ogrpfsense.dexpm8.core.Opds
 import ru.ogrpfsense.dexpm8.core.Prefs
 import ru.ogrpfsense.dexpm8.core.Sys
+import ru.ogrpfsense.dexpm8.core.UpdateCheck
 
 /**
  * Единственная Activity оболочки. Экраны — это View в стеке, переходы —
@@ -213,10 +214,11 @@ class EinkActivity : Activity() {
             return
         }
 
+        var firstRun = false
         try {
             // Мастер первого запуска (п. 13) — только при пустой библиотеке: после «Сбросить
             // настройки оболочки» (ключ сбрасывается) или переустановки база уже с книгами.
-            val firstRun = savedInstanceState == null && !prefs.firstRunDone && booksEmpty()
+            firstRun = savedInstanceState == null && !prefs.firstRunDone && booksEmpty()
             stack.add(if (firstRun) SCR_FIRST_LANG else SCR_HOME)
             changeTo(stack[stack.size - 1], switch = false)   // первый кадр окна — и так полный
             Trace.step(if (firstRun) "FirstLangScreen attached" else "HomeScreen attached")
@@ -232,6 +234,46 @@ class EinkActivity : Activity() {
         Trace.step("storage: ${if (storageOk) "granted" else "missing"}")
         if (!storageOk && savedInstanceState == null) requestStorage()
         if (savedInstanceState == null) probeFromIntent(intent)
+        if (savedInstanceState == null) autoUpdate(firstRun)
+    }
+
+    /**
+     * Автопроверка обновлений при старте (п. 13, тумблер B76 «Проверять автоматически»).
+     *
+     * Тихо: ни экрана, ни скачивания — итог ложится в `Prefs`, откуда его читают B43 (строка
+     * «Последняя проверка — …») и B76 (при открытии проверит заново). Отсюда — в фоновом
+     * потоке: сеть в главном на Android 8.1 даёт `NetworkOnMainThreadException`, а первый
+     * кадр должен уйти до любого сетевого ожидания.
+     *
+     * Не проверяем: пока идёт мастер первого запуска (у человека на экране ещё настройка),
+     * при выключенном тумблере, без Wi-Fi и пока не прошла неделя с прошлой проверки.
+     */
+    private fun autoUpdate(firstRun: Boolean) {
+        if (firstRun) {
+            Trace.step("update auto: мастер первого запуска, пропуск")
+            return
+        }
+        if (!prefs.updateAuto) {
+            Trace.step("update auto: выключено на B76")
+            return
+        }
+        Thread({
+            try {
+                val u = UpdateCheck(this)
+                if (!u.dueWeekly()) {
+                    Trace.step("update auto: неделя не прошла, пропуск")
+                    return@Thread
+                }
+                if (!u.onWifi()) {
+                    Trace.step("update auto: не Wi-Fi, пропуск")
+                    return@Thread
+                }
+                u.autoCheck()
+            } catch (t: Throwable) {
+                // Автопроверка не имеет права мешать запуску оболочки.
+                Trace.step("update auto FAIL ${t.javaClass.simpleName}: ${t.message}")
+            }
+        }, "update-auto").start()
     }
 
     // ------------------------------------------------------------ память
