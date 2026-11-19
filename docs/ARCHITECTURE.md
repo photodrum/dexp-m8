@@ -132,6 +132,8 @@ app/src/main/java/ru/ogrpfsense/dexpm8/
         SetSleepScreen B40 · SetLangScreen B41 · SetStorageScreen B42 · SetAboutScreen B43
         SetUpdateScreen B76 (п. 13): проверка, скачивание и установка обновления
         SettingsKit, SettingsData   общие элементы и данные настроек
+        WifiPanel      B38/B61: список сетей Wi-Fi, подключение, строка «Показать сети рядом», лист B47
+                       (числа сетки — параметры конструктора: у B61 752.9…1580, у B38 522.9…1094.4)
         SimpleScreen, CrashScreen, Trace   заглушка, экран сбоя, трассировка
         ShadeScreen    B5: шторка поверх экрана (зона открытия — Screen.shadeZone, приглушение — Screen.dimmed)
   core/ Sys            яркость, сон, 12/24 ч, Wi-Fi, Bluetooth, lockNow, кэш
