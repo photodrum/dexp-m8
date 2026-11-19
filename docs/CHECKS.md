@@ -82,6 +82,28 @@ java -Dfile.encoding=UTF-8 -cp "/tmp/optest/out2:$KX:$HOME/.local/kotlinc/lib/ko
 вызывать через экземпляр (`opds.findSlice(feed, kind)`). Фикстуры `<feed>` не должны начинаться
 с `<?xml …?>` после `trimIndent()` — `KXmlParser` на это падает (`PI must not start with xml`).
 
+## Главы аудиокниг (п. 12)
+
+Байтовые парсеры встроенных глав (`core/Id3Chapters.kt` — ID3 `CHAP`, `core/Mp4Chapters.kt` —
+MP4 `chpl`) проверяются на JVM, без Android и без Gradle. Файлы синтетические, их пишет сам тест.
+
+```bash
+cd ~/projects/dexp-m8
+~/.local/kotlinc/bin/kotlinc -d /tmp/audiocheck \
+    app/src/main/java/ru/ogrpfsense/dexpm8/core/Id3Chapters.kt \
+    app/src/main/java/ru/ogrpfsense/dexpm8/core/Mp4Chapters.kt tools/audio_chapters_test.kt
+java -Dfile.encoding=UTF-8 -cp "/tmp/audiocheck:$HOME/.local/kotlinc/lib/kotlin-stdlib.jar" \
+    Audio_chapters_testKt
+```
+
+Ожидаемый вывод: 11 строк `ok`, последняя — `all good`. Проверяются: три главы из `CHAP`
+с кириллическими названиями (кодировка `TIT2` = 3, UTF-8), смещения и длительности; три главы
+из `chpl` в двух вариантах заголовка — с резервным полем и без (редакторы пишут по-разному).
+
+**Грабля:** первый вариант парсера читал `TIT2` с кодировкой 3 как ISO-8859-1 и ломал
+кириллицу — тест это поймал, кодировка теперь разбирается по байту (0 — ISO-8859-1,
+1 — UTF-16, 2 — UTF-16BE, 3 — UTF-8).
+
 ## Проверка шифрования пароля каталога
 
 Пароль OPDS в базе — шифртекст (`core/Pass.kt`, `v1:` + Base64). Проверяется только на книге:
