@@ -84,6 +84,10 @@ class EinkActivity : Activity() {
         /** B75 «Лицензии» — открытые компоненты; дверь — строка на B43. */
         const val SCR_SET_LICENSES = 34
 
+        /** B71 «Часовой пояс» — пояса России; дверь — строка на B41 и на B60 (мастер). */
+        const val SCR_SET_ZONE = 35
+
+
         private const val REQ_STORAGE = 1
         private const val REQ_WRITE_SETTINGS = 2
         private const val REQ_ADMIN = 3
@@ -887,12 +891,13 @@ class EinkActivity : Activity() {
                 changeTo(SCR_FIRST_LANG)
                 return
             }
-            if (sc != "wifi" && sc != "updates" && sc != "licenses") return
+            if (sc != "wifi" && sc != "updates" && sc != "licenses" && sc != "zone") return
             intent.removeExtra("screen")
             Trace.step("debug: screen $sc")
             val id = when (sc) {
                 "updates" -> SCR_SET_UPDATES
                 "licenses" -> SCR_SET_LICENSES
+                "zone" -> SCR_SET_ZONE
                 else -> SCR_WIFI
             }
             if (stack.isNotEmpty() && stack[stack.size - 1] == id) changeTo(id)
@@ -1246,6 +1251,7 @@ class EinkActivity : Activity() {
             SCR_SET_ABOUT -> SetAboutScreen(this)
             SCR_SET_AUTHOR -> SetAuthorScreen(this)
             SCR_SET_LICENSES -> SetLicensesScreen(this)
+            SCR_SET_ZONE -> SetTimeZoneScreen(this)
             SCR_FIRST_LANG -> FirstLangScreen(this)
             SCR_FIRST_WIFI -> FirstWifiScreen(this)
             SCR_FIRST_PERM -> FirstPermScreen(this)

@@ -6,8 +6,8 @@ import android.text.format.DateFormat
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.util.TimeZone
 import ru.ogrpfsense.dexpm8.core.DictOnline
+import ru.ogrpfsense.dexpm8.core.Zones
 
 /**
  * B41 · Настройки · Дата, время, язык. Числа — из design/v5/B41.json.
@@ -55,7 +55,7 @@ class SetLangScreen(act: EinkActivity) : Screen(act) {
         kit.divider(c, 780f)
 
         kit.title(c, "Часовой пояс", 831f)
-        kit.valueRow(c, zoneName(now), 839f)
+        kit.valueRow(c, Zones.label(act.sys.zone(), now), 839f)
         kit.next(c, 847f)
         kit.divider(c, 934f)
 
@@ -78,18 +78,6 @@ class SetLangScreen(act: EinkActivity) : Screen(act) {
         kit.next(c, 1542.5f)
     }
 
-    /** «Москва, UTC+3»; если системного названия нет — только «UTC+3». */
-    private fun zoneName(now: Date): String {
-        val tz = TimeZone.getDefault()
-        val min = tz.getOffset(now.time) / 60_000
-        val h = Math.abs(min) / 60
-        val m = Math.abs(min) % 60
-        val utc = "UTC" + (if (min < 0) "−" else "+") + h + (if (m != 0) ":" + String.format("%02d", m) else "")
-        val city = tz.getDisplayName(tz.inDaylightTime(now), TimeZone.LONG, Locale.getDefault())
-            .substringBefore(',')
-        return if (city.startsWith("GMT") || city.startsWith("UTC") || city.isEmpty()) utc else "$city, $utc"
-    }
-
     private fun refresh() {
         autoTime = Settings.Global.getInt(act.contentResolver, "auto_time", 1) != 0
         online = DictOnline(act).online()
@@ -97,6 +85,10 @@ class SetLangScreen(act: EinkActivity) : Screen(act) {
 
     override fun onUp(x: Float, y: Float) {
         if (kit.isBack(x, y)) { act.pop(); return }
+        if (kit.inRow(x, y, 780f, 144f)) {
+            act.go(EinkActivity.SCR_SET_ZONE)
+            return
+        }
         if (kit.inRow(x, y, 1484f, 142f)) {
             act.go(EinkActivity.SCR_SET_DICT)
             return

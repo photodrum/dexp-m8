@@ -146,6 +146,59 @@ class Sys(ctx: Context) {
         fail("gamma set", c); false
     }
 
+    // ------------------------------------------------------------ часовой пояс (B71)
+
+    /**
+     * Текущий часовой пояс системы («Europe/Moscow»). Читается свойство, а не
+     * `TimeZone.getDefault()`: кеш зоны в процессе обновляется не сразу после записи.
+     * `null` — свойство не прочитано (тогда экран берёт пояс из `TimeZone.getDefault()`).
+     */
+    fun zone(): String? = try {
+        val v = (Class.forName("android.os.SystemProperties")
+            .getMethod("get", String::class.java).invoke(null, TZ) as String).trim()
+        v.ifEmpty { null }
+    } catch (t: Throwable) {
+        fail("zone get", t); null
+    }
+
+    /**
+     * «Определять по сети» (`Settings.Global.auto_time_zone`). Только чтение: таблица Global
+     * пишется с WRITE_SECURE_SETTINGS, которого у обычного приложения нет — на книге это
+     * проверено (`settings put` из процесса оболочки отказывает). `null` — не прочитано.
+     */
+    fun autoZone(): Boolean? = try {
+        Settings.Global.getInt(cr, "auto_time_zone") != 0
+    } catch (t: Throwable) {
+        fail("auto_time_zone", t); null
+    }
+
+    /**
+     * Поставить часовой пояс системы («Europe/Moscow») — свойство `persist.sys.timezone`.
+     * Возвращает то, что прочитано обратно после записи; `null` — записать не удалось.
+     *
+     * Почему свойство, а не `AlarmManager.setTimeZone`: тот требует `SET_TIME_ZONE`, право
+     * уровня подписи платформы, обычному приложению его не выдают. Свойство же пишется тем же
+     * вызовом, что и `setprop` в оболочке adb. Проверено на книге 2026-11-19 из процесса
+     * оболочки (uid приложения): время переключается сразу, значение ложится в
+     * `/data/property/persist.sys.timezone` и переживает перезагрузку. Доступ — рефлексией
+     * к скрытому `android.os.SystemProperties`, как у контраста ([gamma]).
+     */
+    fun setZone(id: String): String? = try {
+        val c = Class.forName("android.os.SystemProperties")
+        c.getMethod("set", String::class.java, String::class.java).invoke(null, TZ, id)
+        val back = (c.getMethod("get", String::class.java).invoke(null, TZ) as String).trim()
+        // Пояс процесса закеширован в `TimeZone.getDefault()`, а рассылки TIMEZONE_CHANGED
+        // после `setprop` нет (её шлёт только AlarmManager, и она защищённая — самим не послать).
+        // Сброс заставляет libcore перечитать `persist.sys.timezone`: без него часы оболочки
+        // оставались в старом поясе до перезапуска процесса (проверено на книге 2026-11-19).
+        java.util.TimeZone.setDefault(null)
+        Trace.step("sys zone: $id -> '$back', default=${java.util.TimeZone.getDefault().id}")
+        back
+    } catch (t: Throwable) {
+        val c = (t as? java.lang.reflect.InvocationTargetException)?.targetException ?: t
+        fail("zone set", c); null
+    }
+
     // ------------------------------------------------------------ память
 
     /** Удалить содержимое внутреннего и внешнего кэша оболочки (сами каталоги остаются). */
@@ -163,6 +216,10 @@ class Sys(ctx: Context) {
 
     companion object {
         private const val GAMMA = "sys.gray.gammalevel"
+
+        /** Свойство часового пояса системы (B71); его пишет и `AlarmManager.setTimeZone`. */
+        private const val TZ = "persist.sys.timezone"
+
 
         /** 16 делений контраста (`sys.gray.gammalevel`), найдены на книге 2026-11-11. */
         val GAMMA_STEPS = intArrayOf(0, 6, 11, 16, 21, 26, 31, 36, 41, 46, 51, 56, 61, 66, 71, 80)

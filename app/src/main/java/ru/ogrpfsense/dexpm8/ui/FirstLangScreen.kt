@@ -6,8 +6,8 @@ import android.text.format.DateFormat
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.util.TimeZone
 import ru.ogrpfsense.dexpm8.core.DictOnline
+import ru.ogrpfsense.dexpm8.core.Zones
 
 /**
  * B60 · Первый запуск · шаг 1 · язык и время (п. 13). Числа — из design/v5/B60.json.
@@ -57,7 +57,7 @@ class FirstLangScreen(act: EinkActivity) : Screen(act) {
         kit.divider(c, 710f)
 
         kit.title(c, "Часовой пояс", 761f)
-        kit.valueRow(c, zoneName(now), 769f)
+        kit.valueRow(c, Zones.label(act.sys.zone(), now), 769f)
         kit.next(c, 777f)
         kit.divider(c, 864f)
 
@@ -83,17 +83,6 @@ class FirstLangScreen(act: EinkActivity) : Screen(act) {
         first.buttonDark(c, "Далее")
     }
 
-    /** «Москва, UTC+3»; если системного названия нет — только «UTC+3» (как на B41). */
-    private fun zoneName(now: Date): String {
-        val tz = TimeZone.getDefault()
-        val min = tz.getOffset(now.time) / 60_000
-        val h = Math.abs(min) / 60
-        val m = Math.abs(min) % 60
-        val utc = "UTC" + (if (min < 0) "−" else "+") + h + (if (m != 0) ":" + String.format("%02d", m) else "")
-        val city = tz.getDisplayName(tz.inDaylightTime(now), TimeZone.LONG, Locale.getDefault()).substringBefore(',')
-        return if (city.startsWith("GMT") || city.startsWith("UTC") || city.isEmpty()) utc else "$city, $utc"
-    }
-
     private fun refresh() {
         autoTime = Settings.Global.getInt(act.contentResolver, "auto_time", 1) != 0
         online = DictOnline(act).online()
@@ -101,8 +90,10 @@ class FirstLangScreen(act: EinkActivity) : Screen(act) {
 
     override fun onUp(x: Float, y: Float) {
         when {
-            // «Часовой пояс», «Язык оболочки» и «Раскладки» не нажимаются: своих экранов в коде
-            // нет (B71/B72 не сделаны), и B41 по ним тоже ничего не открывает. Значения рисуются.
+            // «Раскладки» (B72) не нажимаются: своего экрана в коде нет. «Часовой пояс» ведёт
+            // на B71, «Язык оболочки» — на B41: своих экранов у них нет, а шаг не должен
+            // упираться в тупик.
+            kit.inRow(x, y, 710f, 154f) -> act.go(EinkActivity.SCR_SET_ZONE)
             kit.inRow(x, y, 864f, 144f) -> {
                 val want = !DateFormat.is24HourFormat(act)
                 act.withWriteSettings {
