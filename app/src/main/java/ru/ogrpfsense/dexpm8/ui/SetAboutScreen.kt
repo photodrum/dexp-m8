@@ -125,16 +125,15 @@ class SetAboutScreen(act: EinkActivity) : Screen(act) {
     }
 
     private fun refresh() {
+        // «Оболочка 0.3.0 · сборка 3, автор Денис Лампусов» — одна строка на B43 и B63
+        // (замечание 23): имя автора по просьбе человека, отдельной строки «Автор» нет.
         val info = try {
             act.packageManager.getPackageInfo(act.packageName, 0)
         } catch (t: Throwable) {
             null
         }
-        val name = info?.versionName ?: ""
-        val code = if (info == null) 0L else if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
-        // «Оболочка 0.3.0 · сборка 3, автор Денис Лампусов» — имя автора по просьбе человека.
-        short = "Оболочка " + name
-        version = short + (if (code > 0L) " · сборка $code" else "") + ", автор " + AUTHOR
+        short = "Оболочка " + (info?.versionName ?: "")
+        version = SettingsData.versionLine(act)
         android = "Android ${Build.VERSION.RELEASE}"
         cpu = "Rockchip PX30 · " + cores(Runtime.getRuntime().availableProcessors())
 
@@ -254,10 +253,5 @@ class SetAboutScreen(act: EinkActivity) : Screen(act) {
     override fun onDetachedFromWindow() {
         status.detach()
         super.onDetachedFromWindow()
-    }
-
-    private companion object {
-        /** Автор оболочки — в строке версии: «… сборка 2, автор Денис Лампусов». */
-        const val AUTHOR = "Денис Лампусов"
     }
 }

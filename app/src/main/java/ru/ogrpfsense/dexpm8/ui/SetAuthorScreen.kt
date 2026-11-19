@@ -105,7 +105,7 @@ class SetAuthorScreen(act: EinkActivity) : Screen(act) {
 
     private companion object {
         /** Автор оболочки — подпись в шапке и в строке версии на B43. */
-        const val AUTHOR = "Денис Лампусов"
+        const val AUTHOR = SettingsData.AUTHOR
 
         /** Сторона модуля QR, дизайн-px. 29·20 = 580 — код на экране 1404 px. */
         const val MODULE = 20f

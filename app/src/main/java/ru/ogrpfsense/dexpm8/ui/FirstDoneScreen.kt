@@ -111,15 +111,9 @@ class FirstDoneScreen(act: EinkActivity) : Screen(act) {
     }
 
     private fun refresh() {
-        val info = try {
-            act.packageManager.getPackageInfo(act.packageName, 0)
-        } catch (t: Throwable) {
-            null
-        }
-        val vn = info?.versionName ?: ""
-        val code = if (info == null) 0L
-        else if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
-        version = "Оболочка " + vn + (if (code > 0L) " · сборка $code" else "")
+        // «Оболочка 0.3.0 · сборка 3, автор Денис Лампусов» — та же строка, что на B43 (замечание 23):
+        // одна на два экрана, `SettingsData.versionLine`.
+        version = SettingsData.versionLine(act)
         android = "Android ${Build.VERSION.RELEASE}"
         grantedCount = (if (act.hasStorage()) 1 else 0) + (if (act.sys.canWrite()) 1 else 0) +
             (if (act.sys.adminActive()) 1 else 0) + (if (homeIsUs()) 1 else 0)

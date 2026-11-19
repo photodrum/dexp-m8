@@ -54,4 +54,27 @@ object SettingsData {
         val fmt = if (DateFormat.is24HourFormat(ctx)) "24-часовой формат" else "12-часовой формат"
         return "${langName()} · $fmt"
     }
+
+    /** Автор оболочки — в строке версии на B43 и B63. */
+    const val AUTHOR = "Денис Лампусов"
+
+    /**
+     * Строка версии для B43 «Об устройстве» и B63 «Готово» — одна на оба экрана (замечание 23):
+     * «Оболочка 0.3.0 · сборка 3, автор Денис Лампусов». Пустое имя версии или нулевой номер
+     * сборки просто выпадают.
+     */
+    fun versionLine(ctx: Context): String {
+        val info = try {
+            ctx.packageManager.getPackageInfo(ctx.packageName, 0)
+        } catch (t: Throwable) {
+            null
+        }
+        val name = info?.versionName ?: ""
+        val code = when {
+            info == null -> 0L
+            android.os.Build.VERSION.SDK_INT >= 28 -> info.longVersionCode
+            else -> info.versionCode.toLong()
+        }
+        return "Оболочка $name" + (if (code > 0L) " · сборка $code" else "") + ", автор " + AUTHOR
+    }
 }
