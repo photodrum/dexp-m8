@@ -31,6 +31,18 @@ foreach(patch crengine-19-glyph-align.patch)
     endif()
 endforeach()
 
+# Блок выше срабатывает только при конфигурации. С сохранённым кешем `app/.cxx`
+# откат подмодуля (`git submodule update`, `git checkout` внутри него) не запускает
+# конфигурацию заново — и натив собирался бы с исходным `malloc`, то есть с SIGBUS
+# на кегле 8…12. Поэтому файл подмодуля — зависимость конфигурации: откат меняет его
+# время, CMake перезапускается и накладывает патч заново (проверено 2026-11-19).
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        ${CRE_DIR}/crengine/include/lvfntman.h)
+
+# Грязь подмодуля не должна мешать `git status` родителя: в `.gitmodules` стоит
+# `ignore = dirty` для third_party/crengine. Своя копия — source of truth:
+# `tools/patches/crengine-19-glyph-align.patch`.
+
 # NDEBUG всегда (и в Debug): assert'ы движков не отлаживаем, замеры 7.3 — как в release;
 # antiword без DEBUG/NDEBUG не собирается.
 set(CRE_LIB_OPTS -Os -ffunction-sections -fdata-sections -fvisibility=hidden -w -DNDEBUG)

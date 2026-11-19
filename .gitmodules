@@ -2,6 +2,7 @@
 	path = third_party/crengine
 	url = https://github.com/koreader/crengine.git
 	shallow = true
+	ignore = dirty
 [submodule "third_party/djvulibre"]
 	path = third_party/djvulibre
 	url = https://gitlab.com/koreader/djvulibre.git

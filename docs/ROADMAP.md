@@ -144,6 +144,8 @@
 4. ✅ B37 «Контраст», проверено на книге 2026-11-18 — `docs/archive/ROADMAP-2026-11-18-zam.md`.
 18. ✅ гарнитура B4 у книг со своим шрифтом, 2026-11-16 — `docs/archive/ROADMAP-2026-11-18-zam.md`.
 19. ✅ кеш глифов, SIGBUS на кегле 8–12, 2026-11-18 — `docs/archive/ROADMAP-2026-11-18-zam.md`.
+    Правка живёт патчем `tools/patches/crengine-19-glyph-align.patch`, патч форсируется через
+    `CMAKE_CONFIGURE_DEPENDS` — `docs/archive/DEVLOG-2026-11-19-patch19.md`.
 20. ✅ зона шторки B5 уступает меню B50, 2026-11-17 — `docs/archive/ROADMAP-2026-11-18-zam.md`.
 21. ✅ B43 «Автор» с QR и имя в строке версии, 2026-11-18 — `docs/archive/ROADMAP-2026-11-18-zam.md`.
 7. **B42: суммы не сходятся** — было «1,6 из 16 ГБ» + «Свободно 11,1 ГБ» = 12,7 ГБ (система
