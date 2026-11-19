@@ -78,8 +78,8 @@ class AudioChaptersScreen(act: EinkActivity) : Screen(act) {
             val pct = if (ch.dur <= 0L) 0 else ((p.pos - ch.start) * 100 / ch.dur).toInt().coerceIn(0, 100)
             AudioKit.track(ink, c, 195f + dx, y + 140.4f, 880f, 22f, pct)
             ink.convexDark(c, 1174.1f, y + 42f, 115f, 120f, 55f)
-            icons.drawRound(c, if (p.playing) "pause@26.5x33.1" else "play@26.5x33.1",
-                1174.1f, y + 42f, 115f, 120f, 26.5f, 33.1f)
+            val ic = if (p.playing) "pause@26.5x33.1" else "play"
+            icons.drawRound(c, ic, 1174.1f, y + 42f, 115f, 120f, 26.5f, 33.1f)
         } else {
             ink.text(c, AudioKit.dur(ch.dur), 195f, T.base(y + 58f, T.TS_BODY_S, 1.25f),
                 T.TS_BODY_S, 600, T.G4)

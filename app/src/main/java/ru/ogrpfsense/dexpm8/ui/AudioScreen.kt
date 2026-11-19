@@ -74,12 +74,14 @@ class AudioScreen(act: EinkActivity) : Screen(act) {
      * координаты уже сняты из макета (см. [TICKS]).
      */
     private fun dial(c: Canvas) {
-        for (t in TICKS) ink.line(c, t[0], t[1], t[2], t[3], t[4], T.G7)
-        // Пять жирных штрихов — течение прослушанного: длина по проценту книги.
-        val done = p.percent() * BOLD.size / 100
+        // Шкала: 27 тонких штрихов G7 по всему кругу и пять жирных G1 на левой дуге —
+        // столько прослушано. Числа сняты из пути `svg-path` снимка B07.
+        for (t in TICKS) ink.line(c, t[0], t[1], t[2], t[3], TICK_W, T.G7)
+        val done = Math.round(p.percent() * BOLD.size / 100f)
         for (i in BOLD.indices) {
+            if (i >= done) break
             val b = BOLD[i]
-            if (i < done) ink.line(c, b[0], b[1], b[2], b[3], b[4], T.G1)
+            ink.line(c, b[0], b[1], b[2], b[3], b[4], T.G1)
         }
         // Диск 511.9 в 443.3,344.6 — выпуклая пластина радиусом 256.
         ink.convex(c, 443.3f, 344.6f, 521.9f, 521.9f, 256f)
@@ -137,10 +139,10 @@ class AudioScreen(act: EinkActivity) : Screen(act) {
         param(c, 918.6f, "bookmark", if (marked) "Закладка есть" else "Закладка")
     }
 
-    /** Кнопка параметра 384.8×105.1: выпуклая, иконка слева, подпись 36/700. */
+    /** Кнопка параметра 384.8×105.1: иконка в +44.8,+25.3 (47.5×49.5), подпись в +112.5. */
     private fun param(c: Canvas, x: Float, icon: String, label: String) {
         ink.convex(c, x, 1492.7f, 384.8f, 105.1f, 47.5f)
-        icons.drawRound(c, icon, x, 1492.7f, 384.8f, 105.1f, 47.5f, 49.5f)
+        icons.draw(c, icon, x + 44.8f, 1518f, 47.5f, 49.5f)
         ink.text(c, label, x + 112.5f, T.base(1521.6f, T.TS_LABEL, 1.25f), T.TS_LABEL, 700, T.G1)
     }
 
@@ -278,38 +280,41 @@ class AudioScreen(act: EinkActivity) : Screen(act) {
     }
 
     private companion object {
+        /** Штрих тонкой шкалы B7 — 1.5 по снимку. */
+        const val TICK_W = 1.5f
+
         /**
-         * Штрихи шкалы B7 (x1, y1, x2, y2, толщина) — сняты из пути `svg-path` снимка B07:
-         * 27 тонких G7/1.5 по дуге сверху вниз слева направо.
+         * Тонкие штрихи шкалы B7 (x1, y1, x2, y2) — сняты из пути `svg-path` снимка B07:
+         * 27 штрихов по кругу, начиная сверху.
          */
         val TICKS = arrayOf(
-            floatArrayOf(702f, 266.9f, 702f, 237.7f, 1.5f),
-            floatArrayOf(745.9f, 269.8f, 749.7f, 240.8f, 1.5f),
-            floatArrayOf(789.1f, 278.4f, 796.6f, 250.1f, 1.5f),
-            floatArrayOf(830.7f, 292.5f, 841.9f, 265.5f, 1.5f),
-            floatArrayOf(870.2f, 312f, 884.8f, 286.6f, 1.5f),
-            floatArrayOf(906.8f, 336.4f, 924.6f, 313.2f, 1.5f),
-            floatArrayOf(939.9f, 365.4f, 960.5f, 344.8f, 1.5f),
-            floatArrayOf(968.9f, 398.5f, 992.1f, 380.7f, 1.5f),
-            floatArrayOf(993.3f, 435.1f, 1018.7f, 420.5f, 1.5f),
-            floatArrayOf(1012.8f, 474.6f, 1039.8f, 463.4f, 1.5f),
-            floatArrayOf(1026.9f, 516.2f, 1055.2f, 508.7f, 1.5f),
-            floatArrayOf(1035.5f, 559.4f, 1064.5f, 555.6f, 1.5f),
-            floatArrayOf(1038.4f, 603.3f, 1067.6f, 603.3f, 1.5f),
-            floatArrayOf(1035.5f, 647.2f, 1064.5f, 651f, 1.5f),
-            floatArrayOf(1026.9f, 690.3f, 1055.2f, 697.9f, 1.5f),
-            floatArrayOf(1012.8f, 732f, 1039.8f, 743.2f, 1.5f),
-            floatArrayOf(993.3f, 771.5f, 1018.7f, 786.1f, 1.5f),
-            floatArrayOf(968.9f, 808.1f, 992.1f, 825.9f, 1.5f),
-            floatArrayOf(939.9f, 841.1f, 960.5f, 861.8f, 1.5f),
-            floatArrayOf(906.8f, 870.2f, 924.6f, 893.4f, 1.5f),
-            floatArrayOf(870.2f, 894.6f, 884.8f, 919.9f, 1.5f),
-            floatArrayOf(830.7f, 914f, 841.9f, 941.1f, 1.5f),
-            floatArrayOf(789.1f, 928.2f, 796.6f, 956.5f, 1.5f),
-            floatArrayOf(745.9f, 936.8f, 749.7f, 965.8f, 1.5f),
-            floatArrayOf(702f, 939.7f, 702f, 968.9f, 1.5f),
-            floatArrayOf(658.1f, 936.8f, 654.3f, 965.8f, 1.5f),
-            floatArrayOf(614.9f, 928.2f, 607.4f, 956.5f, 1.5f),
+            floatArrayOf(702f, 266.9f, 702f, 237.7f),
+            floatArrayOf(745.9f, 269.8f, 749.7f, 240.8f),
+            floatArrayOf(789.1f, 278.4f, 796.6f, 250.1f),
+            floatArrayOf(830.7f, 292.5f, 841.9f, 265.5f),
+            floatArrayOf(870.2f, 312f, 884.8f, 286.6f),
+            floatArrayOf(906.8f, 336.4f, 924.6f, 313.2f),
+            floatArrayOf(939.9f, 365.4f, 960.5f, 344.8f),
+            floatArrayOf(968.9f, 398.5f, 992.1f, 380.7f),
+            floatArrayOf(993.3f, 435.1f, 1018.7f, 420.5f),
+            floatArrayOf(1012.8f, 474.6f, 1039.8f, 463.4f),
+            floatArrayOf(1026.9f, 516.2f, 1055.2f, 508.7f),
+            floatArrayOf(1035.5f, 559.4f, 1064.5f, 555.6f),
+            floatArrayOf(1038.4f, 603.3f, 1067.6f, 603.3f),
+            floatArrayOf(1035.5f, 647.2f, 1064.5f, 651f),
+            floatArrayOf(1026.9f, 690.3f, 1055.2f, 697.9f),
+            floatArrayOf(1012.8f, 732f, 1039.8f, 743.2f),
+            floatArrayOf(993.3f, 771.5f, 1018.7f, 786.1f),
+            floatArrayOf(968.9f, 808.1f, 992.1f, 825.9f),
+            floatArrayOf(939.9f, 841.1f, 960.5f, 861.8f),
+            floatArrayOf(906.8f, 870.2f, 924.6f, 893.4f),
+            floatArrayOf(870.2f, 894.6f, 884.8f, 919.9f),
+            floatArrayOf(830.7f, 914f, 841.9f, 941.1f),
+            floatArrayOf(789.1f, 928.2f, 796.6f, 956.5f),
+            floatArrayOf(745.9f, 936.8f, 749.7f, 965.8f),
+            floatArrayOf(702f, 939.7f, 702f, 968.9f),
+            floatArrayOf(658.1f, 936.8f, 654.3f, 965.8f),
+            floatArrayOf(614.9f, 928.2f, 607.4f, 956.5f),
         )
 
         /** Пять жирных штрихов левой дуги (G1, толщина растёт): прослушанная часть книги. */

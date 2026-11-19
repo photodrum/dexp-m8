@@ -142,6 +142,12 @@ class AudioPlayer(private val db: LibraryDb) {
 
     fun play() {
         if (book == null) return
+        // Книга доиграла (место в конце) — кнопка play начинает её заново: в макете нет
+        // отдельной «сначала», а жать play на конце — первое, что приходит в голову.
+        if (total > 0L && pos >= total - END_MS) {
+            restart()
+            return
+        }
         val p = mp ?: prepare(index.coerceAtLeast(0)) ?: return
         try {
             applySpeed(p)
@@ -305,11 +311,13 @@ class AudioPlayer(private val db: LibraryDb) {
         }
     }
 
-    /** Начать книгу заново (B33 «Прослушана» → повтор). */
+    /** Начать книгу заново (B33 «Прослушана» → повтор, play на конце книги). */
     fun restart() {
         val b = book ?: return
-        seek(0L)
+        applySeek(0L)
+        pos = 0L
         db.setAudioProgress(b.id, 0L)
+        play()
         onTick?.invoke()
     }
 
@@ -484,5 +492,8 @@ class AudioPlayer(private val db: LibraryDb) {
 
         /** Хвост файла, который отсекает «Пропускать паузы» (B35), мс. */
         private const val SKIP_TAIL_MS = 2_000L
+
+        /** Насколько близко к концу книги play считается «доиграла» — тогда начинаем заново. */
+        private const val END_MS = 1_000L
     }
 }

@@ -57,11 +57,14 @@ internal class AudioSheet(private val ink: Ink, private val icons: Icons) {
         // Скорость: «−», значение, ползунок, «+» и пять пресетов.
         ink.text(c, "СКОРОСТЬ ЧТЕНИЯ", 59f, T.base(1200f, T.TS_META, 1.25f), T.TS_META, 600, T.G5)
         ink.convex(c, 56f, 1250f, 115f, 120f, 55f)
-        icons.drawRound(c, "minus", 56f, 1250f, 115f, 120f, 30.9f, 2.2f)
+        icons.draw(c, "minus", 95f, 1284f, 45.7f, 47.6f)
         ink.inset(c, 196f, 1250f, 240f, 116f, 40f, T.G12)
         ink.textCenter(c, Prefs.Speed.label(speed), 199f, 235f, T.base(1278.3f, 48f, 1.2f), 48f, 700, T.G1)
         ink.convex(c, 1238f, 1250f, 115f, 120f, 55f)
-        icons.drawRound(c, "plus", 1238f, 1250f, 115f, 120f, 30.9f, 33.1f)
+        // «+» на выпуклой клавише — тёмными штрихами (иконка `plus` белая: она для тёмной
+        // клавиши, как на B14). Тот же рисунок, что в снимке: 43.9 в +36,+34.
+        ink.line(c, 1274f + 21.9f, 1284f + 9.1f, 1274f + 21.9f, 1284f + 34.7f, 2.5f, T.G4)
+        ink.line(c, 1274f + 9.1f, 1284f + 21.9f, 1274f + 34.7f, 1284f + 21.9f, 2.5f, T.G4)
 
         // Ползунок 470,1262: трек 730×37, заполнение G3, ручка Ø88.
         val pct = (speed - Prefs.Speed.MIN).toFloat() / (Prefs.Speed.MAX - Prefs.Speed.MIN)

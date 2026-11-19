@@ -140,7 +140,7 @@ class AudioListScreen(act: EinkActivity) : Screen(act) {
      * (у начатой), статус (у новой) или «Прослушана» с галочкой.
      */
     private fun row(c: Canvas, b: LibraryDb.Audio, y: Float, divider: Boolean) {
-        cover(c, 88f, y, 132f, b.title, 27f)
+        cover(c, 88f, y, 132f, b.title, 0f)
         ink.text(c, ink.ellipsize(b.title, 660f, 42f, 600, lit), 260f,
             T.base(y + 11f, 42f, 1.15f, true), 42f, 600, T.G1, lit)
         ink.text(c, ink.ellipsize(metaLine(b), 674f, T.TS_BODY_S, 600), 260f,
@@ -177,6 +177,7 @@ class AudioListScreen(act: EinkActivity) : Screen(act) {
     private fun cover(c: Canvas, x: Float, y: Float, side: Float, title: String, fs: Float) {
         ink.roundRect(c, x, y, side, side, side * 0.0833f, T.G12)
         ink.roundRect(c, x, y, side * 0.0985f, side, side * 0.0833f, T.G7)
+        if (fs <= 0f) return
         val lines = ink.ellipsize2(title, side * 0.66f, fs, 600, lit, 2)
         val base = y + side * 0.166f
         for ((i, s) in lines.withIndex()) {
@@ -292,7 +293,7 @@ class AudioListScreen(act: EinkActivity) : Screen(act) {
             Trace.step("audio list FAIL: ${t.javaClass.simpleName}: ${t.message}")
             ArrayList()
         }
-        current = books.firstOrNull { it.opened > 0L } ?: books.firstOrNull()
+        current = books.firstOrNull { it.opened > 0L }
         if (page >= totalPages()) page = totalPages() - 1
     }
 
