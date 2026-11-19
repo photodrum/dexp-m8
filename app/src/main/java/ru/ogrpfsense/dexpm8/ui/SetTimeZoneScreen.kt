@@ -60,25 +60,32 @@ class SetTimeZoneScreen(act: EinkActivity) : Screen(act) {
             val col = i / PER_COL
             val row = i % PER_COL
             // Разделитель — между строками колонки: под последней строкой каждой колонки его нет.
-            row(c, Zones.ROWS[i], COL_X[col], ROW_Y + row * ROW_STEP, row < PER_COL - 1, TEXT_W[col])
+            row(c, Zones.ROWS[i], COL_X[col], ROW_Y + row * ROW_STEP, row < PER_COL - 1)
         }
     }
 
     /**
      * Строка пояса: город, описание, галочка у текущего пояса, разделитель (если не последняя
-     * в колонке). [x] — левый край колонки, [w] — ширина текста в ней.
+     * в колонке). [x] — левый край текста колонки.
+     *
+     * Галочка стоит у правого края **своей колонки**, а не у края панели: в правой это
+     * 1282.7 из макета (правый край 1324.7, до панели 1362 ещё 37), в левой — зеркально
+     * 622.2. Текст занимает всю колонку, а укорачивается только у строки с галочкой —
+     * иначе длинное описание уехало бы под неё, а короткие стали бы обрезаться зря
+     * («Петропавловск-Камчатский» так и терялся).
      */
-    private fun row(c: Canvas, z: Zones.Row, x: Float, y: Float, line: Boolean, w: Float) {
-        ink.text(c, ink.ellipsize(z.city, w - ICON_GAP, T.TS_LABEL_L, 700), x,
+    private fun row(c: Canvas, z: Zones.Row, x: Float, y: Float, line: Boolean) {
+        val ci = if (x < COL_SPLIT) 0 else 1
+        val cur = z.id == current
+        val w = if (cur) CHECK_X[ci] - x - CHECK_PAD else COL_W[ci]
+        ink.text(c, ink.ellipsize(z.city, w, T.TS_LABEL_L, 700), x,
             T.base(y, T.TS_LABEL_L, 1.25f), T.TS_LABEL_L, 700, T.G1)
         ink.text(c, ink.ellipsize(z.desc, w, T.TS_CAPTION, 600), x,
             T.base(y + DESC_DY, T.TS_CAPTION, 1.25f), T.TS_CAPTION, 600, T.G4)
-        if (z.id == current) icons.draw(c, "check", checkX(x), y + 13f, 42f, 43.9f)
-        if (line) ink.rect(c, x, y + DIVIDER_DY, w, 2f, T.G11)
+        if (cur) icons.draw(c, "check", CHECK_X[ci], y + 13f, 42f, 43.9f)
+        if (line) ink.rect(c, x, y + DIVIDER_DY, COL_W[ci], 2f, T.G11)
     }
 
-    /** Левый край галочки в колонке: 42 — её ширина, 18 — отступ от края панели. */
-    private fun checkX(colX: Float) = colX + TEXT_W[if (colX < COL_SPLIT) 0 else 1] + ICON_GAP - 42f
 
     private fun refresh() {
         autoZone = act.sys.autoZone()
@@ -139,9 +146,11 @@ class SetTimeZoneScreen(act: EinkActivity) : Screen(act) {
         /** Левый край колонок: 88 и 780; граница касания — посередине (710.6). */
         private val COL_X = floatArrayOf(88f, 780f)
         private const val COL_SPLIT = 710.6f
-        /** Ширина текста колонки: от 88 до 733 и от 780 до 1362. */
-        private val TEXT_W = floatArrayOf(600f, 560f)
-        /** Отступ галочки от правого края текста. */
-        private const val ICON_GAP = 44f
+        /** Ширина текста колонки до края панели: 88…660 и 780…1352. */
+        private val COL_W = floatArrayOf(572f, 572f)
+        /** Левый край галочки в колонке: 622.2 в левой (зеркально макету), 1282.7 в правой. */
+        private val CHECK_X = floatArrayOf(622.2f, 1282.7f)
+        /** Зазор между текстом и галочкой у строки текущего пояса. */
+        private const val CHECK_PAD = 24f
     }
 }
