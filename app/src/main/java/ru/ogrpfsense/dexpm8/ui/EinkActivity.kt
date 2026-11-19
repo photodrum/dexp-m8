@@ -81,6 +81,9 @@ class EinkActivity : Activity() {
         const val SCR_FIRST_READ = 32
         const val SCR_FIRST_DONE = 33
 
+        /** B75 «Лицензии» — открытые компоненты; дверь — строка на B43. */
+        const val SCR_SET_LICENSES = 34
+
         private const val REQ_STORAGE = 1
         private const val REQ_WRITE_SETTINGS = 2
         private const val REQ_ADMIN = 3
@@ -884,10 +887,14 @@ class EinkActivity : Activity() {
                 changeTo(SCR_FIRST_LANG)
                 return
             }
-            if (sc != "wifi" && sc != "updates") return
+            if (sc != "wifi" && sc != "updates" && sc != "licenses") return
             intent.removeExtra("screen")
             Trace.step("debug: screen $sc")
-            val id = if (sc == "updates") SCR_SET_UPDATES else SCR_WIFI
+            val id = when (sc) {
+                "updates" -> SCR_SET_UPDATES
+                "licenses" -> SCR_SET_LICENSES
+                else -> SCR_WIFI
+            }
             if (stack.isNotEmpty() && stack[stack.size - 1] == id) changeTo(id)
             else go(id)
             return
@@ -1238,6 +1245,7 @@ class EinkActivity : Activity() {
             SCR_SET_STORAGE -> SetStorageScreen(this)
             SCR_SET_ABOUT -> SetAboutScreen(this)
             SCR_SET_AUTHOR -> SetAuthorScreen(this)
+            SCR_SET_LICENSES -> SetLicensesScreen(this)
             SCR_FIRST_LANG -> FirstLangScreen(this)
             SCR_FIRST_WIFI -> FirstWifiScreen(this)
             SCR_FIRST_PERM -> FirstPermScreen(this)

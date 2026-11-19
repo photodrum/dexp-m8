@@ -32,7 +32,8 @@ import ru.ogrpfsense.dexpm8.R
  *
  * Остальной ввод: «Назад» и полоса «Сбросить настройки оболочки». Полоса открывает диалог B56
  * ([ResetDialog]) — подтверждение с «Отменой» и «Сбросить» (решение 2026-11-19; до этого второе
- * нажатие по полосе сбрасывало настройки без вопроса). Лицензии — позже, B75.
+ * нажатие по полосе сбрасывало настройки без вопроса). Строка «Лицензии» (1172.5…1320) ведёт
+ * на B75 ([SetLicensesScreen]).
  */
 class SetAboutScreen(act: EinkActivity) : Screen(act) {
 
@@ -207,6 +208,11 @@ class SetAboutScreen(act: EinkActivity) : Screen(act) {
         if (y >= 1693f && y <= 1835f) {
             // Нижняя кнопка «Автор» (решение 2026-11-18): QR-код на Бусти.
             act.go(EinkActivity.SCR_SET_AUTHOR)
+            return
+        }
+        if (y >= 1172.5f && y <= 1320f) {
+            // Строка B75 «Лицензии»: открытые компоненты и их лицензии.
+            act.go(EinkActivity.SCR_SET_LICENSES)
             return
         }
         if (y >= 1320f && y <= 1490f) {
