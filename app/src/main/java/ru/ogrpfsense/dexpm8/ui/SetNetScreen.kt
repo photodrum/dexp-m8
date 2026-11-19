@@ -12,7 +12,7 @@ import android.graphics.Canvas
  *                         с разделителем 2 — ровно как в макете, до 1094.4 (3 соседа)
  *   раздел «BLUETOOTH»    59,1200; панель 41,1248 1321×340
  *   строка «Bluetooth»    88,1282.5; тумблер 1177,1304; разделитель 237,1430 1079
- *   «Сопряжённые…»        88,1479.5 — дверь в B74 (ещё не сделана, п. 13 хвост)
+ *   «Сопряжённые…»        88,1479.5 — дверь в B74 (`SetBtScreen`), значение — [BtDevices.summary]
  *   «Выключать Wi-Fi…»    59,1646; тумблер 1206,1658
  *
  * Список сетей, подключение и лист B47 — общий слой [WifiPanel] (замечание 22): на B61 та же
@@ -23,7 +23,6 @@ import android.graphics.Canvas
  * строка «Показать сети рядом» — в макете такого состояния нет (как и на B61).
  *
  * «Выключать Wi-Fi во сне» хранится в `act.prefs` (исполнится вместе со сном, п. 8).
- * Строка «Сопряжённые устройства» пока только рисуется: дверь — п. 13, B74.
  */
 class SetNetScreen(act: EinkActivity) : Screen(act) {
 
@@ -69,7 +68,7 @@ class SetNetScreen(act: EinkActivity) : Screen(act) {
         kit.toggle(c, 1304f, btOn, 1177f)
         kit.divider(c, 1430f, 237f, 1079f)
         kit.title(c, "Сопряжённые устройства", 1479.5f, 88f)
-        kit.valueRow(c, btDevices(), 1487.5f)
+        kit.valueRow(c, btSummary, 1487.5f)
         kit.next(c, 1495.5f)
 
         kit.title(c, "Выключать Wi-Fi во сне", 1646f, 59f)
@@ -82,10 +81,26 @@ class SetNetScreen(act: EinkActivity) : Screen(act) {
     }
 
     /**
-     * Значение строки «Сопряжённые устройства»: в макете «JBL Go 3». Настоящий список требует
-     * системных прав (B74, п. 13) — пока показываем только включённый Bluetooth, иначе прочерк.
+     * Значение строки «Сопряжённые устройства» (в макете «JBL Go 3»): имя подключённого, иначе
+     * число сопряжённых, «Нет устройств»; выключен — прочерк. Считается при входе на экран и
+     * по событиям Bluetooth ([btEvents]), а не на каждом кадре.
      */
-    private fun btDevices(): String = if (!btOn) "—" else "Нет устройств"
+    private var btSummary = "—"
+
+    private val bt = ru.ogrpfsense.dexpm8.core.BtDevices(act)
+
+    private val btEvents = object : android.content.BroadcastReceiver() {
+        override fun onReceive(ctx: android.content.Context?, i: android.content.Intent?) {
+            val on = act.sys.btOn()
+            val s = bt.summary()
+            if (on != btOn || s != btSummary) {
+                btOn = on
+                btSummary = s
+                redraw()
+            }
+        }
+    }
+    private var btListening = false
 
     override fun onUp(x: Float, y: Float) {
         // Лист B47 и строки сетей забирают касание первыми.
@@ -93,9 +108,11 @@ class SetNetScreen(act: EinkActivity) : Screen(act) {
         if (kit.isBack(x, y)) { act.pop(); return }
         when {
             kit.inRow(x, y, 298f, 190f) -> panel.toggleWifi()
-            kit.inRow(x, y, 1248f, 190f) -> {
+            kit.inRow(x, y, 1248f, 182f) -> {
                 if (act.sys.setBt(!btOn)) { btOn = !btOn; redraw() }
             }
+            // «Сопряжённые устройства» 1430…1588 — дверь в B74.
+            kit.inRow(x, y, 1430f, 158f) -> act.go(EinkActivity.SCR_SET_BT)
             kit.inRow(x, y, 1646f, 150f) -> {
                 act.prefs.wifiSleepOff = !act.prefs.wifiSleepOff
                 redraw()
@@ -110,6 +127,15 @@ class SetNetScreen(act: EinkActivity) : Screen(act) {
         status.attach()
         panel.attach()
         btOn = act.sys.btOn()
+        btSummary = bt.summary()
+        if (!btListening) {
+            val f = android.content.IntentFilter(android.bluetooth.BluetoothAdapter.ACTION_STATE_CHANGED)
+            f.addAction(android.bluetooth.BluetoothDevice.ACTION_ACL_CONNECTED)
+            f.addAction(android.bluetooth.BluetoothDevice.ACTION_ACL_DISCONNECTED)
+            f.addAction(android.bluetooth.BluetoothDevice.ACTION_BOND_STATE_CHANGED)
+            act.registerReceiver(btEvents, f)
+            btListening = true
+        }
     }
 
     /** Возврат из системного экрана локации: право могли выдать, локацию включить. */
@@ -120,6 +146,13 @@ class SetNetScreen(act: EinkActivity) : Screen(act) {
     }
 
     override fun onDetachedFromWindow() {
+        if (btListening) {
+            try {
+                act.unregisterReceiver(btEvents)
+            } catch (ignored: IllegalArgumentException) {
+            }
+            btListening = false
+        }
         panel.detach()
         status.detach()
         super.onDetachedFromWindow()

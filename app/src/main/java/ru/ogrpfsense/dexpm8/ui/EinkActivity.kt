@@ -90,6 +90,9 @@ class EinkActivity : Activity() {
         /** B72 «Раскладки клавиатуры» — настройки ввода; двери — B41 и B60. */
         const val SCR_SET_LAYOUTS = 36
 
+        /** B74 «Bluetooth-устройства» — сопряжённые и доступные; дверь — строка на B38. */
+        const val SCR_SET_BT = 37
+
 
         private const val REQ_STORAGE = 1
         private const val REQ_WRITE_SETTINGS = 2
@@ -968,7 +971,7 @@ class EinkActivity : Activity() {
                 return
             }
             if (sc != "wifi" && sc != "updates" && sc != "licenses" && sc != "zone" &&
-                sc != "layouts" && sc != "net") return
+                sc != "layouts" && sc != "net" && sc != "bt") return
             intent.removeExtra("screen")
             Trace.step("debug: screen $sc")
             val id = when (sc) {
@@ -977,6 +980,7 @@ class EinkActivity : Activity() {
                 "zone" -> SCR_SET_ZONE
                 "layouts" -> SCR_SET_LAYOUTS
                 "net" -> SCR_SET_NET
+                "bt" -> SCR_SET_BT
                 else -> SCR_WIFI
             }
             if (stack.isNotEmpty() && stack[stack.size - 1] == id) changeTo(id)
@@ -1352,6 +1356,7 @@ class EinkActivity : Activity() {
             SCR_SET_LICENSES -> SetLicensesScreen(this)
             SCR_SET_ZONE -> SetTimeZoneScreen(this)
             SCR_SET_LAYOUTS -> SetLayoutScreen(this)
+            SCR_SET_BT -> SetBtScreen(this)
             SCR_FIRST_LANG -> FirstLangScreen(this)
             SCR_FIRST_WIFI -> FirstWifiScreen(this)
             SCR_FIRST_PERM -> FirstPermScreen(this)
