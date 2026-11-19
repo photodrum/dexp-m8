@@ -7,11 +7,13 @@
 
 ## Старт задачи
 
-1. **Ровно один** `run_commands` на ответ: терминал один на чат, второй параллельный вызов теряет
-   вывод. Несколько команд — массивом внутри одного вызова.
-   Act: `GIT_ASKPASS=$PWD/tools/git-askpass.sh GIT_TERMINAL_PROMPT=0 git pull --ff-only; git status -sb;
-   git config user.name; sed -n '12,$p' docs/CONTEXT.md; grep -n '^## ' docs/DEVLOG.md | head -2`
+1. **Ровно один** `run_commands` на ответ, вывод — в файл, читать его `read_files`: терминал один
+   на чат и теряет вывод даже у одиночной команды («completion could not be observed»).
+   Act: `{ GIT_ASKPASS=$PWD/tools/git-askpass.sh GIT_TERMINAL_PROMPT=0 git pull --ff-only;
+   git status -sb; git config user.name; sed -n '12,$p' docs/CONTEXT.md; grep -n '^## '
+   docs/DEVLOG.md | head -2; } > /tmp/start.log 2>&1`, затем `read_files` `/tmp/start.log`.
    Plan: то же без `git pull` (правки и слияние запрещены; при сильном расхождении — `git fetch`).
+   Вывод потерян — команду не повторять, читать лог.
    Не прошло, есть незакоммиченное, `user.name` ≠ `denisle` — стоп, показать вывод, не сливать.
 2. «СЛЕДУЮЩИЙ ШАГ» — `docs/CONTEXT.md` (в п. 1 уже прочитан с 12-й строки — шаблон первого
    сообщения выше не нужен). `docs/ROADMAP.md` не целиком: `grep -nE '^(## |[0-9]+\.)'
@@ -39,6 +41,9 @@
   сразу в `docs/archive/DEVLOG-<дата>-<пункт>.md`, не больше ~5 записей, в ROADMAP и CONTEXT — одна
   строка со ссылкой; грабли окружения — сразу в `BUILD.md`; пункт закрыт — «подробно» из ROADMAP и
   записи DEVLOG сразу в `docs/archive/`.
+- Бюджет перед коммитом документов: `wc -c docs/CONTEXT.md` ≤ 3,5 КБ, `grep -c '^## '
+  docs/DEVLOG.md` ≤ 5, `docs/ROADMAP.md` ≤ 12 КБ. Превышение — сначала архив, потом коммит.
+  «## СЛЕДУЮЩИЙ ШАГ» в CONTEXT — строго 12-я строка. Закрытое замечание сразу убрать из CONTEXT.
 - `docs/archive/` и `third_party/` — в `.clineignore`: нужен файл (по ссылке или движок) —
   закомментировать строку, после работы вернуть.
 - Код — строго по `docs/ARCHITECTURE.md` (палитра G0–G15, без прозрачности, анимаций и скролла,
@@ -48,7 +53,8 @@
 - Коммит: `<пункт или раздел>: что сделано кратко`, по-русски, без точки
   (`R2.5б: рамка «Вручную» ставится касанием`, `BUILD: грабля — …`). Один шаг — один коммит.
 - Ответы и комментарии в коде — по-русски. Даты — по `date`.
-- Долгие команды — `> /tmp/x.log 2>&1`, затем читать файл. `JAVA_OPTS` скрипты ставят сами.
+- Команды — `> /tmp/<имя>.log 2>&1`, затем `read_files` (см. п. 1). `JAVA_OPTS` скрипты ставят сами.
+  Многострочное и с кавычками — скриптом в `/tmp/*.sh` через редактор, в терминал — `bash /tmp/x.sh`.
 - Gradle — `~/.local/gradle-8.7/bin/gradle` (в PATH нет). Под `denisle`, не root. Токен git —
   `~/.config/dexp-m8/git-push-token`. git с русским текстом (`log`, `show`, `diff`) — только с
   `--no-pager`, иначе терминал отдаёт мусор.
