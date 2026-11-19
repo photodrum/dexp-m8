@@ -27,10 +27,12 @@ import ru.ogrpfsense.dexpm8.R
  * строка «Обновления» в «ОБСЛУЖИВАНИИ». Поэтому состояние проверки (`checking`, `check`,
  * `UpdateCheck`) с этого экрана убрано: строка «Последняя проверка — …» приходит из `Prefs`.
  *
- * Строка версии: «Оболочка 0.2.0 · сборка 2, автор Денис Лампусов» — имя автора вписано по
+ * Строка версии: «Оболочка 0.3.0 · сборка 3, автор Денис Лампусов» — имя автора вписано по
  * просьбе человека, отдельной строки «Автор» в панели устройства нет.
  *
- * Остальной ввод: «Назад» и полоса «Сбросить настройки оболочки» (лицензии — позже, B75).
+ * Остальной ввод: «Назад» и полоса «Сбросить настройки оболочки». Полоса открывает диалог B56
+ * ([ResetDialog]) — подтверждение с «Отменой» и «Сбросить» (решение 2026-11-19; до этого второе
+ * нажатие по полосе сбрасывало настройки без вопроса). Лицензии — позже, B75.
  */
 class SetAboutScreen(act: EinkActivity) : Screen(act) {
 
@@ -40,17 +42,26 @@ class SetAboutScreen(act: EinkActivity) : Screen(act) {
     private val NAME = act.getString(R.string.app_name)
 
     private var version = ""
+    /** «Оболочка 0.3.0» — подзаголовок диалога B56 (в макете «Оболочка 0.1»). */
+    private var short = ""
     private var android = "Android ${Build.VERSION.RELEASE}"
     private var cpu = "Rockchip PX30"
     private var mem = ""
-    private var reset = 0   // 0 — обычно, 1 — ждём второго нажатия, 2 — сброшено
+    /** Диалог B56 «Сбросить настройки?» открыт. */
+    private var resetOpen = false
+    private val resetDialog = ResetDialog(ink, icons)
+
+    /** Пока диалог открыт, шторка B5 не открывается: касание в зоне шторки должно уходить диалогу. */
+    override val shadeZone: Float get() = if (resetOpen) 0f else ShadeScreen.ZONE_SHELL
 
     /** Строка «Последняя проверка обновлений — …»; пусто — ещё не проверяли. */
     private var check = ""
 
     override fun render(c: Canvas) {
+        // B56: под диалогом «Сбросить настройки?» экран темнеет, как под шторкой и листами
+        // (замечание 15). Статус-бар и диалог не темнеют — их рисуем после dimEnd.
+        val dim = if (resetOpen) dimBegin(c) else -1
         ink.rect(c, 0f, 0f, W, H, T.BG)
-        status.draw(c)
         kit.header(c, "Об устройстве", "Версия оболочки и сведения")
 
         kit.panel(c, 250f, 810f)
@@ -79,11 +90,7 @@ class SetAboutScreen(act: EinkActivity) : Screen(act) {
         kit.key(c, 88f, 1343.5f)
         icons.draw(c, "refresh", 130.5f, 1384.2f, 32.9f, 36.9f)
         kit.title(c, "Сбросить настройки оболочки", 1353f, 237f)
-        kit.desc(c, when (reset) {
-            1 -> "Нажмите ещё раз — сбросить"
-            2 -> "Сброшено"
-            else -> "Книги и заметки останутся"
-        }, 1406f, 237f)
+        kit.desc(c, "Книги и заметки останутся", 1406f, 237f)
         icons.draw(c, "next@11x23.8", 1302f, 1390.5f, 11f, 23.8f)
         kit.divider(c, 1491f, 237f, 1076f)
 
@@ -103,6 +110,10 @@ class SetAboutScreen(act: EinkActivity) : Screen(act) {
         ink.convexDark(c, 41f, 1693f, 1321f, 142f, 66f)
         icons.draw(c, "cup", 92.2f, 1734.2f, 60f, 60f)
         ink.text(c, "Автор", 185f, T.base(1735.7f, T.TS_ACTION, 1.25f), T.TS_ACTION, 700, T.G15)
+
+        if (dim >= 0) dimEnd(c, dim)
+        status.draw(c)
+        if (resetOpen) resetDialog.draw(c)
     }
 
     /** Строка сведений: название слева (42/700), значение справа до 1316 (34/600 G4), разделитель на y + 86. */
@@ -120,8 +131,9 @@ class SetAboutScreen(act: EinkActivity) : Screen(act) {
         }
         val name = info?.versionName ?: ""
         val code = if (info == null) 0L else if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
-        // «Оболочка 0.2.0 · сборка 2, автор Денис Лампусов» — имя автора по просьбе человека.
-        version = "Оболочка " + name + (if (code > 0L) " · сборка $code" else "") + ", автор " + AUTHOR
+        // «Оболочка 0.3.0 · сборка 3, автор Денис Лампусов» — имя автора по просьбе человека.
+        short = "Оболочка " + name
+        version = short + (if (code > 0L) " · сборка $code" else "") + ", автор " + AUTHOR
         android = "Android ${Build.VERSION.RELEASE}"
         cpu = "Rockchip PX30 · " + cores(Runtime.getRuntime().availableProcessors())
 
@@ -175,37 +187,56 @@ class SetAboutScreen(act: EinkActivity) : Screen(act) {
     }
 
     override fun onUp(x: Float, y: Float) {
+        // Открыт диалог B56 — касание получает только он, мимо диалога ничего не нажимается.
+        if (resetOpen) {
+            when (resetDialog.hit(x, y)) {
+                ResetDialog.ACT_RESET -> {
+                    // Экран тут же пересоздаётся (`recreate`), перерисовывать его незачем.
+                    resetOpen = false
+                    Trace.step("B56: reset shell")
+                    act.resetShell()
+                }
+                ResetDialog.ACT_CANCEL -> setReset(false)
+            }
+            return
+        }
         if (kit.isBack(x, y)) {
             act.pop()
             return
         }
         if (y >= 1693f && y <= 1835f) {
             // Нижняя кнопка «Автор» (решение 2026-11-18): QR-код на Бусти.
-            reset = 0
             act.go(EinkActivity.SCR_SET_AUTHOR)
             return
         }
         if (y >= 1320f && y <= 1490f) {
-            // Сброс — со вторым нажатием вместо диалога: сбрасываются только настройки оболочки.
-            if (reset == 1) {
-                act.prefs.reset()
-                reset = 2
-            } else {
-                reset = 1
-            }
-            redraw()
+            // Сброс — с подтверждением (B56, решение 2026-11-19): раньше второе нажатие по полосе
+            // сбрасывало настройки без вопроса, случайное касание на E-Ink стоило настроек.
+            resetDialog.open(short)
+            setReset(true)
             return
         }
         if (y >= 1491f && y <= 1660f) {
             // Строка B76 «Обновления»: проверка и установка живут на своём экране.
-            reset = 0
             act.go(EinkActivity.SCR_SET_UPDATES)
-            return
         }
-        if (reset == 1) {
-            reset = 0
-            redraw()
+    }
+
+    /** Открыть/закрыть диалог B56: большой кадр в «Быстром» — полной перерисовкой. */
+    private fun setReset(on: Boolean) {
+        if (resetOpen == on) return
+        resetOpen = on
+        act.bigFrame("about reset $on")
+        redraw()
+    }
+
+    /** «Назад» при открытом диалоге закрывает его, а не уводит с B43. */
+    override fun backPressed(): Boolean {
+        if (resetOpen) {
+            setReset(false)
+            return true
         }
+        return false
     }
 
     override fun onAttachedToWindow() {
