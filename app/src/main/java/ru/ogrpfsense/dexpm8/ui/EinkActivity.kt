@@ -968,7 +968,7 @@ class EinkActivity : Activity() {
                 return
             }
             if (sc != "wifi" && sc != "updates" && sc != "licenses" && sc != "zone" &&
-                sc != "layouts") return
+                sc != "layouts" && sc != "net") return
             intent.removeExtra("screen")
             Trace.step("debug: screen $sc")
             val id = when (sc) {
@@ -976,6 +976,7 @@ class EinkActivity : Activity() {
                 "licenses" -> SCR_SET_LICENSES
                 "zone" -> SCR_SET_ZONE
                 "layouts" -> SCR_SET_LAYOUTS
+                "net" -> SCR_SET_NET
                 else -> SCR_WIFI
             }
             if (stack.isNotEmpty() && stack[stack.size - 1] == id) changeTo(id)
