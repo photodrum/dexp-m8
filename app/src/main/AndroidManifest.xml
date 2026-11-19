@@ -17,6 +17,11 @@
     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <!-- Список сетей рядом (B61/B38, замечание 22): на Android 8.1 WifiManager.getScanResults()
+         без этого права и без включённого определения местоположения отдаёт пустой список.
+         Право опасное — спрашивается на первом шаге, где нужен список (EinkActivity.requestLocation).
+         Ничего не читаем: местоположение нужно только системе для сканирования. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
 

@@ -30,16 +30,19 @@ class FirstRunKit(private val ink: Ink, private val icons: Icons) {
         progress(c, step)
     }
 
-    /** «Шаг 3 из 4»; на B63 — «Готово» (пятый борд мастера, шага у него нет). */
+    /** «Шаг 3 из 4»; на B63 ([DONE]) — «Готово» (пятый борд мастера, шага у него нет). */
     fun stepLabel(step: Int): String = if (step in 1..STEPS) "Шаг $step из $STEPS" else "Готово"
 
     /**
      * Полоса прогресса 51.2,392. Заливка — 1296.1·step/4: на B60 (1/4) в макете 324, на B61 и B8
      * (2/4) 648.1. На B8 макет оставил половину, хотя это шаг 3 — рисуем 3/4 (вопрос дизайну).
+     * [DONE] (B63 «Готово») — все четыре шага пройдены, полоса полная, как в макете (1296.1).
+     * Было: B63 передавал 0, и заливка пропадала (замечание человека 2026-11-19).
      */
     fun progress(c: Canvas, step: Int) {
         ink.inset(c, 51.2f, 392f, 1301.6f, 29.2f, 14.625f, T.G11)
-        val w = 1296.1f * step.coerceIn(0, STEPS) / STEPS
+        val done = if (step == DONE) STEPS else step.coerceIn(0, STEPS)
+        val w = 1296.1f * done / STEPS
         if (w >= 19.2f) ink.roundRect(c, 53.9f, 397.5f, w, 19.2f, 9.59766f, T.G3)
     }
 
@@ -77,5 +80,8 @@ class FirstRunKit(private val ink: Ink, private val icons: Icons) {
     companion object {
         /** Шагов в мастере: B60 язык, B61 Wi-Fi, B8 разрешения, B62 чтение. */
         const val STEPS = 4
+
+        /** «Шаг» экрана B63 «Готово»: подпись «Готово», полоса полная. */
+        const val DONE = 0
     }
 }

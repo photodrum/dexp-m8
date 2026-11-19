@@ -45,6 +45,20 @@ class Keyboard(private val ink: Ink) {
         }
     }
 
+    /**
+     * Раскладка при открытии: [LANG_RU] или [LANG_EN]. По умолчанию русская; английскую ставит
+     * лист пароля Wi-Fi (B47). Цифры и регистр сбрасываются.
+     */
+    fun setLang(l: Int) {
+        val v = if (l == LANG_EN) 1 else 0
+        if (v != lang || sym || shift) {
+            lang = v
+            sym = false
+            shift = false
+            dirty = true
+        }
+    }
+
     /** Нажата клавиша: текст для вставки или null (смена раскладки, «←», действие). */
     fun press(k: Key): String? {
         when (k.kind) {
@@ -144,6 +158,10 @@ class Keyboard(private val ink: Ink) {
         const val K_LANG = 4
         const val K_SPACE = 5
         const val K_DONE = 6
+
+        /** Раскладки для [setLang]. */
+        const val LANG_RU = 0
+        const val LANG_EN = 1
 
         /** Верх клавиатуры; высота — до низа экрана (1410 + 442). */
         const val TOP = 1410f

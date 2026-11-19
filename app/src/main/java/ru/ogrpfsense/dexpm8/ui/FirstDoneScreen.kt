@@ -62,7 +62,7 @@ class FirstDoneScreen(act: EinkActivity) : Screen(act) {
     override fun render(c: Canvas) {
         ink.rect(c, 0f, 0f, W, H, T.BG)
         status.draw(c)
-        first.header(c, 0, "Можно читать",
+        first.header(c, FirstRunKit.DONE, "Можно читать",
             "Настройка завершена. Всё, что выбрано, меняется в «Настройках» в любой момент.")
 
         kit.panel(c, 480f, 810f)

@@ -94,6 +94,12 @@ class EinkActivity : Activity() {
         private const val REQ_INSTALL = 4
 
         /**
+         * Право на местоположение — только ради списка сетей Wi-Fi (замечание 22): на 8.1
+         * `getScanResults()` без него возвращает пусто. Одно право, без точного.
+         */
+        private const val REQ_LOCATION = 5
+
+        /**
          * Сколько держать белый кадр после системного диалога. Полное обновление Carta —
          * ~0,45 с; если снять кадр раньше, контроллер может склеить его со следующим.
          * Подбирается на книге (шаг 3.10).
@@ -179,6 +185,10 @@ class EinkActivity : Activity() {
     private var storageAsking = false
     private val storageWaiters = ArrayList<(Boolean) -> Unit>(2)
     private val storageListeners = ArrayList<(Boolean) -> Unit>(2)
+
+    // Право на местоположение — ради списка сетей Wi-Fi (замечание 22).
+    private var locationAsking = false
+    private val locationWaiters = ArrayList<(Boolean) -> Unit>(2)
 
     // Очистка E-Ink после системного диалога (см. [cleanRefresh]).
     private var cleanOnFocus = false
@@ -345,32 +355,86 @@ class EinkActivity : Activity() {
         storageListeners.remove(l)
     }
 
+    // ------------------------------------------------------------ местоположение (Wi-Fi, замечание 22)
+
+    /** Выдано ли право на местоположение (нужно списку сетей Wi-Fi на 8.1). */
+    fun hasLocation(): Boolean =
+        checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+
+    /**
+     * Запросить право на местоположение. [done] — в UI-потоке с фактическим итогом; при уже
+     * выданном праве вызывается сразу. Повторный вызов, пока диалог открыт, только добавляет
+     * [done] в очередь — как у памяти.
+     */
+    fun requestLocation(done: ((Boolean) -> Unit)? = null) {
+        if (hasLocation()) {
+            done?.invoke(true)
+            return
+        }
+        if (done != null) locationWaiters.add(done)
+        if (locationAsking) return
+        locationAsking = true
+        Trace.step("location: request")
+        requestPermissions(arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION), REQ_LOCATION)
+    }
+
+    /**
+     * Системный экран «Местоположение»: без включённого определения местоположения список сетей
+     * всё равно пуст. Очистку после возврата заказывает экран ([markCleanOnFocus]).
+     */
+    fun openLocationSettings(): Boolean = try {
+        startActivity(android.content.Intent(android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+        cleanOnFocus = true
+        true
+    } catch (t: Throwable) {
+        Trace.step("location: no screen ${t.javaClass.simpleName}")
+        false
+    }
+
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<out String>,
         grantResults: IntArray,
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQ_LOCATION) {
+            locationAsking = false
+            // grantResults пуст, если диалог прервали; верим фактическому состоянию.
+            val ok = hasLocation()
+            Trace.step("location: ${if (ok) "granted" else "denied"}")
+            cleanAfterDialog()
+            val waiters = ArrayList(locationWaiters)
+            locationWaiters.clear()
+            for (w in waiters) w(ok)
+            return
+        }
         if (requestCode != REQ_STORAGE) return
         storageAsking = false
         // grantResults пуст, если диалог прервали; верим фактическому состоянию.
         val ok = hasStorage()
         Trace.step("storage: ${if (ok) "granted" else "denied"}")
-        // Ответ приходит после закрытия диалога. На холодном старте окно до диалога фокуса
-        // не получало, onWindowFocusChanged(false) не было и cleanOnFocus не ставился —
-        // поэтому очистку заказываем и здесь (замечание 1). Если фокус уже вернулся и
-        // очистка по нему прошла (cleanedWhileAsking) — второй белый кадр не нужен.
+        cleanAfterDialog()
+        if (ok != storageOk) storageChanged(ok)
+        if (storageWaiters.isEmpty()) return
+        val waiters = ArrayList(storageWaiters)
+        storageWaiters.clear()
+        for (w in waiters) w(ok)
+    }
+
+    /**
+     * Очистка кадра после системного диалога. Ответ приходит после закрытия диалога, а на холодном
+     * старте окно до диалога фокуса не получало, `onWindowFocusChanged(false)` не было и
+     * `cleanOnFocus` не ставился — поэтому заказываем и здесь (замечание 1). Если фокус уже
+     * вернулся и очистка по нему прошла (`cleanedWhileAsking`) — второй белый кадр не нужен.
+     */
+    private fun cleanAfterDialog() {
         when {
             cleanedWhileAsking -> cleanedWhileAsking = false
             cleanOnFocus -> {}
             hasWindowFocus() -> cleanRefresh()
             else -> cleanOnFocus = true
         }
-        if (ok != storageOk) storageChanged(ok)
-        if (storageWaiters.isEmpty()) return
-        val waiters = ArrayList(storageWaiters)
-        storageWaiters.clear()
-        for (w in waiters) w(ok)
     }
 
     // ------------------------------------------------------------ особые права (шаг 4.6)
@@ -891,6 +955,15 @@ class EinkActivity : Activity() {
                 changeTo(SCR_FIRST_LANG)
                 return
             }
+            // `first2` — сразу шаг 2 мастера (B61, сети Wi-Fi и лист B47), за ним шаг 1 в стеке.
+            if (sc == "first2") {
+                intent.removeExtra("screen")
+                Trace.step("debug: screen first2")
+                stack.clear()
+                stack.add(SCR_FIRST_LANG)
+                go(SCR_FIRST_WIFI)
+                return
+            }
             if (sc != "wifi" && sc != "updates" && sc != "licenses" && sc != "zone") return
             intent.removeExtra("screen")
             Trace.step("debug: screen $sc")
@@ -1276,6 +1349,7 @@ class EinkActivity : Activity() {
         batteryUnwatch()
         storageWaiters.clear()
         storageListeners.clear()
+        locationWaiters.clear()
         writeWaiter = null
         adminWaiter = null
         installWaiter = null
