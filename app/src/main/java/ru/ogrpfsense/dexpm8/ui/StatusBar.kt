@@ -1,5 +1,6 @@
 package ru.ogrpfsense.dexpm8.ui
 
+import android.bluetooth.BluetoothAdapter
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -12,13 +13,17 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Общий статус-бар B1/B2: время, Wi-Fi, батарея. Числа — из design/v5/B01.json (группа
+ * Общий статус-бар B1/B2: время, Bluetooth, Wi-Fi, батарея. Числа — из design/v5/B01.json (группа
  * «Статус-бар»); у B2 те же размеры, базовые линии отличаются меньше 1 px (lh 1.2 вместо 1.25).
  *
  * Не View: экран рисует его в своём [render] через [draw] и подключает в
  * onAttachedToWindow / onDetachedFromWindow через [attach] / [detach]. Часы обновляются только
  * при подключении, батарея — по событию системы, и только при смене процента перерисовывает
  * экран (никаких таймеров: на E-Ink каждая перерисовка — мерцание).
+ *
+ * Значок Bluetooth (просьба пользователя 2026-11-19, в макете статус-бара его нет): иконка
+ * `bluetooth` из снимка, высотой как `wifi` (40.2), слева от Wi-Fi с тем же зазором 24.7, что
+ * между Wi-Fi и батареей. Значки прижаты к батарее: Wi-Fi выключен — Bluetooth встаёт на его место.
  *
  * Состояние «заряжается» в макете не нарисовано, поэтому не хранится.
  */
@@ -36,6 +41,9 @@ class StatusBar(
     /** Wi-Fi включён (по последнему событию системы); читает и шторка B5 для клавиши «Сеть». */
     var wifi = true
         private set
+    /** Bluetooth включён (по последнему событию системы). */
+    var bt = false
+        private set
     private var attached = false
 
     private val receiver = object : BroadcastReceiver() {
@@ -45,6 +53,16 @@ class StatusBar(
                 val on = act.sys.wifiOn()
                 if (on != wifi) {
                     wifi = on
+                    if (owner.parent != null) owner.redraw()
+                }
+                return
+            }
+            if (intent.action == BluetoothAdapter.ACTION_STATE_CHANGED) {
+                // Значок — только во включённом состоянии: «включается»/«выключается» не рисуем.
+                val st = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.STATE_OFF)
+                val on = st == BluetoothAdapter.STATE_ON
+                if (on != bt) {
+                    bt = on
                     if (owner.parent != null) owner.redraw()
                 }
                 return
@@ -66,12 +84,14 @@ class StatusBar(
         timeFmt = SimpleDateFormat(pattern, Locale.getDefault())
         clock = timeFmt.format(Date())
         wifi = act.sys.wifiOn()
+        bt = act.sys.btOn()
         if (attached) return
         try {
             // Батарея — липкое событие: onReceive придёт сразу с текущим зарядом.
-            // Wi-Fi — не липкое: начальное состояние взято выше.
+            // Wi-Fi и Bluetooth — не липкие: начальное состояние взято выше.
             val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
             filter.addAction(WifiManager.WIFI_STATE_CHANGED_ACTION)
+            filter.addAction(BluetoothAdapter.ACTION_STATE_CHANGED)
             act.registerReceiver(receiver, filter)
             attached = true
         } catch (ignored: Exception) {
@@ -97,7 +117,13 @@ class StatusBar(
         ink.text(c, clock, X_CLOCK, BASE_CLOCK, T.TS_LABEL, 700, T.G1)
 
         // Wi-Fi (иконка 38.4×40.2). Вид «выключен» в макете не нарисован — пока скрыт.
-        if (wifi) icons.draw(c, "wifi", 1165.4f, 29.2f, 38.4f, 40.2f)
+        if (wifi) icons.draw(c, "wifi", X_WIFI, 29.2f, 38.4f, 40.2f)
+
+        // Bluetooth — слева от Wi-Fi через зазор GAP; Wi-Fi скрыт — на его месте (у батареи).
+        if (bt) {
+            val right = if (wifi) X_WIFI - GAP else X_WIFI + 38.4f
+            icons.draw(c, "bluetooth", right - BT_W, 29.2f, BT_W, 40.2f)
+        }
 
         // Корпус: нижний блик 124.3×43.9, внутренняя тень 121.6×41.1, дно 118.8×35.6 (G11).
         ink.inset(c, BAT_X, BAT_Y + batDy, BAT_W, BAT_H, T.R_BATTERY, batBottom)
@@ -134,5 +160,12 @@ class StatusBar(
         const val FILL_H = 32.9f
         const val R_FILL = 16.453125f
         const val PAD = 6f
+        const val X_WIFI = 1165.4f
+
+        /** Зазор между значками: батарея 1228.5 − правый край Wi-Fi (1165.4 + 38.4). */
+        const val GAP = 24.7f
+
+        /** `bluetooth` 22.1×42 в высоту Wi-Fi 40.2: ширина 22.1·40.2/42. */
+        const val BT_W = 21.15f
     }
 }
