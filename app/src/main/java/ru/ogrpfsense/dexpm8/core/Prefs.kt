@@ -1,6 +1,7 @@
 package ru.ogrpfsense.dexpm8.core
 
 import android.content.Context
+import java.util.Locale
 
 /**
  * Настройки самой оболочки (то, чего нет в системе): `SharedPreferences` «shell».
@@ -156,6 +157,41 @@ class Prefs(ctx: Context) {
     var deleteArchives: Boolean
         get() = sp.getBoolean("delete_archives", true)
         set(v) = sp.edit().putBoolean("delete_archives", v).apply()
+
+    // Плеер (п. 12): B7/B35. Значения переживают перезапуск — как у читалки кегль и поля.
+    /**
+     * Скорость чтения вслух, проценты от обычной: 75, 100, 125, 150, 200 — сетка пресетов
+     * B35 «0,75× … 2×». Хранится целым числом процентов: `MediaPlayer.playbackParams` берёт
+     * множитель, а в базе и подписи удобнее проценты (никакой зависимости от `Float`).
+     */
+    var audioSpeed: Int
+        get() = sp.getInt("audio_speed", 100).coerceIn(Speed.MIN, Speed.MAX)
+        set(v) = sp.edit().putInt("audio_speed", v.coerceIn(Speed.MIN, Speed.MAX)).apply()
+
+    /** «Пропускать паузы» (B35): сокращать долгие паузы между фразами. */
+    var audioSkipPauses: Boolean
+        get() = sp.getBoolean("audio_skip_pauses", false)
+        set(v) = sp.edit().putBoolean("audio_skip_pauses", v).apply()
+
+    /**
+     * Таймер сна (B35): сколько минут играть, затем пауза. 0 — выключен; [SLEEP_CHAPTER] —
+     * до конца главы. Таймер одноразовый: сработал — вернулся в 0.
+     */
+    var audioSleep: Int
+        get() = sp.getInt("audio_sleep", 0)
+        set(v) = sp.edit().putInt("audio_sleep", v).apply()
+
+    /** Множители скорости: проценты и подписи пресетов B35 (порядок — слева направо). */
+    object Speed {
+        const val MIN = 50
+        const val MAX = 300
+        val PRESETS = intArrayOf(75, 100, 125, 150, 200)
+        val LABELS = arrayOf("0,75×", "1×", "1,25×", "1,5×", "2×")
+
+        /** Подпись скорости для карточки B7: «1,25×» (запятая — как в макете). */
+        fun label(pct: Int): String =
+            String.format(Locale.ROOT, "%.2f", pct / 100.0).trimEnd('0').trimEnd('.').replace('.', ',') + "×"
+    }
 
     // B2/B22 «Библиотека»: сортировка и фильтры
     /** Поле сортировки — `LibraryDb.SORT_*`. */

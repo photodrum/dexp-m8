@@ -181,7 +181,7 @@ class HomeScreen(act: EinkActivity) : Screen(act) {
 
     private val tiles = arrayOf(
         Tile("Библиотека", "", "library", 41.1f, 1072.2f, EinkActivity.SCR_LIBRARY),
-        Tile("Аудиокниги", "", "audio", 721.2f, 1072.2f, EinkActivity.SCR_LIBRARY),
+        Tile("Аудиокниги", "", "audio", 721.2f, 1072.2f, EinkActivity.SCR_AUDIO_LIST),
         Tile("Приложения", "", "apps", 41.1f, 1437.8f, EinkActivity.SCR_APPS),
         Tile("Настройки", "Экран, сеть, сон", "settings", 721.2f, 1437.8f, EinkActivity.SCR_SETTINGS)
     )
@@ -194,11 +194,25 @@ class HomeScreen(act: EinkActivity) : Screen(act) {
         try {
             book = act.db.lastOpened()
             tiles[0].count = booksWord(act.db.count())
+            // «Аудиокниги» — число аудиокниг (п. 12); своего приложения у плитки нет.
+            tiles[1].count = audioWord(act.db.audioCount())
             tiles[2].count = appsWord(AppsScreen.count(act))
             refreshPinned()
         } catch (t: Throwable) {
             Trace.step("home refresh FAIL: ${t.javaClass.simpleName}: ${t.message}")
         }
+    }
+
+    private fun audioWord(n: Int): String {
+        if (n <= 0) return ""
+        val m100 = n % 100
+        val m10 = n % 10
+        val w = if (m100 in 11..14) "аудиокниг" else when (m10) {
+            1 -> "аудиокнига"
+            2, 3, 4 -> "аудиокниги"
+            else -> "аудиокниг"
+        }
+        return "$n $w"
     }
     /** «Закрепить на главном» (B36): вторая плитка — выбранное приложение вместо «Аудиокниг». */
     private var pinned: AppEntry? = null

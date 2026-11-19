@@ -8,6 +8,8 @@ import android.os.Handler
 import android.os.Looper
 import android.view.View
 import android.view.WindowManager
+import ru.ogrpfsense.dexpm8.core.AudioBooks
+import ru.ogrpfsense.dexpm8.core.AudioPlayer
 import ru.ogrpfsense.dexpm8.core.Downloads
 import ru.ogrpfsense.dexpm8.core.LibraryDb
 import ru.ogrpfsense.dexpm8.core.Opds
@@ -93,6 +95,11 @@ class EinkActivity : Activity() {
         /** B74 «Bluetooth-устройства» — сопряжённые и доступные; дверь — строка на B38. */
         const val SCR_SET_BT = 37
 
+        /** Плеер (п. 12): B33 список аудиокниг, B7 плеер, B34 главы. */
+        const val SCR_AUDIO_LIST = 38
+        const val SCR_AUDIO = 39
+        const val SCR_AUDIO_CHAPTERS = 40
+
 
         private const val REQ_STORAGE = 1
         private const val REQ_WRITE_SETTINGS = 2
@@ -165,6 +172,18 @@ class EinkActivity : Activity() {
 
     /** Очередь загрузок каталогов (B18, счётчик на B14) — одна на приложение. */
     val downloads: Downloads by lazy { Downloads(this, db) }
+
+    /** Плеер (п. 12) — один на приложение: уход с B7 на B33 не останавливает звук. */
+    val audio: AudioPlayer by lazy { AudioPlayer(db) }
+
+    /** Сканер аудиокниг (п. 12): папки Audio и Books. */
+    val audioScan: AudioBooks by lazy { AudioBooks(this, db) }
+
+    /** Аудиокнига для B7/B34 (`_id`); ставится перед `go(SCR_AUDIO)`. */
+    var audioId = -1L
+
+    /** Запрос поиска для аудиокниг: непустой — B21 ищет по аудио, а не по книгам. */
+    var audioQuery: String? = null
 
     /** Системные настройки (B37–B42, B5) и свои настройки оболочки. */
     val sys: Sys by lazy { Sys(this) }
@@ -1357,6 +1376,9 @@ class EinkActivity : Activity() {
             SCR_SET_ZONE -> SetTimeZoneScreen(this)
             SCR_SET_LAYOUTS -> SetLayoutScreen(this)
             SCR_SET_BT -> SetBtScreen(this)
+            SCR_AUDIO_LIST -> AudioListScreen(this)
+            SCR_AUDIO -> AudioScreen(this)
+            SCR_AUDIO_CHAPTERS -> AudioChaptersScreen(this)
             SCR_FIRST_LANG -> FirstLangScreen(this)
             SCR_FIRST_WIFI -> FirstWifiScreen(this)
             SCR_FIRST_PERM -> FirstPermScreen(this)

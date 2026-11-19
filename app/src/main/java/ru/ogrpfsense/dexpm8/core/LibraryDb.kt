@@ -100,6 +100,62 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         createShelves(db)
         createCatalogs(db)
         createBookmarks(db)
+        createAudio(db)
+    }
+
+    /**
+     * Версия 12: аудиокниги (п. 12, B7/B33–B35).
+     *
+     * Аудиокнига — это не файл, а **папка** (`folder`), поэтому ключ книги — путь папки:
+     * у MP3-книги главы лежат отдельными файлами, и без папки они не собрались бы в одно
+     * целое. Одиночный `.m4b` — тоже «папка» (папка, где он лежит), иначе две книги в одной
+     * папке слились бы в одну.
+     *
+     * `pos` — место в книге в миллисекундах от её начала (не от начала файла): при переходе
+     * от главы к главе экран сам переключает файл, а прогресс книги остаётся одним числом.
+     * `files` и `duration` — снимок разбора: сколько файлов и сколько всего звука.
+     *
+     * `audio_files` — файлы книги по порядку `ord`; `dur` в мс, `name` — имя файла без
+     * расширения (из него делается название главы, когда встроенной разметки нет).
+     * `audio_chapters` — встроенные главы (`chpl` у M4B); пусто — главы берутся из файлов.
+     */
+    private fun createAudio(db: SQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE audio (" +
+                "_id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                "folder TEXT NOT NULL UNIQUE," +
+                "title TEXT NOT NULL," +
+                "title_sort TEXT NOT NULL," +
+                "author TEXT," +
+                "author_sort TEXT," +
+                "files INTEGER NOT NULL," +
+                "duration INTEGER NOT NULL," +
+                "size INTEGER NOT NULL," +
+                "pos INTEGER NOT NULL DEFAULT 0," +
+                "added INTEGER NOT NULL," +
+                "opened INTEGER NOT NULL DEFAULT 0)"
+        )
+        db.execSQL("CREATE INDEX audio_opened ON audio (opened DESC, title_sort)")
+        db.execSQL(
+            "CREATE TABLE audio_files (" +
+                "path TEXT PRIMARY KEY," +
+                "book_id INTEGER NOT NULL," +
+                "ord INTEGER NOT NULL," +
+                "dur INTEGER NOT NULL," +
+                "size INTEGER NOT NULL," +
+                "mtime INTEGER NOT NULL," +
+                "name TEXT NOT NULL)"
+        )
+        db.execSQL("CREATE INDEX audio_files_book ON audio_files (book_id, ord)")
+        db.execSQL(
+            "CREATE TABLE audio_chapters (" +
+                "book_id INTEGER NOT NULL," +
+                "ord INTEGER NOT NULL," +
+                "title TEXT NOT NULL," +
+                "start INTEGER NOT NULL," +
+                "dur INTEGER NOT NULL," +
+                "PRIMARY KEY (book_id, ord))"
+        )
     }
 
     private fun createShelves(db: SQLiteDatabase) {
@@ -225,6 +281,8 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
                 "SELECT _id, book_id, pos, page, chapter, text, created, 0 FROM bookmarks_old")
             db.execSQL("DROP TABLE bookmarks_old")
         }
+        // Версия 12: аудиокниги (п. 12) — три новые таблицы, книги и полки не трогаем.
+        if (oldVersion < 12) createAudio(db)
     }
 
     /**
@@ -940,16 +998,288 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         view = if (c.isNull(16)) null else c.getString(16),
     )
 
+    // --------------------------------------------------------- аудиокниги (п. 12)
+
+    /**
+     * Аудиокнига для списков B33 и плеера B7.
+     *
+     * [pos] — место в книге в мс от её начала, 0 — не слушали. [opened] — когда последний раз
+     * играла (мс, 0 — никогда). [percent] считается от [duration] и не хранится: сумма глав
+     * может измениться, если файлы заменили.
+     */
+    class Audio(
+        val id: Long,
+        val folder: String,
+        val title: String,
+        val author: String?,
+        val files: Int,
+        val duration: Long,
+        val size: Long,
+        val pos: Long,
+        val added: Long,
+        val opened: Long,
+    ) {
+        /** Прогресс книги 0…100. Ноль длительности — 0 (книга ещё не разобрана). */
+        val percent: Int
+            get() = if (duration <= 0L) 0 else (pos * 100 / duration).toInt().coerceIn(0, 100)
+
+        /** Прослушана целиком: последние 5 % книги считаются концом (как у читалки). */
+        val finished: Boolean
+            get() = duration > 0L && percent >= 95
+    }
+
+    /** Файл аудиокниги: [dur] и [size] — из разбора, [name] — имя без расширения. */
+    class AudioFile(
+        val path: String,
+        val ord: Int,
+        val dur: Long,
+        val size: Long,
+        val mtime: Long,
+        val name: String,
+    )
+
+    /** Встроенная глава M4B: [start] и [dur] в мс от начала файла. */
+    class Chapter(val ord: Int, val title: String, val start: Long, val dur: Long)
+
+    /** Итог разбора папки: то, что сканер пишет в `audio`, `audio_files` и `audio_chapters`. */
+    class AudioInfo(
+        val folder: String,
+        val title: String,
+        val author: String?,
+        val files: List<AudioFile>,
+        /** Главы книги со смещением от её начала, мс; null — глав нет, считать по файлам. */
+        val chapters: List<Chapter>?,
+    ) {
+        val duration: Long get() = files.sumOf { it.dur }
+        val size: Long get() = files.sumOf { it.size }
+    }
+
+    /**
+     * Аудиокниги для B33: сначала та, что играла последней ([Audio.opened]), затем остальные
+     * по «последнему прослушиванию», затем новые по названию. Строк немного (папки `Audio`
+     * и `Books`), поэтому без пагинации в SQL — экран режет сам.
+     */
+    fun audioBooks(): ArrayList<Audio> {
+        val out = ArrayList<Audio>(8)
+        readableDatabase.rawQuery(
+            "SELECT _id, folder, title, author, files, duration, size, pos, added, opened " +
+                "FROM audio ORDER BY opened DESC, added DESC, title_sort, _id", null,
+        ).use { c -> while (c.moveToNext()) out.add(audioRow(c)) }
+        return out
+    }
+
+    /**
+     * Поиск по аудиокнигам (п. 12): каждое слово запроса встречается в названии или авторе
+     * (ключи [sortKey], регистр и «ё» не важны). Пустой запрос — пустой список.
+     */
+    fun searchAudio(q: String, limit: Int): ArrayList<Audio> {
+        val out = ArrayList<Audio>(limit)
+        val args = ArrayList<String>()
+        val where = where(q, arrayOf("title_sort", "author_sort"), args) ?: return out
+        args.add(limit.toString())
+        readableDatabase.rawQuery(
+            "SELECT _id, folder, title, author, files, duration, size, pos, added, opened " +
+                "FROM audio WHERE $where ORDER BY title_sort, _id LIMIT ?", args.toTypedArray(),
+        ).use { c -> while (c.moveToNext()) out.add(audioRow(c)) }
+        return out
+    }
+
+    /** Аудиокнига по `_id`; null — строки нет (база обновилась, пока экран держал номер). */
+    fun audioBook(id: Long): Audio? =
+        readableDatabase.rawQuery(
+            "SELECT _id, folder, title, author, files, duration, size, pos, added, opened " +
+                "FROM audio WHERE _id = ?", arrayOf(id.toString()),
+        ).use { if (it.moveToFirst()) audioRow(it) else null }
+
+    /** Аудиокнига по папке: так её находит сканер, не зная `_id`. */
+    fun audioBookAt(folder: String): Audio? =
+        readableDatabase.rawQuery(
+            "SELECT _id, folder, title, author, files, duration, size, pos, added, opened " +
+                "FROM audio WHERE folder = ?", arrayOf(folder),
+        ).use { if (it.moveToFirst()) audioRow(it) else null }
+
+    /**
+     * Путь → размер и mtime известных аудиофайлов (`audio_files`) — сканер сверяет и решает,
+     * разбирать ли книгу заново (как [stamps] для книг).
+     */
+    fun audioStamps(): HashMap<String, Stamp> {
+        val m = HashMap<String, Stamp>(256)
+        readableDatabase.rawQuery("SELECT path, size, mtime FROM audio_files", null).use { c ->
+            while (c.moveToNext()) m[c.getString(0)] = Stamp(c.getLong(1), c.getLong(2))
+        }
+        return m
+    }
+
+    /** Файлы книги по порядку проигрывания. */
+    fun audioFiles(bookId: Long): ArrayList<AudioFile> {
+        val out = ArrayList<AudioFile>(8)
+        readableDatabase.rawQuery(
+            "SELECT path, ord, dur, size, mtime, name FROM audio_files " +
+                "WHERE book_id = ? ORDER BY ord", arrayOf(bookId.toString()),
+        ).use { c ->
+            while (c.moveToNext()) out.add(AudioFile(
+                c.getString(0), c.getInt(1), c.getLong(2), c.getLong(3), c.getLong(4), c.getString(5)))
+        }
+        return out
+    }
+
+    /** Встроенные главы M4B (`chpl`); пусто — главы строятся по файлам ([AudioFile]). */
+    fun audioChapters(bookId: Long): ArrayList<Chapter> {
+        val out = ArrayList<Chapter>(8)
+        readableDatabase.rawQuery(
+            "SELECT ord, title, start, dur FROM audio_chapters WHERE book_id = ? ORDER BY ord",
+            arrayOf(bookId.toString()),
+        ).use { c ->
+            while (c.moveToNext()) out.add(Chapter(c.getInt(0), c.getString(1), c.getLong(2), c.getLong(3)))
+        }
+        return out
+    }
+
+    private fun audioRow(c: Cursor) = Audio(
+        id = c.getLong(0), folder = c.getString(1), title = c.getString(2),
+        author = if (c.isNull(3)) null else c.getString(3),
+        files = c.getInt(4), duration = c.getLong(5), size = c.getLong(6),
+        pos = c.getLong(7), added = c.getLong(8), opened = c.getLong(9),
+    )
+
+    /**
+     * Добавить или обновить аудиокнигу целиком: строка `audio`, её файлы и главы.
+     * Место прослушивания (`pos`) и `opened` не трогаются — они принадлежат человеку,
+     * а не сканеру. Новая книга получает `pos` = 0 и `added` = сейчас.
+     *
+     * Возвращает `_id` — сканеру он нужен, чтобы отличить новую книгу от обновлённой.
+     */
+    fun upsertAudio(i: AudioInfo): Long = inTransaction {
+        val db = writableDatabase
+        val cur = db.rawQuery("SELECT _id FROM audio WHERE folder = ?", arrayOf(i.folder)).use {
+            if (it.moveToFirst()) it.getLong(0) else -1L
+        }
+        val cv = ContentValues(8)
+        cv.put("folder", i.folder)
+        cv.put("title", i.title)
+        cv.put("title_sort", sortKey(i.title))
+        cv.put("author", i.author)
+        cv.put("author_sort", i.author?.let { sortKey(it) })
+        cv.put("files", i.files.size)
+        cv.put("duration", i.duration)
+        cv.put("size", i.size)
+        val id: Long
+        if (cur < 0L) {
+            cv.put("added", System.currentTimeMillis())
+            id = db.insertOrThrow("audio", null, cv)
+        } else {
+            db.update("audio", cv, "_id = ?", arrayOf(cur.toString()))
+            id = cur
+        }
+        db.delete("audio_files", "book_id = ?", arrayOf(id.toString()))
+        for (f in i.files) {
+            val fc = ContentValues(7)
+            fc.put("path", f.path)
+            fc.put("book_id", id)
+            fc.put("ord", f.ord)
+            fc.put("dur", f.dur)
+            fc.put("size", f.size)
+            fc.put("mtime", f.mtime)
+            fc.put("name", f.name)
+            db.insertOrThrow("audio_files", null, fc)
+        }
+        db.delete("audio_chapters", "book_id = ?", arrayOf(id.toString()))
+        for (ch in i.chapters.orEmpty()) {
+            val cc = ContentValues(5)
+            cc.put("book_id", id)
+            cc.put("ord", ch.ord)
+            cc.put("title", ch.title)
+            cc.put("start", ch.start)
+            cc.put("dur", ch.dur)
+            db.insertOrThrow("audio_chapters", null, cc)
+        }
+        id
+    }
+
+    /**
+     * Убрать аудиокниги, которых больше нет на диске: [folders] — найденные сканером папки.
+     * Файлы и главы уходят вместе со строкой. Возвращает, сколько книг убрано.
+     */
+    fun removeAudioStale(folders: Set<String>): Int = inTransaction {
+        val db = writableDatabase
+        val gone = ArrayList<Long>(4)
+        db.rawQuery("SELECT _id, folder FROM audio", null).use { c ->
+            while (c.moveToNext()) if (c.getString(1) !in folders) gone.add(c.getLong(0))
+        }
+        for (id in gone) {
+            val a = arrayOf(id.toString())
+            db.delete("audio_files", "book_id = ?", a)
+            db.delete("audio_chapters", "book_id = ?", a)
+            db.delete("audio", "_id = ?", a)
+        }
+        gone.size
+    }
+
+    /**
+     * Сохранить место прослушивания [pos] (мс от начала книги) и поставить `opened` = сейчас.
+     * Вызывается и при паузе, и по таймеру раз в 10–30 с, и при уходе экрана в фон.
+     */
+    fun setAudioPos(id: Long, pos: Long) {
+        val cv = ContentValues(2)
+        cv.put("pos", pos.coerceAtLeast(0L))
+        cv.put("opened", System.currentTimeMillis())
+        writableDatabase.update("audio", cv, "_id = ?", arrayOf(id.toString()))
+    }
+
+    /** Поставить место в книге, не трогая `opened` (B35 «Закладка», повтор с начала). */
+    fun setAudioProgress(id: Long, pos: Long) {
+        val cv = ContentValues(1)
+        cv.put("pos", pos.coerceAtLeast(0L))
+        writableDatabase.update("audio", cv, "_id = ?", arrayOf(id.toString()))
+    }
+
+    /** Книга, которая играла последней (карточка «сейчас слушаете» B33); null — не слушали. */
+    fun lastAudio(): Audio? =
+        readableDatabase.rawQuery(
+            "SELECT _id, folder, title, author, files, duration, size, pos, added, opened " +
+                "FROM audio WHERE opened > 0 ORDER BY opened DESC LIMIT 1", null,
+        ).use { if (it.moveToFirst()) audioRow(it) else null }
+
+    /** Сколько всего аудиокниг (подзаголовок B33 «5 книг · 41 ч»). */
+    fun audioCount(): Int =
+        readableDatabase.rawQuery("SELECT COUNT(*) FROM audio", null).use {
+            if (it.moveToFirst()) it.getInt(0) else 0
+        }
+
+    /** Сколько всего звука в аудиокнигах, мс. */
+    fun audioTotalDuration(): Long =
+        readableDatabase.rawQuery("SELECT COALESCE(SUM(duration), 0) FROM audio", null).use {
+            if (it.moveToFirst()) it.getLong(0) else 0L
+        }
+
+    /** Суммарный размер аудиофайлов, байт — строка «Аудиокниги» на B42. */
+    fun audioTotalSize(): Long =
+        readableDatabase.rawQuery("SELECT COALESCE(SUM(size), 0) FROM audio", null).use {
+            if (it.moveToFirst()) it.getLong(0) else 0L
+        }
+
+    /** Удалить аудиокнигу из базы (файлы на диске не трогаем — как у книг, B53). */
+    fun deleteAudio(id: Long) {
+        inTransaction {
+            val db = writableDatabase
+            val a = arrayOf(id.toString())
+            db.delete("audio_files", "book_id = ?", a)
+            db.delete("audio_chapters", "book_id = ?", a)
+            db.delete("audio", "_id = ?", a)
+        }
+    }
+
     companion object {
         const val NAME = "library.db"
         /**
+         * Версия 12 (п. 12): аудиокниги — таблицы `audio`, `audio_files`, `audio_chapters`.
          * Версия 11 (R4.3): цитаты и заметки — колонки `kind`, `pos_end`, `note` в `bookmarks`.
          * Версия 9 (R2.5): настройки страницы DjVu — колонка `view` (строка `DjvuView.encode()`).
          * Версия 8 (R1.4): место чтения — колонка `pos` (позиция движка, xpointer).
          * Версия 7: пароль каталога в базе шифруется ключом из `AndroidKeyStore`
          * ([Pass], п. 10.12). Старые открытые пароли перешифровываются при обновлении.
          */
-        const val VERSION = 11
+        const val VERSION = 12
 
         /** Вид записи в таблице `bookmarks` (версия 11, R4.3): закладка, цитата, заметка. */
         const val MARK_BOOKMARK = 0

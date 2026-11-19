@@ -97,6 +97,11 @@ class SearchScreen(act: EinkActivity) : Screen(act) {
 
     private fun startedWord(n: Int) = plural(n, "начата", "начаты", "начато")
 
+    /** Строка аудиокниги в результатах поиска (п. 12): название и «автор · длительность». */
+    private fun audioRow(a: LibraryDb.Audio): Row =
+        Row(R_BOOK, a.title, (a.author ?: "Автор неизвестен") + " · " +
+            (if (a.duration > 0) AudioKit.hours(a.duration) else "аудио"), a.id, ST_NEW, a.percent)
+
     private fun bookRow(e: LibraryDb.Entry): Row {
         val kind = when (e.status) {
             LibraryDb.STATUS_READING -> ST_PROGRESS
@@ -108,10 +113,31 @@ class SearchScreen(act: EinkActivity) : Screen(act) {
         return Row(R_BOOK, e.title, "$author · ${e.format.uppercase()}", e.id, kind, pct)
     }
 
+    /** Идёт поиск по аудиокнигам (п. 12): B33 → лупа в шапке ставит `act.audioQuery`. */
+    private fun audioMode(): Boolean = act.audioQuery != null
+
     /** Перечитать результаты по [query] и [tab]; страница — первая. */
     private fun search() {
         val list = ArrayList<Row>()
         var n = 0
+        if (audioMode()) {
+            if (query.isNotBlank()) {
+                try {
+                    val found = db.searchAudio(query, 100)
+                    n = found.size
+                    if (found.isNotEmpty()) list.add(Row(R_HEAD, "АУДИОКНИГИ", ""))
+                    for (a in found) list.add(audioRow(a))
+                } catch (t: Throwable) {
+                    Trace.step("audio search FAIL: ${t.javaClass.simpleName}: ${t.message}")
+                }
+            }
+            rows = list
+            this.found = n
+            ry = FloatArray(rows.size)
+            page = 0
+            repage()
+            return
+        }
         if (query.isNotBlank()) {
             try {
                 val authors = db.searchAuthors(query, 30)
@@ -159,7 +185,12 @@ class SearchScreen(act: EinkActivity) : Screen(act) {
 
     /** Раскладывает строки с [start] по [ry]; возвращает индекс первой строки следующей страницы. */
     private fun place(start: Int): Int {
-        var y = if (rows[start].type == R_HEAD) 556f else 575f
+        // В режиме аудио вкладок нет, поэтому панель начинается выше.
+        var y = when {
+            rows[start].type == R_HEAD -> 556f
+            audioMode() -> 545f
+            else -> 575f
+        }
         var i = start
         while (i < rows.size) {
             val r = rows[i]
@@ -207,7 +238,7 @@ class SearchScreen(act: EinkActivity) : Screen(act) {
         status.draw(c)
         header(c)
         field(c)
-        tabs(c)
+        if (!audioMode()) tabs(c)
         panel(c)
         if (kbOpen) {
             ink.convex(c, -3f, SHEET_Y, 1409f, 520f, 66f)
@@ -220,10 +251,12 @@ class SearchScreen(act: EinkActivity) : Screen(act) {
     private fun header(c: Canvas) {
         ink.convex(c, 41f, 113.5f, 107f, 112f, R_ROUND)
         icons.drawRound(c, "back@12.3x26.6", 41f, 113.5f, 107f, 112f, 12.3f, 26.6f)
-        ink.text(c, "Поиск", 176f, T.base(105f, T.TS_TITLE, 1.25f), T.TS_TITLE, 700, T.G1)
+        ink.text(c, if (audioMode()) "Поиск аудио" else "Поиск", 176f,
+            T.base(105f, T.TS_TITLE, 1.25f), T.TS_TITLE, 700, T.G1)
         val sub = when {
-            query.isBlank() -> "Название, автор или серия"
+            query.isBlank() -> if (audioMode()) "Название или автор" else "Название, автор или серия"
             found == 0 -> "Совпадений нет"
+            audioMode() -> plural(found, "аудиокнига", "аудиокниги", "аудиокниг")
             else -> plural(found, "совпадение", "совпадения", "совпадений") + " в библиотеке"
         }
         ink.text(c, sub, 176f, T.base(181f, T.TS_BODY_S, 1.25f), T.TS_BODY_S, 600, T.G4)
@@ -366,8 +399,13 @@ class SearchScreen(act: EinkActivity) : Screen(act) {
             val h = if (r.type == R_BOOK) BOOK_PITCH else AUTHOR_PITCH
             if (!inRect(x, y, 88f, ry[i], 1228f, h - 20f)) continue
             if (r.type == R_BOOK) {
-                act.bookId = r.id
-                act.go(EinkActivity.SCR_BOOK)
+                if (audioMode()) {
+                    act.audioId = r.id
+                    act.go(EinkActivity.SCR_AUDIO)
+                } else {
+                    act.bookId = r.id
+                    act.go(EinkActivity.SCR_BOOK)
+                }
             } else {
                 // Автор или серия: показать их книги.
                 query = r.a
@@ -397,7 +435,7 @@ class SearchScreen(act: EinkActivity) : Screen(act) {
                 repage()
                 redraw()
             }
-        } else if (inRect(x, y, 44f, 388f, 1316f, 88f)) {
+        } else if (!audioMode() && inRect(x, y, 44f, 388f, 1316f, 88f)) {
             val i = ((x - TAB_X) / TAB_STEP).toInt().coerceIn(0, tabLabels.size - 1)
             if (i != tab) {
                 tab = i

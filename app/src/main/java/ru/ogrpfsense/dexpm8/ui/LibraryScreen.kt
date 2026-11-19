@@ -544,6 +544,8 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
                     HIT_CATALOGS -> act.go(EinkActivity.SCR_CATALOGS)
                     HIT_SEARCH -> {
                         act.searchFresh = true
+                        // Обычный поиск по книгам: режим аудио снимаем (его ставит B33).
+                        act.audioQuery = null
                         act.go(EinkActivity.SCR_SEARCH)
                     }
                     else -> if (h.id > HIT_BOOK) {

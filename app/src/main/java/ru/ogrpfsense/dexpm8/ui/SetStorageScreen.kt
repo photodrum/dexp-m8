@@ -10,7 +10,8 @@ import java.util.Locale
  * (`capacityGb`, 16 ГБ), потому что `StatFs` не видит системный резерв ≈3,3 ГБ (замечание 7):
  * «занято» = объём − свободно (резерв внутри «занято»), «Система» = занято − всё измеренное.
  * «Книги» — сумма размеров файлов из `LibraryDb`; «Приложения» — APK и каталог данных;
- * «Кэш» — внутренний и внешний кэш. «Аудиокниги» — всегда 0 (аудио в оболочке пока нет).
+ * «Кэш» — внутренний и внешний кэш. «Аудиокниги» — сумма размеров аудиофайлов из базы
+ * (п. 12, `LibraryDb.audioTotalSize`; до плеера там всегда был 0).
  * Не рисуется (данных нет): «Страницы PDF и DjVu» — описание, движков ещё нет.
  * Нажимается (шаг 4.6): «Очистить» у «Кэша обложек» — `act.sys.clearCache` (кэш оболочки целиком,
  * отдельного кэша обложек пока нет), после нажатия на [CLEARED_MS] вместо размера — «Очищено»
@@ -27,6 +28,8 @@ class SetStorageScreen(act: EinkActivity) : Screen(act) {
     private var capacity = 0L
     private var free = 0L
     private var books = 0L
+    /** Звук аудиокниг из базы (п. 12): файлы в `Audio`/`Books`. */
+    private var audio = 0L
     private var apps = 0L
     private var cache = 0L
     private var avgBook = 0L
@@ -37,7 +40,6 @@ class SetStorageScreen(act: EinkActivity) : Screen(act) {
 
     override fun render(c: Canvas) {
         val used = (capacity - free).coerceAtLeast(0L)
-        val audio = 0L
         val system = (used - books - apps - cache - audio).coerceAtLeast(0L)
 
         ink.rect(c, 0f, 0f, W, H, T.BG)
@@ -125,6 +127,11 @@ class SetStorageScreen(act: EinkActivity) : Screen(act) {
         // Заявленный объём накопителя: StatFs не видит системный резерв, поэтому занято считаем от него.
         capacity = if (total > 0L) SettingsData.capacityGb(total).toLong() * 1_000_000_000L else 0L
         books = act.db.totalSize()
+        audio = try {
+            act.db.audioTotalSize()
+        } catch (t: Throwable) {
+            0L
+        }
         val n = act.db.count()
         avgBook = if (n > 0) books / n else 0L
         apps = java.io.File(act.applicationInfo.sourceDir).length() +
