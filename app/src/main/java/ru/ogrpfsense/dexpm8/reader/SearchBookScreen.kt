@@ -2,6 +2,7 @@ package ru.ogrpfsense.dexpm8.reader
 
 import android.graphics.Canvas
 import ru.ogrpfsense.dexpm8.core.LibraryDb
+import ru.ogrpfsense.dexpm8.ui.EinkActivity
 import ru.ogrpfsense.dexpm8.ui.Icons
 import ru.ogrpfsense.dexpm8.ui.Ink
 import ru.ogrpfsense.dexpm8.ui.Keyboard
@@ -46,12 +47,13 @@ import ru.ogrpfsense.dexpm8.ui.T
  * Состояние (запрос, вкладка, страница, результаты) живёт здесь, как у `SearchScreen` B21;
  * экран читалки передаёт данные книги в [draw] и выполняет действия по коду [hit].
  */
-class SearchBookScreen(private val ink: Ink, private val icons: Icons) {
+class SearchBookScreen(private val ink: Ink, private val icons: Icons,
+                       private val act: EinkActivity) {
 
     /** Совпадение поиска: страница, фрагмент и позиция движка (xpointer) для перехода. */
     class Hit(val page: Int, val text: String, val pos: String?)
 
-    private val kb = Keyboard(ink)
+    private val kb = Keyboard(ink, { act.prefs.layouts }, act::keyPressed)
 
     /** Набранный запрос; пусто — искать нечего. */
     var query = ""

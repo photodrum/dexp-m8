@@ -15,7 +15,7 @@ import android.graphics.Canvas
  * Состояние внутри: [text], [error] (вместо подсказки). Экран зовёт [open], рисует [draw]
  * и передаёт касания в [hit].
  */
-class NameSheet(private val ink: Ink) {
+class NameSheet(private val ink: Ink, private val act: EinkActivity) {
 
     var text = ""
     private set
@@ -25,7 +25,7 @@ class NameSheet(private val ink: Ink) {
 
     private var title = ""
     private var hint = ""
-    private val kb = Keyboard(ink)
+    private val kb = Keyboard(ink, { act.prefs.layouts }, act::keyPressed)
 
     fun open(title: String, action: String, initial: String, hint: String) {
         this.title = title

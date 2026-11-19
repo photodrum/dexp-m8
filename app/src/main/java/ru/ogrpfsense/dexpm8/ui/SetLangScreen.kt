@@ -70,13 +70,16 @@ class SetLangScreen(act: EinkActivity) : Screen(act) {
         kit.divider(c, 1340f)
 
         kit.title(c, "Раскладки клавиатуры", 1386f)
+        kit.valueRow(c, layoutsValue(), 1394f)
         kit.next(c, 1402f)
         kit.divider(c, 1484f)
-
         kit.title(c, "Словари", 1526.5f)
         kit.valueRow(c, if (online) "по сети" else "нет сети", 1534.5f)
         kit.next(c, 1542.5f)
     }
+
+    /** Подпись строки «Раскладки клавиатуры» — общая с B60, см. `SettingsData.layoutsValue`. */
+    private fun layoutsValue(): String = SettingsData.layoutsValue(act.prefs.layouts)
 
     private fun refresh() {
         autoTime = Settings.Global.getInt(act.contentResolver, "auto_time", 1) != 0
@@ -91,6 +94,10 @@ class SetLangScreen(act: EinkActivity) : Screen(act) {
         }
         if (kit.inRow(x, y, 1484f, 142f)) {
             act.go(EinkActivity.SCR_SET_DICT)
+            return
+        }
+        if (kit.inRow(x, y, 1340f, 144f)) {
+            act.go(EinkActivity.SCR_SET_LAYOUTS)
             return
         }
         if (kit.inRow(x, y, 934f, 144f)) {

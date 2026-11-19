@@ -16,7 +16,7 @@ import android.graphics.Canvas
  * Состояние внутри: [text], [hidden] («Показать»/«Скрыть»). Экран зовёт [open], рисует [draw],
  * передаёт касания в [hit] и сам подключается по [ACT_CONNECT].
  */
-class WifiPasswordSheet(private val ink: Ink) {
+class WifiPasswordSheet(private val ink: Ink, private val act: EinkActivity) {
 
     var text = ""
         private set
@@ -34,7 +34,7 @@ class WifiPasswordSheet(private val ink: Ink) {
     private var ssid = ""
     private var note = ""
     private var shown = false
-    private val kb = Keyboard(ink)
+    private val kb = Keyboard(ink, { act.prefs.layouts }, act::keyPressed)
 
     fun open(ssid: String, note: String) {
         this.ssid = ssid

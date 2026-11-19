@@ -1,6 +1,7 @@
 package ru.ogrpfsense.dexpm8.reader
 
 import android.graphics.Canvas
+import ru.ogrpfsense.dexpm8.ui.EinkActivity
 import ru.ogrpfsense.dexpm8.ui.Ink
 import ru.ogrpfsense.dexpm8.ui.Keyboard
 import ru.ogrpfsense.dexpm8.ui.T
@@ -25,9 +26,9 @@ import ru.ogrpfsense.dexpm8.ui.T
  * [note] при сохранении. Выделенный текст и подпись места лист не хранит — их передают
  * в [draw] при каждом кадре.
  */
-class NoteSheet(private val ink: Ink) {
+class NoteSheet(private val ink: Ink, private val act: EinkActivity) {
 
-    private val kb = Keyboard(ink)
+    private val kb = Keyboard(ink, { act.prefs.layouts }, act::keyPressed)
 
     /** Набранный текст заметки; пусто — сохранять нечего. */
     private var input = ""

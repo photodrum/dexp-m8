@@ -25,7 +25,7 @@ class ShelvesScreen(act: EinkActivity) : Screen(act) {
 
     private val db = act.db
     private val status = StatusBar(act, this, ink, icons)
-    private val sheet = NameSheet(ink)
+    private val sheet = NameSheet(ink, act)
     private var sheetOpen = false
 
     private var rows = ArrayList<Row>()

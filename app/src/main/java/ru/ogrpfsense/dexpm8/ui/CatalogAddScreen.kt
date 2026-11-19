@@ -28,7 +28,7 @@ class CatalogAddScreen(act: EinkActivity) : Screen(act) {
     private val status = StatusBar(act, this, ink, icons)
     private val opds = Opds(act)
     private val db = act.db
-    private val kb = Keyboard(ink)
+    private val kb = Keyboard(ink, { act.prefs.layouts }, act::keyPressed)
 
     private var url = "http://"
     private var name = ""

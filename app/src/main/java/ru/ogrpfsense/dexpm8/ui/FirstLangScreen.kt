@@ -72,7 +72,7 @@ class FirstLangScreen(act: EinkActivity) : Screen(act) {
         kit.divider(c, 1270f)
 
         kit.title(c, "Раскладки клавиатуры", 1316f)
-        kit.valueRow(c, "Русская, английская", 1324f)
+        kit.valueRow(c, layoutsValue(), 1324f)
         kit.next(c, 1332f)
         kit.divider(c, 1414f)
 
@@ -83,6 +83,9 @@ class FirstLangScreen(act: EinkActivity) : Screen(act) {
         first.buttonDark(c, "Далее")
     }
 
+    /** Подпись «Раскладки клавиатуры» — общая с B41, см. `SettingsData.layoutsValue`. */
+    private fun layoutsValue(): String = SettingsData.layoutsValue(act.prefs.layouts)
+
     private fun refresh() {
         autoTime = Settings.Global.getInt(act.contentResolver, "auto_time", 1) != 0
         online = DictOnline(act).online()
@@ -90,7 +93,7 @@ class FirstLangScreen(act: EinkActivity) : Screen(act) {
 
     override fun onUp(x: Float, y: Float) {
         when {
-            // «Раскладки» (B72) не нажимаются: своего экрана в коде нет. «Часовой пояс» ведёт
+            // «Раскладки» (B72) — свой экран с 2026-11-19. «Часовой пояс» ведёт
             // на B71, «Язык оболочки» — на B41: своих экранов у них нет, а шаг не должен
             // упираться в тупик.
             kit.inRow(x, y, 710f, 154f) -> act.go(EinkActivity.SCR_SET_ZONE)
@@ -101,6 +104,7 @@ class FirstLangScreen(act: EinkActivity) : Screen(act) {
                     redraw()
                 }
             }
+            kit.inRow(x, y, 1270f, 144f) -> act.go(EinkActivity.SCR_SET_LAYOUTS)
             kit.inRow(x, y, 1470f, 142f) -> act.go(EinkActivity.SCR_SET_DICT)
             first.isDarkFull(x, y) -> act.go(EinkActivity.SCR_FIRST_WIFI)
         }

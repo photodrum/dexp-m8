@@ -83,6 +83,28 @@ class Prefs(ctx: Context) {
         get() = sp.getString("user_font_path", "") ?: ""
         set(v) = sp.edit().putString("user_font_path", v).apply()
 
+    // B72 «Раскладки клавиатуры»
+    /**
+     * Включённые раскладки маской: бит = `Keyboard.LANG_*` (0 русская … 4 французская).
+     * Умолчание — все пять (`Keyboard.ALL_LAYOUTS`): человек выбирает из них нужные, а не
+     * собирает набор с нуля. Клавиша «RU/EN» перебирает только включённые; экран B72 не даёт
+     * выключить последнюю (иначе набирать будет нечем).
+     */
+    var layouts: Int
+        get() = sp.getInt("layouts", 0x1F)
+        set(v) = sp.edit().putInt("layouts", v and 0x1F).apply()
+    /** «Звук нажатия» (B72): звук клавиши и касания при вводе — `Sys.soundKey`. */
+    var keySound: Boolean
+        get() = sp.getBoolean("key_sound", false)
+        set(v) = sp.edit().putBoolean("key_sound", v).apply()
+    /**
+     * «Обновлять экран при вводе» (B72, «Чётче, но медленнее»): каждый кадр ввода — полная
+     * перерисовка `Epd.CLEAN` вместо частичной. Выключено — частичная, как у всех экранов.
+     */
+    var keyClean: Boolean
+        get() = sp.getBoolean("key_clean", false)
+        set(v) = sp.edit().putBoolean("key_clean", v).apply()
+
     // B39 «Чтение»
     var hyphens: Boolean
         get() = sp.getBoolean("hyphens", true)

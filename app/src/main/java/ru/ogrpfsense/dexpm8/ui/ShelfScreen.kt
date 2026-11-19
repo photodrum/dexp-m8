@@ -34,7 +34,7 @@ class ShelfScreen(act: EinkActivity) : Screen(act) {
 
     private val db = act.db
     private val status = StatusBar(act, this, ink, icons)
-    private val sheet = NameSheet(ink)
+    private val sheet = NameSheet(ink, act)
     private val lit600: Typeface = T.literata(ink.res, 600)
 
     private var shelfId = 0L

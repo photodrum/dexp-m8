@@ -49,7 +49,7 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
     private val opds = Opds(act)
     private val db = act.db
     private val downloads = act.downloads
-    private val kb = Keyboard(ink)
+    private val kb = Keyboard(ink, { act.prefs.layouts }, act::keyPressed)
 
     /** Одна строка — книга или раздел каталога. */
     private class Row(

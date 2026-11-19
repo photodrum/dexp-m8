@@ -167,7 +167,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
     /** Открыт лист B4. */
     private var typoOpen = false
     // --- B28 «Поиск по книге» (R4.3): полноэкранный список поверх страницы, как B10
-    private val searchView = SearchBookScreen(ink, icons)
+    private val searchView = SearchBookScreen(ink, icons, act)
     /** Открыт поиск по книге. */
     private var searchOpen = false
     /** Оглавление для подписей «Место» на B28: страницы и названия пунктов, считается один раз. */
@@ -193,7 +193,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
     /** Касание выделения обрабатывается в потоке движка: плашки нужны для меню. */
     @Volatile private var selecting = false
     // --- B51 «Новая заметка» (R4.3): нижний лист с цитатой и клавиатурой
-    private val noteView = NoteSheet(ink)
+    private val noteView = NoteSheet(ink, act)
     /** Открыт лист B51. */
     private var noteOpen = false
     // --- B30 «Словарь и сноски» (R5): нижний лист со словом под пальцем

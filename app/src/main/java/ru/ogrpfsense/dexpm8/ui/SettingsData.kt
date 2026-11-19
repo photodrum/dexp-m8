@@ -59,6 +59,26 @@ object SettingsData {
     const val AUTHOR = "Денис Лампусов"
 
     /**
+     * Подпись строки «Раскладки клавиатуры» на B41 и B60: включённые раскладки (маска
+     * `Prefs.layouts`, биты `Keyboard.LANG_*`). Коротко, потому что значение стоит справа от
+     * названия и не должно на него налезать: все пять — «все пять», 1…2 — имена через запятую
+     * («Русская, английская»), 3…4 — «3 из 5». Проверено на книге 2026-11-19: полный список
+     * из пяти имён налезал на «Раскладки клавиатуры» и обрезался.
+     */
+    fun layoutsValue(mask: Int): String {
+        val names = Keyboard.LAYOUTS.indices
+            .filter { (mask shr it) and 1 == 1 }
+            .map { Keyboard.LAYOUTS[it].name.lowercase() }
+        return when (names.size) {
+            0 -> "нет"
+            1 -> names[0].replaceFirstChar { it.titlecase() }
+            2 -> names.joinToString(", ").replaceFirstChar { it.titlecase() }
+            Keyboard.LAYOUTS.size -> "все пять"
+            else -> "${names.size} из ${Keyboard.LAYOUTS.size}"
+        }
+    }
+
+    /**
      * Строка версии для B43 «Об устройстве» и B63 «Готово» — одна на оба экрана (замечание 23):
      * «Оболочка 0.3.0 · сборка 3, автор Денис Лампусов». Пустое имя версии или нулевой номер
      * сборки просто выпадают.

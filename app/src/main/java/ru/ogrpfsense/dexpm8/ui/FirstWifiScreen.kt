@@ -74,7 +74,7 @@ class FirstWifiScreen(act: EinkActivity) : Screen(act) {
     private val kit = SettingsKit(ink, icons)
     private val first = FirstRunKit(ink, icons)
     private val wifi = WifiScan(act)
-    private val sheet = WifiPasswordSheet(ink)
+    private val sheet = WifiPasswordSheet(ink, act)
 
     private var wifiOn = false
     private var ssid = ""

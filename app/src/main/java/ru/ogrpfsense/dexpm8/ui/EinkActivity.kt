@@ -87,6 +87,9 @@ class EinkActivity : Activity() {
         /** B71 «Часовой пояс» — пояса России; дверь — строка на B41 и на B60 (мастер). */
         const val SCR_SET_ZONE = 35
 
+        /** B72 «Раскладки клавиатуры» — настройки ввода; двери — B41 и B60. */
+        const val SCR_SET_LAYOUTS = 36
+
 
         private const val REQ_STORAGE = 1
         private const val REQ_WRITE_SETTINGS = 2
@@ -964,13 +967,15 @@ class EinkActivity : Activity() {
                 go(SCR_FIRST_WIFI)
                 return
             }
-            if (sc != "wifi" && sc != "updates" && sc != "licenses" && sc != "zone") return
+            if (sc != "wifi" && sc != "updates" && sc != "licenses" && sc != "zone" &&
+                sc != "layouts") return
             intent.removeExtra("screen")
             Trace.step("debug: screen $sc")
             val id = when (sc) {
                 "updates" -> SCR_SET_UPDATES
                 "licenses" -> SCR_SET_LICENSES
                 "zone" -> SCR_SET_ZONE
+                "layouts" -> SCR_SET_LAYOUTS
                 else -> SCR_WIFI
             }
             if (stack.isNotEmpty() && stack[stack.size - 1] == id) changeTo(id)
@@ -1275,6 +1280,26 @@ class EinkActivity : Activity() {
     }
 
     /**
+     * Клавиша своей клавиатуры нажата (`Keyboard.onKey`): звук касания (B72) и, если включено
+     * «Обновлять экран при вводе», полная перерисовка кадра. Звук просит `AudioManager` —
+     * системный «клик» прошивки; без включённых звуков системы вызов молча ничего не делает,
+     * поэтому тумблер B72 пишет и `Settings.System.SOUND_EFFECTS_ENABLED` (`Sys.setSoundKey`).
+     */
+    fun keyPressed() {
+        if (prefs.keySound) try {
+            (getSystemService(AUDIO_SERVICE) as? android.media.AudioManager)
+                ?.playSoundEffect(android.media.AudioManager.FX_KEY_CLICK)
+        } catch (t: Throwable) {
+            Trace.step("key sound FAIL: ${t.javaClass.simpleName}: ${t.message}")
+        }
+        if (prefs.keyClean) {
+            if (!this::host.isInitialized) return
+            val r = Epd.request(host, Epd.CLEAN, false)
+            Trace.step("epd: key input full -> $r")
+        }
+    }
+
+    /**
      * Большой кадр (шторка, лист B36 и т. п.) в «Быстром»: A2 рисует его кашей (проверено на книге
      * 2026-11-12, 8.2), поэтому этот один кадр — полной перерисовкой, одно мигание. В «Чётком»
      * ничего не заказываем: `EPD_PART` такие кадры рисует нормально. Вызывать до кадра.
@@ -1325,6 +1350,7 @@ class EinkActivity : Activity() {
             SCR_SET_AUTHOR -> SetAuthorScreen(this)
             SCR_SET_LICENSES -> SetLicensesScreen(this)
             SCR_SET_ZONE -> SetTimeZoneScreen(this)
+            SCR_SET_LAYOUTS -> SetLayoutScreen(this)
             SCR_FIRST_LANG -> FirstLangScreen(this)
             SCR_FIRST_WIFI -> FirstWifiScreen(this)
             SCR_FIRST_PERM -> FirstPermScreen(this)

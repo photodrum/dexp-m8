@@ -35,7 +35,7 @@ class SearchScreen(act: EinkActivity) : Screen(act) {
 
     private val db = act.db
     private val status = StatusBar(act, this, ink, icons)
-    private val kb = Keyboard(ink)
+    private val kb = Keyboard(ink, { act.prefs.layouts }, act::keyPressed)
     private val empty = EmptyState(ink, icons)
     private val lit600: Typeface = T.literata(ink.res, 600)
 

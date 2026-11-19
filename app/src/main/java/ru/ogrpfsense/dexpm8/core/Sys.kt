@@ -61,6 +61,18 @@ class Sys(ctx: Context) {
         Settings.System.putString(cr, Settings.System.TIME_12_24, if (on) "24" else "12")
     }
 
+    /**
+     * «Звук нажатия» (B72): звук клавиши просит `EinkActivity.keyPressed` через
+     * `AudioManager.playSoundEffect(CLICK)`, но система играет его только при включённом
+     * `Settings.System.SOUND_EFFECTS_ENABLED` (иначе вызов молча ничего не делает). Поэтому при
+     * включении тумблера ставим и системное значение — это `Settings.System`, право WRITE_SETTINGS.
+     * При выключении систему не трогаем: остальные звуки книги — не наше дело.
+     * false — нет права WRITE_SETTINGS или система отказала (своя настройка при этом цела).
+     */
+    fun setSoundKey(on: Boolean): Boolean = write("sound_key") {
+        Settings.System.putInt(cr, Settings.System.SOUND_EFFECTS_ENABLED, if (on) 1 else 0)
+    }
+
     private inline fun write(what: String, block: () -> Boolean): Boolean {
         if (!canWrite()) return false
         return try {
