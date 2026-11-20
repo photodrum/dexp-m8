@@ -70,19 +70,25 @@ class AudioScreen(act: EinkActivity) : Screen(act) {
     // ----------------------------------------------------------------- циферблат
 
     /**
-     * Циферблат: шкала снаружи (24 штриха и пять жирных по дуге), диск и три строки по центру.
-     * Штрихи и дуга — из снимка пути; рисуем их линиями по числам, а не разбором `d`:
-     * координаты уже сняты из макета (см. [TICKS]).
+     * Циферблат: шкала снаружи, диск и три строки по центру.
+     *
+     * **Шкала — прогресс по длительности (решение 2026-11-20).** Полный круг из [SCALE_N] рисок
+     * равен всей длительности книги: при старте стоит одна риска, по мере проигрывания они
+     * добавляются по часовой стрелке от верха, и круг замыкается на конце записи. Пересчёт и
+     * перерисовка — на каждом тике плеера (10 с, пока экран включён). Первые [HEAD_W] рисок —
+     * с нарастающей толщиной и длиной, как жирные риски макета B07, остальные одинаковые.
+     * Раньше было 27 статичных рисок и пять жирных, которые «закрашивались» по 20 %.
      */
     private fun dial(c: Canvas) {
-        // Шкала: 27 тонких штрихов G7 по всему кругу и пять жирных G1 на левой дуге —
-        // столько прослушано. Числа сняты из пути `svg-path` снимка B07.
-        for (t in TICKS) ink.line(c, t[0], t[1], t[2], t[3], TICK_W, T.G7)
-        val done = Math.round(p.percent() * BOLD.size / 100f)
-        for (i in BOLD.indices) {
-            if (i >= done) break
-            val b = BOLD[i]
-            ink.line(c, b[0], b[1], b[2], b[3], b[4], T.G1)
+        val frac = if (p.total > 0L) p.pos.toFloat() / p.total else 0f
+        val shown = Math.ceil((frac * SCALE_N).toDouble()).toInt().coerceIn(1, SCALE_N)
+        for (i in 0 until shown) {
+            val o = i * 4
+            if (i < HEAD_W.size) {
+                ink.line(c, SCALE[o], SCALE[o + 1], SCALE[o + 2], SCALE[o + 3], HEAD_W[i], T.G1)
+            } else {
+                ink.line(c, SCALE[o], SCALE[o + 1], SCALE[o + 2], SCALE[o + 3], TICK_W, T.G7)
+            }
         }
         // Диск 511.9 в 443.3,344.6 — выпуклая пластина радиусом 256.
         ink.convex(c, 443.3f, 344.6f, 521.9f, 521.9f, 256f)
@@ -261,6 +267,12 @@ class AudioScreen(act: EinkActivity) : Screen(act) {
 
     // --------------------------------------------------------------- жизненный цикл
 
+    /** Экран книги включён: на погашенном шкалу не перерисовываем (экономия 1 ГБ и батареи). */
+    private fun screenOn(): Boolean {
+        val pm = act.getSystemService(android.content.Context.POWER_SERVICE) as? android.os.PowerManager
+        return pm?.isInteractive ?: true
+    }
+
     override fun backPressed(): Boolean {
         if (sheetOpen) {
             closeSheet()
@@ -283,7 +295,10 @@ class AudioScreen(act: EinkActivity) : Screen(act) {
                 act.prefs.audioSleep = 0
             }
         }
-        p.onTick = { if (parent != null) redraw() }
+        // Шкала обновляется раз в тик (10 с), но только пока экран включён: на погашенном
+        // экране перерисовка бессмысленна и греет процессор. Место и таймер сна живут в тике
+        // плеера и от экрана не зависят.
+        p.onTick = { if (parent != null && screenOn()) redraw() }
         p.onEnd = { if (parent != null) redraw() }
         p.setSkipPauses(act.prefs.audioSkipPauses)
         marked = false
@@ -300,59 +315,43 @@ class AudioScreen(act: EinkActivity) : Screen(act) {
 
     private companion object {
         /**
-         * Штрих тонкой шкалы B7. В снимке 1.5, но на книге линия выходила почти волосяной
-         * (2 px с учётом сглаживания) и шкала «сыпалась» — просьба человека 2026-11-20 сделать
-         * чуть толще. 2.5 px: заметно плотнее, но тонкие штрихи по-прежнему легче жирных.
+         * Штрих шкалы B7. В снимке 1.5, но на книге линия выходила почти волосяной (2 px с учётом
+         * сглаживания) и шкала «сыпалась» — просьба человека 2026-11-20 сделать чуть толще: 2.5.
          */
         const val TICK_W = 2.5f
 
-        /**
-         * Тонкие штрихи шкалы B7 (x1, y1, x2, y2) — сняты из пути `svg-path` снимка B07:
-         * 27 штрихов по кругу, начиная сверху.
-         */
-        val TICKS = arrayOf(
-            floatArrayOf(702f, 266.9f, 702f, 237.7f),
-            floatArrayOf(745.9f, 269.8f, 749.7f, 240.8f),
-            floatArrayOf(789.1f, 278.4f, 796.6f, 250.1f),
-            floatArrayOf(830.7f, 292.5f, 841.9f, 265.5f),
-            floatArrayOf(870.2f, 312f, 884.8f, 286.6f),
-            floatArrayOf(906.8f, 336.4f, 924.6f, 313.2f),
-            floatArrayOf(939.9f, 365.4f, 960.5f, 344.8f),
-            floatArrayOf(968.9f, 398.5f, 992.1f, 380.7f),
-            floatArrayOf(993.3f, 435.1f, 1018.7f, 420.5f),
-            floatArrayOf(1012.8f, 474.6f, 1039.8f, 463.4f),
-            floatArrayOf(1026.9f, 516.2f, 1055.2f, 508.7f),
-            floatArrayOf(1035.5f, 559.4f, 1064.5f, 555.6f),
-            floatArrayOf(1038.4f, 603.3f, 1067.6f, 603.3f),
-            floatArrayOf(1035.5f, 647.2f, 1064.5f, 651f),
-            floatArrayOf(1026.9f, 690.3f, 1055.2f, 697.9f),
-            floatArrayOf(1012.8f, 732f, 1039.8f, 743.2f),
-            floatArrayOf(993.3f, 771.5f, 1018.7f, 786.1f),
-            floatArrayOf(968.9f, 808.1f, 992.1f, 825.9f),
-            floatArrayOf(939.9f, 841.1f, 960.5f, 861.8f),
-            floatArrayOf(906.8f, 870.2f, 924.6f, 893.4f),
-            floatArrayOf(870.2f, 894.6f, 884.8f, 919.9f),
-            floatArrayOf(830.7f, 914f, 841.9f, 941.1f),
-            floatArrayOf(789.1f, 928.2f, 796.6f, 956.5f),
-            floatArrayOf(745.9f, 936.8f, 749.7f, 965.8f),
-            floatArrayOf(702f, 939.7f, 702f, 968.9f),
-            floatArrayOf(658.1f, 936.8f, 654.3f, 965.8f),
-            floatArrayOf(614.9f, 928.2f, 607.4f, 956.5f),
-        )
+        /** Рисок на полный круг: шаг 7.5° — как у рисок макета B07 (там они стоят по 7.5°). */
+        const val SCALE_N = 48
+
+        /** Центр группы «Шкала прогресса» B07 (336.4,237.7 731.3×731.3) и радиусы рисок. */
+        private const val SCALE_CX = 702.05f
+        private const val SCALE_CY = 603.35f
+        private const val R_OUT = 365.65f
+        private const val R_IN = 336.4f
 
         /**
-         * Пять жирных штрихов левой дуги (G1, толщина растёт): прослушанная часть книги.
-         *
-         * Толщины в снимке — 2 / 2.6 / 3.5 / 4.5 / 5.5 при тонком штрихе 1.5. После утолщения
-         * тонких до 2.5 первые жирные стали бы тоньше обычных, поэтому ряд поднят так, чтобы
-         * сохранить и порядок, и рост: 3 / 3.6 / 4.2 / 4.9 / 5.6.
+         * Первые пять рисок — с нарастающей толщиной и длиной (G1): числа жирных рисок макета
+         * (2 / 2.6 / 3.5 / 4.5 / 5.5 при тонком 1.5), подняты до 3 / 3.6 / 4.2 / 4.9 / 5.6, чтобы
+         * остаться толще обычных после утолщения тонких до 2.5. [HEAD_IN] — внутренний радиус.
          */
-        val BOLD = arrayOf(
-            floatArrayOf(576.1f, 907.3f, 562.1f, 941.1f, 3f),
-            floatArrayOf(539.3f, 885.1f, 519.2f, 919.9f, 3.6f),
-            floatArrayOf(508.4f, 855.6f, 479.4f, 893.4f, 4.2f),
-            floatArrayOf(482.2f, 823f, 443.5f, 861.8f, 4.9f),
-            floatArrayOf(461.2f, 788f, 411.9f, 825.9f, 5.6f),
-        )
+        val HEAD_W = floatArrayOf(3f, 3.6f, 4.2f, 4.9f, 5.6f)
+        val HEAD_IN = floatArrayOf(329f, 325.4f, 318f, 310.8f, 303.5f)
+
+        /**
+         * Концы всех рисок (x1, y1, x2, y2 подряд): риска k стоит на k·7.5° от верха по часовой
+         * стрелке. Считается один раз — в кадре тригонометрии нет.
+         */
+        val SCALE = FloatArray(SCALE_N * 4).also {
+            for (k in 0 until SCALE_N) {
+                val a = Math.toRadians(k * 360.0 / SCALE_N)
+                val s = Math.sin(a).toFloat()
+                val c = Math.cos(a).toFloat()
+                val rin = if (k < HEAD_IN.size) HEAD_IN[k] else R_IN
+                it[k * 4] = SCALE_CX + rin * s
+                it[k * 4 + 1] = SCALE_CY - rin * c
+                it[k * 4 + 2] = SCALE_CX + R_OUT * s
+                it[k * 4 + 3] = SCALE_CY - R_OUT * c
+            }
+        }
     }
 }
