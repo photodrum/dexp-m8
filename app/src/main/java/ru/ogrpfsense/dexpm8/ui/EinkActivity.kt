@@ -1005,7 +1005,8 @@ class EinkActivity : Activity() {
                 return
             }
             if (sc != "wifi" && sc != "updates" && sc != "licenses" && sc != "zone" &&
-                sc != "layouts" && sc != "net" && sc != "bt") return
+                sc != "layouts" && sc != "net" && sc != "bt" && sc != "read" &&
+                sc != "firstread") return
             intent.removeExtra("screen")
             Trace.step("debug: screen $sc")
             val id = when (sc) {
@@ -1015,6 +1016,10 @@ class EinkActivity : Activity() {
                 "layouts" -> SCR_SET_LAYOUTS
                 "net" -> SCR_SET_NET
                 "bt" -> SCR_SET_BT
+                // B39 «Настройки · Чтение» и шаг 4 мастера (B62): на книге не пройти кликами —
+                // на пути к B39 два уровня списка, а мастер открывается только на первом запуске.
+                "read" -> SCR_SET_READ
+                "firstread" -> SCR_FIRST_READ
                 else -> SCR_WIFI
             }
             if (stack.isNotEmpty() && stack[stack.size - 1] == id) changeTo(id)
