@@ -3,6 +3,7 @@ package ru.ogrpfsense.dexpm8.ui
 import android.graphics.Canvas
 import android.os.Build
 import ru.ogrpfsense.dexpm8.R
+import ru.ogrpfsense.dexpm8.core.Prefs
 
 /**
  * B13 · Настройки · разделы. Числа — из design/v5/B13.json.
@@ -82,7 +83,9 @@ class SettingsScreen(act: EinkActivity) : Screen(act) {
         rows[1].value = "Wi-Fi ${onOff(act.sys.wifiOn())} · Bluetooth ${onOff(act.sys.btOn())}"
         rows[2].value = "Зоны касаний: " + arrayOf("классическая", "две половины", "только вперёд")
             .getOrElse(p.tapZones) { "" }
-        rows[3].value = "Листание свайпом ${onOff(p.swipe)}"
+        rows[3].value = "Кнопки громкости: " +
+            (if (p.volumeKeys == Prefs.VOLUME_PAGING) "листание" else "громкость") +
+            " · свайп ${onOff(p.swipe)}"
         rows[4].value = when (val ms = act.sys.sleepTimeout()) {
             -1 -> ""
             Int.MAX_VALUE -> "Не засыпать"

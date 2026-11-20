@@ -8,12 +8,14 @@ import ru.ogrpfsense.dexpm8.reader.TypographySheet
 /**
  * B39 · Настройки · Чтение по умолчанию. Числа — из design/v5/B39.json (снимок 2026-11-20).
  *
- * «Переносы слов», «Листать свайпом» и схема зон хранятся в `act.prefs` (шаг 4.6).
+ * «Переносы слов» и схема зон хранятся в `act.prefs` (шаг 4.6).
  * Строка «Интервал и поля» показывает значения `Prefs` (те же, что ставит лист B4), но
- * собственного экрана в макете нет — касание по ней пока ничего не открывает. «Кнопки громкости»
- * переключают «Листание ⇄ Громкость» (B39.2): читалка разводит пары клавиш по `Prefs.volumeKeys`,
- * клавиши страниц листают всегда.
- * Блок «Кнопки и жесты» внизу — это и есть экран `SCR_SET_KEYS`: он открывает тот же экран.
+ * собственного экрана в макете нет — касание по ней пока ничего не открывает.
+ *
+ * **Блок «Кнопки и жесты» вынесен на свой экран (2026-11-21, `SetKeysScreen`).** В макете блок
+ * лежит внизу B39, и строка B13 «Кнопки и жесты» открывала весь этот экран целиком — с шапкой
+ * «Чтение», шрифтом и зонами. Решение человека — разделить: кнопки громкости и свайп живут на
+ * `SCR_SET_KEYS`, B39 остаётся на текст и зоны касаний.
  *
  * **Зоны касаний — одна схема, без выбора (макет 2026-11-20, решение человека).** В B39 остался
  * единственный вариант «Классическая»: левая треть — назад, правая — вперёд, центр — меню, и
@@ -30,7 +32,7 @@ class SetReadScreen(act: EinkActivity) : Screen(act) {
         val p = act.prefs
         ink.rect(c, 0f, 0f, W, H, T.BG)
         status.draw(c)
-        kit.header(c, "Чтение", "Для новых книг · шрифт, зоны, кнопки")
+        kit.header(c, "Чтение", "Для новых книг · шрифт и зоны")
 
         kit.section(c, "ТЕКСТ", 250f)
         kit.panel(c, 298f, 480f)
@@ -51,15 +53,6 @@ class SetReadScreen(act: EinkActivity) : Screen(act) {
         kit.panel(c, 858f, 570f)
         scheme(c)
         schemeText(c)
-
-        kit.section(c, "КНОПКИ И ЖЕСТЫ", 1460f)
-        kit.panel(c, 1508f, 310f)
-        kit.title(c, "Кнопки громкости", 1570.5f)
-        kit.valueRow(c, Prefs.VOLUME_LABELS.getOrElse(p.volumeKeys) { "" }, 1578.5f)
-        kit.next(c, 1586.5f)
-        kit.divider(c, 1684f)
-        kit.title(c, "Листать свайпом", 1721.5f)
-        kit.toggle(c, 1712f, p.swipe)
     }
 
     /** Подпись строки «Шрифт и размер»: гарнитура и кегль, как они выбраны (в макете «Литерата · 20»). */
@@ -137,16 +130,8 @@ class SetReadScreen(act: EinkActivity) : Screen(act) {
         if (kit.inRow(x, y, 298f, 182f)) { act.go(EinkActivity.SCR_SET_FONT); return }
         val p = act.prefs
         if (kit.inRow(x, y, 634f, 144f)) { p.hyphens = !p.hyphens; redraw(); return }
-        // «Кнопки громкости» — переключение «Листание ⇄ Громкость» (B39.2). Отдельного экрана
-        // в макете нет, а стрелка `next` нарисована — дверь ведёт в переключение.
-        if (kit.inRow(x, y, 1570.5f, 113.5f)) {
-            p.volumeKeys = if (p.volumeKeys == Prefs.VOLUME_PAGING) Prefs.VOLUME_SOUND
-                else Prefs.VOLUME_PAGING
-            redraw()
-            return
-        }
         // Варианта зон больше нет (макет 2026-11-20): блок «Классическая» ничего не нажимает.
-        if (kit.inRow(x, y, 1684f, 134f)) { p.swipe = !p.swipe; redraw() }
+        // Кнопки громкости и свайп — на экране `SCR_SET_KEYS` (`SetKeysScreen`).
     }
 
     private companion object {
