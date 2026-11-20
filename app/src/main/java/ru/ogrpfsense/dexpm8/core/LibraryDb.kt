@@ -950,13 +950,17 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
      * Сколько книг дочитано с дня [from] (0 — без нижней границы) по день [to] включительно.
      * Дни — местные `ГГГГММДД`, а `books.finished` — миллисекунды, поэтому границы переводятся
      * в полночь мс по местному времени ([dayStart], [nextDay]).
+     *
+     * `finished > 0` обязателен: ноль — это «книгу не дочитывали» (колонка `NOT NULL DEFAULT 0`),
+     * а не полночь 1970-го. Без него «Всё время» (`lo = 0`) считало весь фонд: 534 книги при
+     * нулевом чтении (замечание 2026-11-21).
      */
     fun finishedBetween(from: Int, to: Int): Int {
         val lo = if (from <= 0) 0L else dayStart(from)
         val hi = dayStart(nextDay(to))
         return try {
             readableDatabase.rawQuery(
-                "SELECT COUNT(*) FROM books WHERE finished >= ? AND finished < ?",
+                "SELECT COUNT(*) FROM books WHERE finished > 0 AND finished >= ? AND finished < ?",
                 arrayOf(lo.toString(), hi.toString()),
             ).use { c -> if (c.moveToFirst()) c.getInt(0) else 0 }
         } catch (t: Throwable) {

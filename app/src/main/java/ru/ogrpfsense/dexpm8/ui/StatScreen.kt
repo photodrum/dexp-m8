@@ -232,8 +232,12 @@ class StatScreen(act: EinkActivity) : Screen(act) {
             }
         } else {
             for ((day, sec) in stats.sec) {
+                // Индекс — от левого края: 0 — самый старый день периода, n−1 — сегодня.
+                // `daysBack` считает наоборот (0 — сегодня), поэтому переворачиваем: иначе
+                // столбик сегодняшнего дня вставал под подписью самого старого числа
+                // (было: 20 ноября под «16» в неделе). Месяц и год индексуются прямо.
                 val i = if (period == PERIOD_MONTH) LibraryDb.ymd(day)[2] - 1
-                else daysBack(day)
+                else (n - 1) - daysBack(day)
                 if (i in 0 until n) values[i] += sec
             }
         }
@@ -280,15 +284,32 @@ class StatScreen(act: EinkActivity) : Screen(act) {
         }
         // Неделя и «всё время»: подпись — число месяца, у «всего времени» через неделю.
         val stepDays = if (period == PERIOD_WEEK) 1 else 7
+        // «Всё время» шагает через границу месяца: без названия месяца ось читается как случайный
+        // набор чисел (22, 29 — октябрь, 5, 12, 19 — ноябрь). У недели месяц в подзаголовке, там
+        // лишний текст только мешает.
+        val withMonth = period != PERIOD_WEEK
         var i = 0
+        var prevMonth = -1
         while (i < n) {
-            out.add(i to LibraryDb.ymd(LibraryDb.dayMinus(to, n - 1 - i))[2].toString())
+            val day = LibraryDb.dayMinus(to, n - 1 - i)
+            out.add(i to dayLabel(day, prevMonth, withMonth))
+            prevMonth = LibraryDb.ymd(day)[1] - 1
             i += stepDays
         }
         if (out.lastOrNull()?.first != n - 1) {
-            out.add(n - 1 to LibraryDb.ymd(to)[2].toString())
+            out.add(n - 1 to dayLabel(to, prevMonth, withMonth))
         }
         return out
+    }
+
+    /**
+     * Подпись дня на оси: «22 окт» — у первого столбца и там, где сменился месяц ([prevMonth]
+     * — месяц предыдущей подписи, −1 в начале); иначе просто число.
+     */
+    private fun dayLabel(day: Int, prevMonth: Int, withMonth: Boolean): String {
+        val a = LibraryDb.ymd(day)
+        val num = a[2].toString()
+        return if (withMonth && a[1] - 1 != prevMonth) "$num ${MONTH_SHORT[a[1] - 1]}" else num
     }
 
     /** Сколько дней в периоде (для столбцов): месяц — по числу дней, неделя — 7, всё время — до 31. */
