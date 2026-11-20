@@ -57,9 +57,19 @@ class AudioPlayer(private val db: LibraryDb) {
     var sleepAt = 0L
         private set
 
-    /** Таймер «до конца главы»: пауза на границе следующей главы. */
-    var sleepChapter = false
+    /**
+     * Таймер «до конца главы»: граница главы, мс в книге; 0 — взведён не этот таймер.
+     *
+     * Хранится границей, а не флагом, потому что глава и файл — разные вещи: у `.m4b` сто глав
+     * живут в одном файле, у mp3 с тегом `CHAP` — несколько серверных глав в одном файле.
+     * Раньше пауза ставилась по концу файла (`onFileDone`) — в этих случаях таймер не срабатывал
+     * вовсе либо срабатывал позже, чем ждал человек.
+     */
+    var sleepChapEnd = 0L
         private set
+
+    /** Таймер «до конца главы» взведён. */
+    val sleepChapter: Boolean get() = sleepChapEnd != 0L
 
     /**
      * «Пропускать паузы» (B35): хвост файла не доигрывается до последней секунды —
@@ -106,6 +116,9 @@ class AudioPlayer(private val db: LibraryDb) {
         }
         total = acc
         chapters = buildChapters(id)
+        // Таймер «до конца главы» считался от прежней книги — на новой он не имеет смысла.
+        sleepChapEnd = 0L
+        sleepAt = 0L
         speed = speedPct.coerceIn(Prefs.Speed.MIN, Prefs.Speed.MAX)
         pos = b.pos.coerceIn(0L, maxOf(0L, total - 1L))
         release()
@@ -126,6 +139,9 @@ class AudioPlayer(private val db: LibraryDb) {
     fun close() {
         pause()
         release()
+        // Таймер сна — про эту книгу: второй раз он сам не сработает, значит и жить ему незачем.
+        sleepAt = 0L
+        sleepChapEnd = 0L
         book = null
         files = ArrayList()
         offsets = LongArray(0)
@@ -178,6 +194,9 @@ class AudioPlayer(private val db: LibraryDb) {
 
     /** Перейти на место [ms] в книге. Переключает файл, если место в другом файле. */
     fun seek(ms: Long) {
+        // Таймер «до конца главы» переезжает в ту главу, куда человек перешёл сам: иначе он
+        // сработал бы на границе покинутой главы.
+        if (sleepChapEnd != 0L) sleepChapEnd = chapterEndFrom(ms)
         syncPos()
         applySeek(ms)
         if (playing) {
@@ -270,15 +289,42 @@ class AudioPlayer(private val db: LibraryDb) {
 
     /** Пауза через [minutes] минут; [SLEEP_CHAPTER] — в конце текущей главы; 0 — выключить. */
     fun sleepIn(minutes: Int) {
-        sleepChapter = minutes == SLEEP_CHAPTER
+        sleepChapEnd = if (minutes == SLEEP_CHAPTER) chapterEndFrom(pos) else 0L
         sleepAt = if (minutes > 0) SystemClock.elapsedRealtime() + minutes * 60_000L else 0L
+        Trace.step("audio: таймер ${sleepLabel(minutes)}")
         onTick?.invoke()
     }
 
     fun sleepOff() {
+        if (sleepAt == 0L && sleepChapEnd == 0L) return
         sleepAt = 0L
-        sleepChapter = false
+        sleepChapEnd = 0L
+        Trace.step("audio: таймер снят")
         onTick?.invoke()
+    }
+
+    /**
+     * Граница главы, на которой встать: конец текущей главы, а если место уже на самой границе
+     * (вплотную) — конец следующей. 0 — глав нет, таймеру не на что встать.
+     */
+    private fun chapterEndFrom(ms: Long): Long {
+        val c = chapterOf(ms) ?: return 0L
+        // Место ровно на границе считается началом следующей главы (`chapterOf` берёт главу по
+        // `start <= ms`), поэтому «вплотную» проверяем отдельно: конец главы и есть это место.
+        val end = if (c.end > ms + ON_BOUNDARY_MS) c.end else {
+            val i = chapters.indexOf(c)
+            chapters.getOrNull(i + 1)?.end ?: c.end
+        }
+        // Конец последней главы бывает длиннее книги (`CHAP`/`chpl` пишут круглые числа):
+        // граница за концом книги недостижима, и таймер висел бы взведённым. Упираем в книгу.
+        return if (total > 0L) end.coerceAtMost(total) else end
+    }
+
+    /** Подпись таймера для трассы. */
+    private fun sleepLabel(minutes: Int): String = when {
+        minutes == SLEEP_CHAPTER -> "до конца главы @ $sleepChapEnd"
+        minutes > 0 -> "$minutes мин"
+        else -> "выкл"
     }
 
     /** Сколько осталось до паузы, мс; 0 — таймер не взведён. */
@@ -314,6 +360,8 @@ class AudioPlayer(private val db: LibraryDb) {
     /** Начать книгу заново (B33 «Прослушана» → повтор, play на конце книги). */
     fun restart() {
         val b = book ?: return
+        // Таймер «до конца главы» — в первую главу: книга начинается с неё.
+        if (sleepChapEnd != 0L) sleepChapEnd = chapterEndFrom(0L)
         applySeek(0L)
         pos = 0L
         db.setAudioProgress(b.id, 0L)
@@ -375,23 +423,20 @@ class AudioPlayer(private val db: LibraryDb) {
         }
     }
 
-    /** Файл доиграл: следующая глава сразу, если это не конец книги. */
+    /**
+     * Файл доиграл: следующая глава сразу, если это не конец книги.
+     *
+     * Таймер «до конца главы» здесь больше не проверяется: он живёт на границе главы
+     * ([sleepChapEnd], дозор на тике), а глава и файл — разные вещи.
+     */
     private fun onFileDone() {
-        if (sleepChapter) {
-            // «До конца главы»: глава закончилась — пауза, дальше не идём.
-            playing = false
-            sleepChapter = false
-            syncPos()
-            save()
-            ui.removeCallbacks(tick)
-            onTick?.invoke()
-            Trace.step("audio: sleep (конец главы)")
-            return
-        }
         val next = index + 1
         if (next >= files.size) {
             pos = total
             playing = false
+            // Книга кончилась — таймеру здесь уже нечего ждать.
+            sleepChapEnd = 0L
+            sleepAt = 0L
             ui.removeCallbacks(tick)
             save()
             onTick?.invoke()
@@ -436,13 +481,48 @@ class AudioPlayer(private val db: LibraryDb) {
                 pause()
                 return
             }
+            // «До конца главы»: граница лежит в позиции книги, поэтому её ловит дозор, а не
+            // конец файла. Глава бывает внутри файла (`.m4b`, mp3 с `CHAP`).
+            if (sleepChapEnd != 0L && pos >= sleepChapEnd) {
+                stopAtChapter()
+                return
+            }
             // «Пропускать паузы»: хвост файла отрезаем заранее, не дожидаясь completion.
             if (skipPauses) skipTail()
             // Место в базу — на том же тике: п. 12 просит прогресс раз в 10–30 с.
             save()
             onTick?.invoke()
-            ui.postDelayed(this, TICK_MS)
+            ui.postDelayed(this, nextTickMs())
         }
+    }
+
+    /**
+     * Сколько ждать до следующего тика: обычно [TICK_MS], но таймер «до конца главы» не должен
+     * проскочить границу — остаток переводим из миллисекунд книги в реальные по скорости
+     * (10 с тика на 2× — это 20 с книги, глава бы кончилась молча).
+     */
+    private fun nextTickMs(): Long {
+        if (sleepChapEnd == 0L) return TICK_MS
+        val left = sleepChapEnd - pos
+        if (left <= 0L) return GUARD_MS
+        return (left * 100L / speed.coerceAtLeast(1)).coerceIn(GUARD_MS, TICK_MS)
+    }
+
+    /**
+     * Таймер «до конца главы» дозрел: пауза ровно на границе главы, а не на том месте, куда
+     * успел дойти `MediaPlayer`. Дальше — с начала следующей главы.
+     */
+    private fun stopAtChapter() {
+        val end = sleepChapEnd
+        sleepChapEnd = 0L
+        pause()
+        if (end > 0L) {
+            applySeek(end)
+            pos = end
+            save()
+        }
+        Trace.step("audio: sleep (конец главы) @ $pos, глава ${chapterNumber()}")
+        onTick?.invoke()
     }
 
     /**
@@ -456,6 +536,9 @@ class AudioPlayer(private val db: LibraryDb) {
         try {
             val left = p.duration - p.currentPosition
             if (left in 1 until SKIP_TAIL_MS.toInt()) {
+                // Таймер «до конца главы» стоит вплотную к этому стыку: человек просил доиграть
+                // до границы, поэтому хвост не срезаем — дозор остановит ровно на ней.
+                if (sleepChapEnd != 0L && sleepChapEnd - pos <= SKIP_TAIL_MS) return
                 pos = offsets[i + 1]
                 val next = prepare(i + 1) ?: return
                 applySpeed(next)
@@ -496,6 +579,18 @@ class AudioPlayer(private val db: LibraryDb) {
 
         /** Хвост файла, который отсекает «Пропускать паузы» (B35), мс. */
         private const val SKIP_TAIL_MS = 2_000L
+
+        /**
+         * Насколько вплотную к границе главы считается «место уже на границе»: тогда таймер
+         * «до конца главы» берёт следующую главу, а не стоящую нулевой длины.
+         */
+        private const val ON_BOUNDARY_MS = 200L
+
+        /**
+         * Нижняя граница тика, когда взведён таймер «до конца главы»: дозор просыпается не реже
+         * раза в секунду, иначе на скорости 2× граница проходится на 20 с книги за один тик.
+         */
+        private const val GUARD_MS = 1_000L
 
         /** Насколько близко к концу книги play считается «доиграла» — тогда начинаем заново. */
         private const val END_MS = 1_000L
