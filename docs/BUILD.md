@@ -284,6 +284,11 @@ adb kill-server; adb start-server; adb devices
   правка дома, `adb shell "run-as <пакет> sh -c 'cat > /data/data/<пакет>/shared_prefs/shell.xml'" < /tmp/shell.xml`.
   На живом процессе файл перезапишется из памяти — сначала `am force-stop`.
 
+**Грабли проверки касаниями (2026-11-21, B12):** `adb shell screencap` отдаёт кадр 1404×1872 —
+это ровно дизайн-px, масштаба нет. `adb shell input tap` берёт те же координаты без пересчёта:
+`input tap 250 1120` — кнопка «Оглавление» на B12. Любой «пересчёт» (например `×0.8`) уводит на
+соседний элемент и даёт ложный «код не работает».
+
 **Грабли проверки заряда (2026-11-18, B20):**
 
 - `adb shell dumpsys battery set level N` **не меняет** `status`: при `status: 5` (`FULL`) оболочка
