@@ -1015,7 +1015,7 @@ class EinkActivity : Activity() {
             }
             if (sc != "wifi" && sc != "updates" && sc != "licenses" && sc != "zone" &&
                 sc != "layouts" && sc != "net" && sc != "bt" && sc != "read" &&
-                sc != "firstread" && sc != "stats") return
+                sc != "keys" && sc != "firstread" && sc != "stats") return
             intent.removeExtra("screen")
             Trace.step("debug: screen $sc")
             val id = when (sc) {
@@ -1030,6 +1030,8 @@ class EinkActivity : Activity() {
                 // B39 «Настройки · Чтение» и шаг 4 мастера (B62): на книге не пройти кликами —
                 // на пути к B39 два уровня списка, а мастер открывается только на первом запуске.
                 "read" -> SCR_SET_READ
+                // B13 → «Кнопки и жесты» (2026-11-21): тоже два уровня списка.
+                "keys" -> SCR_SET_KEYS
                 "firstread" -> SCR_FIRST_READ
                 else -> SCR_WIFI
             }

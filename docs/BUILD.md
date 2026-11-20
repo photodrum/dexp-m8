@@ -272,6 +272,13 @@ adb kill-server; adb start-server; adb devices
 - `adb shell pm clear ru.ogrpfsense.dexpm8` сносит **все** данные: базу, `shared_prefs/shell.xml`,
   шрифты. Для проверки первого запуска это не нужно — хватает `--es screen first`. Восстановление —
   «Смена подписи без потери данных» выше (шаги 3–4), бэкап `~/dexpm8-backup-<дата>`.
+- **Экраны, до которых не дойти кликами, открываются отладочным путём** (debug-сборка):
+  ```bash
+  adb shell am start -n ru.ogrpfsense.dexpm8/.ui.EinkActivity --es screen read   # B39 «Чтение»
+  adb shell am start -n ru.ogrpfsense.dexpm8/.ui.EinkActivity --es screen keys   # B13 → «Кнопки и жесты»
+  adb shell am start -n ru.ogrpfsense.dexpm8/.ui.EinkActivity --es screen stats  # B32 «Статистика»
+  ```
+  Причина: на пути к B39/B13 два уровня списка, мастер — только на первом запуске.
 - Править `shared_prefs/shell.xml` из `adb shell` нельзя (`Permission denied`): владелец — только
   `run-as`. Порядок: `adb exec-out run-as <пакет> cat shared_prefs/shell.xml > /tmp/shell.xml`,
   правка дома, `adb shell "run-as <пакет> sh -c 'cat > /data/data/<пакет>/shared_prefs/shell.xml'" < /tmp/shell.xml`.
