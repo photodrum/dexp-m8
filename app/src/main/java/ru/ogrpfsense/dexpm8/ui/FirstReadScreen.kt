@@ -19,11 +19,10 @@ import ru.ogrpfsense.dexpm8.reader.TypographySheet
  *
  * Пишутся те же `Prefs`, что у B39/B70: значения общие («настройки чтения по умолчанию»).
  * Ввод: «Шрифт и размер» — B70, «Интервал и поля» — B39 (своего листа нет), переносы — тумблер,
- * зоны — три варианта. «Готово» ведёт на B63.
+ * зоны — как на B39: одна схема «Классическая» без выбора (макет 2026-11-20).
+ * «Готово» ведёт на B63.
  */
 class FirstReadScreen(act: EinkActivity) : Screen(act) {
-
-    private class Zone(val title: String, val desc: String, val y: Float)
 
     /** Шторку B5 на шаге мастера не открываем: панель управления здесь ни к чему. */
     override val shadeZone: Float get() = 0f
@@ -31,12 +30,6 @@ class FirstReadScreen(act: EinkActivity) : Screen(act) {
     private val status = StatusBar(act, this, ink, icons)
     private val kit = SettingsKit(ink, icons)
     private val first = FirstRunKit(ink, icons)
-
-    private val zones = arrayOf(
-        Zone("Классическая", "Левая треть — назад, остальное — вперёд", 1130f),
-        Zone("Две половины", "Левая — назад, правая — вперёд", 1292f),
-        Zone("Только вперёд", "Любое касание листает вперёд", 1454f)
-    )
 
     override fun render(c: Canvas) {
         val p = act.prefs
@@ -65,7 +58,7 @@ class FirstReadScreen(act: EinkActivity) : Screen(act) {
         kit.section(c, "ЗОНЫ КАСАНИЙ", 1040f)
         kit.panel(c, 1088f, 570f)
         scheme(c)
-        for (i in zones.indices) variant(c, zones[i], i == p.tapZones)
+        schemeText(c)
 
         first.buttonDark(c, "Готово")
     }
@@ -89,26 +82,41 @@ class FirstReadScreen(act: EinkActivity) : Screen(act) {
         return "$sp · ${mg.lowercase()}"
     }
 
-    /** Схема страницы 360×480: зона «Назад» и «Меню», вперёд — остальное поле. */
+    /**
+     * Схема страницы 360×480 (как на B39, макет 2026-11-20): по бокам «Назад» и «Вперёд»
+     * по всей высоте, в центре две плашки меню — «Меню экрана» и «Меню книги».
+     */
     private fun scheme(c: Canvas) {
         ink.inset(c, 88f, 1130f, 360f, 480f, 28f, T.G12)
         ink.roundRect(c, 102f, 1146f, 104.8f, 450f, 16f, T.G10)
         ink.roundRect(c, 212.8f, 1146f, 110.4f, 144f, 16f, T.G11)
+        ink.roundRect(c, 330.5f, 1146f, 104.8f, 450f, 16f, T.G10)
+        ink.roundRect(c, 212.8f, 1297.6f, 110.4f, 144f, 16f, T.G11)
         cap(c, "Назад", 102f, 104.8f, 1352.5f)
-        cap(c, "Меню", 212.8f, 110.4f, 1200.5f)
-        cap(c, "Вперёд", 206.8f, 227.2f, 1424.5f)
+        cap2(c, "Меню", "экрана", 212.8f, 110.4f, 1187.5f)
+        cap(c, "Вперёд", 330.5f, 104.8f, 1352.5f)
+        cap2(c, "Меню", "книги", 212.8f, 110.4f, 1336.6f)
     }
 
     private fun cap(c: Canvas, s: String, x: Float, w: Float, top: Float) {
         ink.textCenter(c, s, x, w, T.base(top, T.TS_CAPTION, 1.25f), T.TS_CAPTION, 700, T.G1)
     }
 
-    /** Вариант зон: выбранный — вдавленный желоб 819×140, остальные — выпуклые 824×140. */
-    private fun variant(c: Canvas, z: Zone, selected: Boolean) {
-        if (selected) ink.inset(c, 490f, z.y, 819f, 140f, 40f, T.G12)
-        else ink.convex(c, 490f, z.y, 824f, 140f, 40f)
-        ink.text(c, z.title, 526f, T.base(z.y + 24f, T.TS_LABEL_L, 1.25f), T.TS_LABEL_L, 700, T.G1)
-        ink.text(c, z.desc, 526f, T.base(z.y + 74f, T.TS_META, 1.25f), T.TS_META, 600, T.G4)
+    /** Подпись в две строки: рамка 70 при кегле 28 и межстрочном 1.25 — шаг 35. */
+    private fun cap2(c: Canvas, line1: String, line2: String, x: Float, w: Float, top: Float) {
+        ink.textCenter(c, line1, x, w, T.base(top, T.TS_CAPTION, 1.25f), T.TS_CAPTION, 700, T.G1)
+        ink.textCenter(c, line2, x, w, T.base(top + CAP2_STEP, T.TS_CAPTION, 1.25f),
+            T.TS_CAPTION, 700, T.G1)
+    }
+
+    /** Одна схема «Классическая» 38/700 и правило в две строки 30/600 G4 — как на B39. */
+    private fun schemeText(c: Canvas) {
+        ink.text(c, "Классическая", 526f, T.base(1310.6f, T.TS_LABEL_L, 1.25f),
+            T.TS_LABEL_L, 700, T.G1)
+        ink.text(c, "Левая треть — назад", 526f, T.base(1360.6f, T.TS_META, 1.25f),
+            T.TS_META, 600, T.G4)
+        ink.text(c, "Правая треть — вперёд", 526f, T.base(1360.6f + DESC_STEP, T.TS_META, 1.25f),
+            T.TS_META, 600, T.G4)
     }
 
     override fun onUp(x: Float, y: Float) {
@@ -120,14 +128,15 @@ class FirstReadScreen(act: EinkActivity) : Screen(act) {
             redraw()
             return
         }
-        for (i in zones.indices) {
-            val z = zones[i]
-            if (x >= 490f && x <= 1314f && y >= z.y && y <= z.y + 140f) {
-                if (p.tapZones != i) { p.tapZones = i; redraw() }
-                return
-            }
-        }
+        // Варианта зон больше нет (как на B39, макет 2026-11-20): блок «Классическая» не нажимается.
         if (first.isDarkFull(x, y)) act.go(EinkActivity.SCR_FIRST_DONE)
+    }
+
+    private companion object {
+        /** Шаг второй строки подписи зоны: рамка 70 при кегле 28 и межстрочном 1.25. */
+        const val CAP2_STEP = 35f
+        /** Шаг второй строки правила: рамка 76 на две строки, кегль 30. */
+        const val DESC_STEP = 38f
     }
 
     override fun onAttachedToWindow() {
