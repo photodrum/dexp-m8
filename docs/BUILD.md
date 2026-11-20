@@ -298,6 +298,19 @@ adb kill-server; adb start-server; adb devices
   на хосте → `adb push /tmp/shell.xml /data/local/tmp/` → `run-as … cp /data/local/tmp/shell.xml
   shared_prefs/shell.xml` (и `am force-stop` заранее).
 
+**Проверка страниц B6 (нужно > 12 приложений, 2026-11-20).** На книге 7 приложений + синтетическая
+плитка «Файлы» → одна страница при `PER_PAGE = 12`. Пять минимальных APK собираются без сети и Gradle за
+~10 секунд и ставятся на книгу:
+
+```bash
+tools/test_apps.sh            # /tmp/testapps/aN/testN.apk, подпись tools/debug.keystore
+tools/test_apps.sh --install  # поставить, оболочка будет остановлена
+tools/test_apps.sh --clean    # снять после проверки
+```
+
+После установки и после `--clean`: запустить оболочку и заново включить службу питания (раздел выше).
+Было 12 приложений + «Файлы» = 13 плиток → две страницы, желоб из двух сегментов.
+
 **Проверка экранов по тапам (2026-11-20).** `adb shell input tap X Y` — в **пикселях экрана**
 (1404×1872), а зоны касания в коде заданы в дизайн-px: при density 2.0 они совпадают, но зоны
 у кнопок узкие. Промах выглядит как «кнопка не работает»:
@@ -386,11 +399,17 @@ implementation found ...`), хотя в APK символ есть. После `a
 (переустановка `install -r` её не снимает). Без службы клавиша пишет «Нужна настройка».
 
 ```bash
-adb shell settings put secure enabled_accessibility_services ru.ogrpfsense.dexpm8/ru.ogrpfsense.dexpm8.core.PowerService
-adb shell settings put secure accessibility_enabled 1
+adb shell settings put --user 0 secure enabled_accessibility_services ru.ogrpfsense.dexpm8/ru.ogrpfsense.dexpm8.core.PowerService
+adb shell settings put --user 0 secure accessibility_enabled 1
 adb shell dumpsys accessibility | grep -o 'services:{[^}]*}'   # ожидаем «DEXP M8 — выключение»
-# выключить: adb shell settings delete secure enabled_accessibility_services; adb shell settings put secure accessibility_enabled 0
+# выключить: adb shell settings delete --user 0 secure enabled_accessibility_services; adb shell settings put --user 0 secure accessibility_enabled 0
 ```
+
+**Грабля (2026-11-20, второй раз): без `--user 0` запись может пройти молча.** `settings put secure …`
+вернул код 0, а `settings list secure` остался с пустым `enabled_accessibility_services` и
+`accessibility_enabled=0`. С `--user 0` (или `cmd settings put --user 0 …`) записалось с первого раза,
+служба поднялась — в трассе `power: service connected`. Если после переустановки ключ «Выключение»
+пишет «Нужна настройка» — сначала проверить `settings list secure | grep accessib`, потом писать с `--user 0`.
 
 Команда затирает список включённых служб: если на книге есть другие (по умолчанию нет, `settings get` → `null`) —
 дописать через `:`.
@@ -403,8 +422,8 @@ adb shell dumpsys accessibility | grep -o 'services:{[^}]*}'   # ожидаем 
 ```bash
 adb install -r -d ~/projects/dexp-m8/app/build/outputs/apk/debug/app-debug.apk
 adb shell am force-stop ru.ogrpfsense.dexpm8
-adb shell settings put secure enabled_accessibility_services ru.ogrpfsense.dexpm8/ru.ogrpfsense.dexpm8.core.PowerService
-adb shell settings put secure accessibility_enabled 1
+adb shell settings put --user 0 secure enabled_accessibility_services ru.ogrpfsense.dexpm8/ru.ogrpfsense.dexpm8.core.PowerService
+adb shell settings put --user 0 secure accessibility_enabled 1
 adb shell am start -n ru.ogrpfsense.dexpm8/.ui.EinkActivity
 adb logcat -d | grep 'power: service connected'   # ожидаем строку трассы
 ```
