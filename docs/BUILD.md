@@ -377,6 +377,32 @@ adb shell dumpsys accessibility | grep -o 'services:{[^}]*}'   # ожидаем 
 Команда затирает список включённых служб: если на книге есть другие (по умолчанию нет, `settings get` → `null`) —
 дописать через `:`.
 
+**Грабля (2026-11-20): `am force-stop` снимает службу.** `adb shell am force-stop ru.ogrpfsense.dexpm8`
+обнуляет `enabled_accessibility_services` (и `accessibility_enabled` → 0), сама служба после старта не
+возвращается. А `force-stop` обязателен после каждого `install -r`, иначе приложение держит старую `.so`
+(см. «Грабля: `install -r` не перезапускает процесс»). Порядок на каждую переустановку:
+
+```bash
+adb install -r -d ~/projects/dexp-m8/app/build/outputs/apk/debug/app-debug.apk
+adb shell am force-stop ru.ogrpfsense.dexpm8
+adb shell settings put secure enabled_accessibility_services ru.ogrpfsense.dexpm8/ru.ogrpfsense.dexpm8.core.PowerService
+adb shell settings put secure accessibility_enabled 1
+adb shell am start -n ru.ogrpfsense.dexpm8/.ui.EinkActivity
+adb logcat -d | grep 'power: service connected'   # ожидаем строку трассы
+```
+
+**Админ устройства (нужен для «Сна» на B5, `lockNow`).** Включается из adb одной командой
+(проверено 2026-11-20). Снять так же нельзя — `dpm remove-active-admin` без root отказывает
+(`Attempt to remove non-test admin`), снимают руками через системный экран админов (см. «Частые ошибки»).
+
+```bash
+adb shell dpm set-active-admin ru.ogrpfsense.dexpm8/ru.ogrpfsense.dexpm8.core.AdminReceiver
+adb shell dumpsys device_policy | grep -A6 'Enabled Device Admins'   # ожидаем .core.AdminReceiver и policies: force-lock
+```
+
+Без админа «Сон» на B5 показывает системный запрос права; с админом — заставка B19 и
+`mWakefulness=Asleep`, `Display Power: state=OFF` (проверено 2026-11-20).
+
 В скриптах с циклом `while read` по файлам каждому `adb shell`/`adb exec-out` давать `< /dev/null`:
 иначе adb съедает stdin, и цикл заканчивается после первого файла.
 
