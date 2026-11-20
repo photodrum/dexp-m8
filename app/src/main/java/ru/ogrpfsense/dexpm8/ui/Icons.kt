@@ -174,6 +174,22 @@ class Icons {
     }
 
     /**
+     * То же, что [drawRound], но возвращает рамку, в которой иконка легла на экран
+     * (`width`/`height` — её размер после масштаба, `left`/`top` — левый верхний угол).
+     *
+     * Нужна там, где поверх иконки рисуется текст: в макете B07 цифра «10» на кнопках ±10 с
+     * выровнена по центру рамки иконки (у `back10` — 418.7, у `fwd10` — 987.0) и отстоит от её
+     * верха на 29.3. Иконка же ставится по оптическому центру диска, поэтому макетные
+     * абсолютные координаты цифры дают сдвиг вниз на 2.6 px (замечание 2026-11-20).
+     */
+    fun drawRoundBox(c: Canvas, name: String, bx: Float, by: Float, bw: Float, bh: Float,
+                     iw: Float, ih: Float): RectF {
+        val s = specs[name] ?: return RectF()
+        val d = disc(bx, by, bw, bh)
+        return drawBoxAt(c, s, d[0], d[1], iw, ih)
+    }
+
+    /**
      * Иконка по центру круглой клавиши, у которой поверхность ТОГО ЖЕ тона, что подложка
      * (плитки B1: и плитка, и клавиша — G14).
      *
@@ -235,6 +251,21 @@ class Icons {
         c.scale(sc, sc)
         for (p in s.prims) drawPrim(c, p)
         c.restoreToCount(saved)
+    }
+
+    /** [drawAt] плюс рамка иконки на экране — для текста поверх (см. [drawRoundBox]). */
+    private fun drawBoxAt(c: Canvas, s: Spec, cx: Float, cy: Float, iw: Float, ih: Float): RectF {
+        val sx = iw / s.w
+        val sy = ih / s.h
+        val sc = if (sx < sy) sx else sy
+        val ox = cx - ((s.ink.left + s.ink.right) / 2f) * sc
+        val oy = cy - ((s.ink.top + s.ink.bottom) / 2f) * sc
+        val saved = c.save()
+        c.translate(ox, oy)
+        c.scale(sc, sc)
+        for (p in s.prims) drawPrim(c, p)
+        c.restoreToCount(saved)
+        return RectF(ox, oy, ox + s.w * sc, oy + s.h * sc)
     }
 
     /**

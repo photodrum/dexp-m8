@@ -1,6 +1,7 @@
 package ru.ogrpfsense.dexpm8.ui
 
 import android.graphics.Canvas
+import android.graphics.RectF
 import ru.ogrpfsense.dexpm8.core.AudioPlayer
 
 /**
@@ -32,7 +33,7 @@ class AudioScreen(act: EinkActivity) : Screen(act) {
     private val db = act.db
     private val status = StatusBar(act, this, ink, icons)
     private val lit = T.literata(ink.res, 500)
-    private val sheet = AudioSheet(ink, icons)
+    private val sheet = AudioSheet(ink)
 
     /** Блокировка положения: лист B35 поверх экрана (под листом кадр затемнён). */
     private var sheetOpen = false
@@ -118,18 +119,36 @@ class AudioScreen(act: EinkActivity) : Screen(act) {
         icons.drawRound(c, "nxt", 1138f, 1276.9f, 136.2f, 141.7f, 45.7f, 47.6f)
 
         // ±10 с: диск 131.6, иконка `back10`/`fwd10` 102.4×106.6 и цифра «10» поверх.
+        // Цифра ставится по фактической рамке иконки, а не по абсолютным координатам макета:
+        // иконка центрируется по оптическому центру диска (Icons.drawRoundBox), и макетные
+        // 382.1/1328.7 давали сдвиг вниз-вправо (замечание 2026-11-20).
         ink.convex(c, 348.3f, 1276.9f, 136.2f, 141.7f, 65.8f)
-        icons.drawRound(c, "back10", 348.3f, 1276.9f, 136.2f, 141.7f, 102.4f, 106.6f)
-        ink.textCenter(c, "10", 382.1f, 73.1f, T.base(1328.7f, T.TS_BODY_S, 1.25f), T.TS_BODY_S, 800, T.G2)
+        ten(c, icons.drawRoundBox(c, "back10", 348.3f, 1276.9f, 136.2f, 141.7f, 102.4f, 106.6f))
         ink.convex(c, 918.6f, 1276.9f, 136.2f, 141.7f, 65.8f)
-        icons.drawRound(c, "fwd10", 918.6f, 1276.9f, 136.2f, 141.7f, 102.4f, 106.6f)
-        ink.textCenter(c, "10", 950.5f, 73.1f, T.base(1327.7f, T.TS_BODY_S, 1.25f), T.TS_BODY_S, 800, T.G2)
+        ten(c, icons.drawRoundBox(c, "fwd10", 918.6f, 1276.9f, 136.2f, 141.7f, 102.4f, 106.6f))
 
         // Главная клавиша: 219.4 тёмная (пауза/плей) — 223.9×229.4 в 589.6,1233.1.
         ink.convexDark(c, 589.6f, 1233.1f, 223.9f, 229.4f, 110f)
         val icon = if (p.playing) "pause" else "play"
         icons.drawRound(c, icon, 589.6f, 1233.1f, 223.9f, 229.4f, 87.8f, 87.8f)
     }
+
+    /**
+     * Цифра «10» внутри круглой стрелки ±10 с.
+     *
+     * По макету B07 (`back10` 367.5,1299.4) цифра отстоит от верха рамки иконки на 29.3 и стоит
+     * по её центру по x (382.1 + 73.1/2 = 418.65 при центре рамки 418.7). Привязка к рамке,
+     * а не к абсолютным числам макета, нужна потому, что иконка центрируется по оптическому
+     * центру диска: `back10` уезжает на 4.3 влево и 5.5 вверх, `fwd10` — на 4.5 вверх, и цифра
+     * на макетных координатах стояла не по центру стрелки (замечание 2026-11-20).
+     */
+    private fun ten(c: Canvas, box: RectF) {
+        val w = 73.1f
+        val x = box.left + (box.width() - w) / 2f
+        val base = box.top + 29.3f + T.TS_BODY_S * (1.25f / 2f + T.BASE_K_MANROPE)
+        ink.textCenter(c, "10", x, w, base, T.TS_BODY_S, 800, T.G2)
+    }
+
 
     // ---------------------------------------------------------------- параметры
 
