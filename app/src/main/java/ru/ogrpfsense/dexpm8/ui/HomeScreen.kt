@@ -78,7 +78,17 @@ class HomeScreen(act: EinkActivity) : Screen(act) {
         card(c)
         continueButton(c)
         tiles(c)
-        // Строка «Сегодня N мин · …» из макета не рисуется: статистики чтения нет до читалки.
+        todayLine(c)
+    }
+
+    /**
+     * Строка «Сегодня 42 мин · 31 стр.» из макета (0,1803.6, 30/600 G4 по центру) — дверь
+     * в B32 «Статистика чтения» (п. 22). Данных нет — строка не рисуется: пустая дверь
+     * на E-Ink только мешает.
+     */
+    private fun todayLine(c: Canvas) {
+        val s = today ?: return
+        ink.textCenter(c, s, 0f, W, T.base(1803.6f, T.TS_META, 1.25f), T.TS_META, 600, T.G4)
     }
 
     private fun header(c: Canvas) {
@@ -190,6 +200,12 @@ class HomeScreen(act: EinkActivity) : Screen(act) {
     private var book: LibraryDb.Entry? = null
     private val coverLines = arrayOfNulls<String>(2)
 
+    /**
+     * «Сегодня 42 мин · 31 стр.» — сводка дня для строки-двери в B32 (п. 22); null — сегодня
+     * ещё не читали, строка не рисуется.
+     */
+    private var today: String? = null
+
     private fun refresh() {
         try {
             book = act.db.lastOpened()
@@ -198,9 +214,24 @@ class HomeScreen(act: EinkActivity) : Screen(act) {
             tiles[1].count = audioWord(act.db.audioCount())
             tiles[2].count = appsWord(AppsScreen.count(act))
             refreshPinned()
+            refreshToday()
         } catch (t: Throwable) {
             Trace.step("home refresh FAIL: ${t.javaClass.simpleName}: ${t.message}")
         }
+    }
+
+    /**
+     * Сводка дня для строки «Сегодня …»: минуты и страницы из `reading` (п. 22). Меньше минуты
+     * не показываем — «0 мин» на главном выглядит как поломка.
+     */
+    private fun refreshToday() {
+        val d = LibraryDb.day()
+        val st = act.db.stats(d, d)
+        val min = st.totalSec / 60L
+        val pages = st.totalPages
+        today = if (min <= 0L && pages <= 0L) null
+        else "Сегодня ${Words.plural(min.toInt(), "минута", "минуты", "минут")} · " +
+            "$pages стр."
     }
 
     private fun audioWord(n: Int): String {
@@ -289,6 +320,11 @@ class HomeScreen(act: EinkActivity) : Screen(act) {
     // --------------------------------------------------------------- ввод
 
     override fun onUp(x: Float, y: Float) {
+        // Строка «Сегодня …» — дверь в B32 (п. 22): панель по низу всего экрана.
+        if (today != null && y >= 1780f) {
+            act.go(EinkActivity.SCR_STATS)
+            return
+        }
         for (h in hits) {
      if (x >= h.x && x <= h.x + h.w && y >= h.y && y <= h.y + h.h) {
   val p = pinned
@@ -322,6 +358,21 @@ class HomeScreen(act: EinkActivity) : Screen(act) {
     fun refreshTime() {
         if (!refreshHeader()) return
         if (parent != null) redraw()
+    }
+
+    /**
+     * Перечитать сводку дня при возврате на главный (п. 22): после чтения строка «Сегодня …»
+     * должна показать новые минуты. Перерисовка — только при смене строки: на E-Ink лишний
+     * кадр это мерцание.
+     */
+    fun refreshTodayIfChanged() {
+        val before = today
+        try {
+            refreshToday()
+        } catch (t: Throwable) {
+            Trace.step("home today FAIL ${t.javaClass.simpleName}: ${t.message}")
+        }
+        if (before != today && parent != null) redraw()
     }
 
     override fun onAttachedToWindow() {

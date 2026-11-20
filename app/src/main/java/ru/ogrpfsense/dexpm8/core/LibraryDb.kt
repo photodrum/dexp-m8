@@ -62,6 +62,8 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         val opened: Long,
         val pos: String? = null,
         val view: String? = null,
+        /** Когда книгу дочитали (мс, 0 — не дочитывали): колонка `finished`, база v13 (B32). */
+        val finished: Long = 0L,
     )
 
     class Stamp(val size: Long, val mtime: Long)
@@ -92,7 +94,8 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
                 "added INTEGER NOT NULL," +
                 "opened INTEGER NOT NULL DEFAULT 0," +
                 "pos TEXT," +
-                "view TEXT)"
+                "view TEXT," +
+                "finished INTEGER NOT NULL DEFAULT 0)"
         )
         db.execSQL("CREATE INDEX books_title ON books (title_sort)")
         db.execSQL("CREATE INDEX books_author ON books (author_sort, title_sort)")
@@ -101,6 +104,7 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         createCatalogs(db)
         createBookmarks(db)
         createAudio(db)
+        createReading(db)
     }
 
     /**
@@ -156,6 +160,31 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
                 "dur INTEGER NOT NULL," +
                 "PRIMARY KEY (book_id, ord))"
         )
+    }
+
+    /**
+     * Время чтения (версия 13, п. 22, B32 «Статистика»).
+     *
+     * `reading` — одна строка на пару «день + книга»: `day` — местная дата в виде `ГГГГММДД`
+     * (число, поэтому `ORDER BY` и сравнение диапазонов работают как строки и так же дают
+     * календарный порядок), `sec` — сколько секунд читали, `pages` — сколько страниц
+     * перелистнули. Ключ пары — `UNIQUE (day, book_id)`: писатель складывает ([addReading]).
+     *
+     * `book_id` намеренно **без внешнего ключа**: книгу из базы сканер может убрать (файл
+     * удалили), а статистика за прошлые дни — история, её не стираем. Список «Дольше всего»
+     * берёт только книги, которые ещё есть в библиотеке.
+     */
+    private fun createReading(db: SQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE reading (" +
+                "day INTEGER NOT NULL," +
+                "book_id INTEGER NOT NULL," +
+                "sec INTEGER NOT NULL DEFAULT 0," +
+                "pages INTEGER NOT NULL DEFAULT 0," +
+                "UNIQUE (day, book_id))"
+        )
+        db.execSQL("CREATE INDEX reading_day ON reading (day)")
+        db.execSQL("CREATE INDEX reading_book ON reading (book_id)")
     }
 
     private fun createShelves(db: SQLiteDatabase) {
@@ -283,6 +312,13 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         }
         // Версия 12: аудиокниги (п. 12) — три новые таблицы, книги и полки не трогаем.
         if (oldVersion < 12) createAudio(db)
+        // Версия 13 (п. 22, B32 «Статистика»): время чтения — таблица `reading` по дням и книгам,
+        // плюс `finished` у книги: когда её дочитали. Старые дни не восстанавливаются — до v13
+        // время не писалось вовсе, поэтому таблица начинается пустой.
+        if (oldVersion < 13) {
+            db.execSQL("ALTER TABLE books ADD COLUMN finished INTEGER NOT NULL DEFAULT 0")
+            createReading(db)
+        }
     }
 
     /**
@@ -838,6 +874,175 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         writableDatabase.update("books", cv, "_id = ?", arrayOf(id.toString()))
     }
 
+    // ------------------------------------------- статистика чтения (п. 22, B32)
+
+    /**
+     * Добавить время чтения (база v13): [day] — местная дата `ГГГГММДД` ([Stat.day]), [sec] —
+     * секунды, [pages] — перелистнутые страницы. Строка пары «день + книга» одна, поэтому
+     * значения складываются, а не перезаписываются: за один день книгу открывают много раз.
+     *
+     * Пишется с фонового потока (у читалки это `Engine.worker`), поэтому обе операции —
+     * вставка и прибавка — идут одной транзакцией.
+     */
+    fun addReading(bookId: Long, day: Int, sec: Long, pages: Int) {
+        if (bookId <= 0) return
+        if (sec <= 0 && pages <= 0) return
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val cv = ContentValues(4)
+            cv.put("day", day)
+            cv.put("book_id", bookId)
+            cv.put("sec", sec)
+            cv.put("pages", pages)
+            db.insertWithOnConflict("reading", null, cv, SQLiteDatabase.CONFLICT_IGNORE)
+            db.execSQL(
+                "UPDATE reading SET sec = sec + ?, pages = pages + ? WHERE day = ? AND book_id = ?",
+                arrayOf(sec, pages, day, bookId),
+            )
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    /**
+     * Сводка за дни периода для B32. [sec]/[pages] — по дням (`day` → значение), дни без
+     * чтения в них не попадают: график рисует их нулями сам. [finished] — сколько книг
+     * дочитано в тех же днях, [bestDay]/[bestSec] — лучший день, [totalSec]/[totalPages] — итог.
+     */
+    class Stats(
+        val sec: HashMap<Int, Long> = HashMap(),
+        val pages: HashMap<Int, Long> = HashMap(),
+        var finished: Int = 0,
+        var bestDay: Int = 0,
+        var bestSec: Long = 0L,
+        var totalSec: Long = 0L,
+        var totalPages: Long = 0L,
+    )
+
+    /** Секунды и страницы по дням `from`…`to` (включительно, местные даты `ГГГГММДД`). */
+    fun stats(from: Int, to: Int): Stats {
+        val s = Stats()
+        readableDatabase.rawQuery(
+            "SELECT day, sec, pages FROM reading WHERE day >= ? AND day <= ?",
+            arrayOf(from.toString(), to.toString()),
+        ).use { c ->
+            while (c.moveToNext()) {
+                val day = c.getInt(0)
+                val sec = c.getLong(1)
+                val pg = c.getLong(2)
+                s.sec[day] = (s.sec[day] ?: 0L) + sec
+                s.pages[day] = (s.pages[day] ?: 0L) + pg
+                s.totalSec += sec
+                s.totalPages += pg
+                if (sec > s.bestSec) {
+                    s.bestSec = sec
+                    s.bestDay = day
+                }
+            }
+        }
+        s.finished = finishedBetween(from, to)
+        return s
+    }
+
+    /**
+     * Сколько книг дочитано с дня [from] (0 — без нижней границы) по день [to] включительно.
+     * Дни — местные `ГГГГММДД`, а `books.finished` — миллисекунды, поэтому границы переводятся
+     * в полночь мс по местному времени ([dayStart], [nextDay]).
+     */
+    fun finishedBetween(from: Int, to: Int): Int {
+        val lo = if (from <= 0) 0L else dayStart(from)
+        val hi = dayStart(nextDay(to))
+        return try {
+            readableDatabase.rawQuery(
+                "SELECT COUNT(*) FROM books WHERE finished >= ? AND finished < ?",
+                arrayOf(lo.toString(), hi.toString()),
+            ).use { c -> if (c.moveToFirst()) c.getInt(0) else 0 }
+        } catch (t: Throwable) {
+            0
+        }
+    }
+
+    /**
+     * Книга в списке «Дольше всего» B32: [sec] — сколько её читали за период, [progress] —
+     * прогресс из `books`, чтобы нарисовать дорожку и проценты, как в макете.
+     */
+    class TimeBook(
+        val id: Long,
+        val title: String,
+        val author: String?,
+        val coverId: String?,
+        val progress: Int,
+        val sec: Long,
+    )
+
+    /**
+     * Книги периода по убыванию времени чтения, не больше [limit]. Только те, что ещё есть
+     * в библиотеке: название и обложка берутся из `books`, а время — из `reading`.
+     */
+    fun topBooks(from: Int, to: Int, limit: Int): ArrayList<TimeBook> {
+        val out = ArrayList<TimeBook>(limit)
+        readableDatabase.rawQuery(
+            "SELECT r.book_id, SUM(r.sec), b.title, b.author, b.cover_id, b.progress " +
+                "FROM reading r JOIN books b ON b._id = r.book_id " +
+                "WHERE r.day >= ? AND r.day <= ? GROUP BY r.book_id " +
+                "ORDER BY SUM(r.sec) DESC LIMIT ?",
+            arrayOf(from.toString(), to.toString(), limit.toString()),
+        ).use { c ->
+            while (c.moveToNext()) {
+                out.add(
+                    TimeBook(
+                        id = c.getLong(0),
+                        sec = c.getLong(1),
+                        title = c.getString(2),
+                        author = if (c.isNull(3)) null else c.getString(3),
+                        coverId = if (c.isNull(4)) null else c.getString(4),
+                        progress = c.getInt(5),
+                    )
+                )
+            }
+        }
+        return out
+    }
+
+    /**
+     * Запомнить, что книгу дочитали (прогресс дошёл до 100). Метка ставится один раз: хранится
+     * первая дата дочитывания — перечитывание книги не делает её «новой» в статистике.
+     */
+    fun markFinished(id: Long) {
+        writableDatabase.execSQL(
+            "UPDATE books SET finished = ? WHERE _id = ? AND finished = 0",
+            arrayOf(System.currentTimeMillis(), id),
+        )
+    }
+
+    /** Первый день, за который есть чтение (`ГГГГММДД`); `null` — статистики ещё нет. */
+    fun readingStart(): Int? =
+        readableDatabase.rawQuery("SELECT MIN(day) FROM reading", null).use { c ->
+            if (c.moveToFirst() && !c.isNull(0)) c.getInt(0) else null
+        }
+
+    /**
+     * Сколько дней подряд читали, считая от [today] назад: «14 дн. подряд без пропусков» на B32.
+     * Сегодня ещё не читали — серия не рвётся, она считается от вчера: день ведь не кончился.
+     * Пропуск в середине — конец серии.
+     */
+    fun streak(today: Int): Int {
+        val days = HashSet<Int>(64)
+        readableDatabase.rawQuery(
+            "SELECT DISTINCT day FROM reading WHERE sec > 0 ORDER BY day DESC LIMIT 400", null,
+        ).use { c -> while (c.moveToNext()) days.add(c.getInt(0)) }
+        if (days.isEmpty()) return 0
+        var d = if (days.contains(today)) today else dayMinus(today, 1)
+        var n = 0
+        while (days.contains(d)) {
+            n++
+            d = dayMinus(d, 1)
+        }
+        return n
+    }
+
     // ------------------------------------------- закладки, цитаты и заметки (R4.1, R4.3)
 
     /**
@@ -996,6 +1201,7 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         progress = c.getInt(11), status = c.getInt(12), added = c.getLong(13), opened = c.getLong(14),
         pos = if (c.isNull(15)) null else c.getString(15),
         view = if (c.isNull(16)) null else c.getString(16),
+        finished = c.getLong(17),
     )
 
     // --------------------------------------------------------- аудиокниги (п. 12)
@@ -1272,6 +1478,8 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
     companion object {
         const val NAME = "library.db"
         /**
+         * Версия 13 (п. 22, B32 «Статистика чтения»): таблица `reading` (минуты чтения по дням
+         * и книгам) и колонка `books.finished`.
          * Версия 12 (п. 12): аудиокниги — таблицы `audio`, `audio_files`, `audio_chapters`.
          * Версия 11 (R4.3): цитаты и заметки — колонки `kind`, `pos_end`, `note` в `bookmarks`.
          * Версия 9 (R2.5): настройки страницы DjVu — колонка `view` (строка `DjvuView.encode()`).
@@ -1279,7 +1487,7 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
          * Версия 7: пароль каталога в базе шифруется ключом из `AndroidKeyStore`
          * ([Pass], п. 10.12). Старые открытые пароли перешифровываются при обновлении.
          */
-        const val VERSION = 12
+        const val VERSION = 13
 
         /** Вид записи в таблице `bookmarks` (версия 11, R4.3): закладка, цитата, заметка. */
         const val MARK_BOOKMARK = 0
@@ -1336,11 +1544,74 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         val FORMAT_LABELS = arrayOf("FB2", "EPUB", "DjVu", "MOBI", "TXT")
 
         private const val COLUMNS = "_id, path, size, mtime, format, title, author, series, " +
-            "series_num, lang, cover_id, progress, status, added, opened, pos, view"
+            "series_num, lang, cover_id, progress, status, added, opened, pos, view, finished"
 
         /** Ключ сортировки: нижний регистр, «ё» как «е», без пробелов по краям. */
         fun sortKey(s: String): String =
             s.trim().lowercase(Locale.ROOT).replace('ё', 'е')
+
+        // ---------------------------------------------- даты статистики (п. 22, B32)
+        // День в базе — местная дата числом `ГГГГММДД`: так `ORDER BY` и сравнение диапазонов
+        // дают календарный порядок, а строка вида `2026-11-20` требовала бы разбора.
+
+        /** Местная дата [time] (мс, по умолчанию сейчас) числом `ГГГГММДД`. */
+        fun day(time: Long = System.currentTimeMillis()): Int {
+            val c = java.util.Calendar.getInstance()
+            c.timeInMillis = time
+            return c.get(java.util.Calendar.YEAR) * 10000 +
+                (c.get(java.util.Calendar.MONTH) + 1) * 100 + c.get(java.util.Calendar.DAY_OF_MONTH)
+        }
+
+        /** Год, месяц (1…12) и число из дня `ГГГГММДД`. */
+        fun ymd(day: Int): IntArray = intArrayOf(day / 10000, day / 100 % 100, day % 100)
+
+        /** Полночь дня `ГГГГММДД` по местному времени, мс. */
+        fun dayStart(day: Int): Long {
+            val c = java.util.Calendar.getInstance()
+            c.clear()
+            c.set(day / 10000, day / 100 % 100 - 1, day % 100)
+            return c.timeInMillis
+        }
+
+        /** Следующий день за `ГГГГММДД` — с учётом месяцев, лет и високосных лет. */
+        fun nextDay(day: Int): Int {
+            val c = java.util.Calendar.getInstance()
+            c.clear()
+            c.set(day / 10000, day / 100 % 100 - 1, day % 100)
+            c.add(java.util.Calendar.DAY_OF_MONTH, 1)
+            return c.get(java.util.Calendar.YEAR) * 10000 +
+                (c.get(java.util.Calendar.MONTH) + 1) * 100 + c.get(java.util.Calendar.DAY_OF_MONTH)
+        }
+
+        /** День `ГГГГММДД` за [n] дней до [from] (n > 0 — назад, n < 0 — вперёд). */
+        fun dayMinus(day: Int, n: Int): Int {
+            val c = java.util.Calendar.getInstance()
+            c.clear()
+            c.set(day / 10000, day / 100 % 100 - 1, day % 100)
+            c.add(java.util.Calendar.DAY_OF_MONTH, -n)
+            return c.get(java.util.Calendar.YEAR) * 10000 +
+                (c.get(java.util.Calendar.MONTH) + 1) * 100 + c.get(java.util.Calendar.DAY_OF_MONTH)
+        }
+
+        /** Первый день месяца дня `ГГГГММДД`; [back] — сколько месяцев назад. */
+        fun monthStart(day: Int, back: Int = 0): Int {
+            val c = java.util.Calendar.getInstance()
+            c.clear()
+            c.set(day / 10000, day / 100 % 100 - 1, 1)
+            c.add(java.util.Calendar.MONTH, -back)
+            return c.get(java.util.Calendar.YEAR) * 10000 + (c.get(java.util.Calendar.MONTH) + 1) * 100 + 1
+        }
+
+        /** Последний день месяца дня `ГГГГММДД` (28…31). */
+        fun monthEnd(day: Int): Int {
+            val c = java.util.Calendar.getInstance()
+            c.clear()
+            c.set(day / 10000, day / 100 % 100 - 1, 1)
+            c.add(java.util.Calendar.MONTH, 1)
+            c.add(java.util.Calendar.DAY_OF_MONTH, -1)
+            return c.get(java.util.Calendar.YEAR) * 10000 +
+                (c.get(java.util.Calendar.MONTH) + 1) * 100 + c.get(java.util.Calendar.DAY_OF_MONTH)
+        }
 
         /**
          * Адрес каталога в том виде, в каком он лежит в базе: без пробелов по краям,

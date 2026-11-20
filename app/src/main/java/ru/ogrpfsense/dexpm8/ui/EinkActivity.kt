@@ -101,6 +101,9 @@ class EinkActivity : Activity() {
         const val SCR_AUDIO = 39
         const val SCR_AUDIO_CHAPTERS = 40
 
+        /** B32 «Статистика чтения» (п. 22): двери — строка «Сегодня» на B1 и «Ещё» в меню B9. */
+        const val SCR_STATS = 41
+
 
         private const val REQ_STORAGE = 1
         private const val REQ_WRITE_SETTINGS = 2
@@ -862,6 +865,10 @@ class EinkActivity : Activity() {
         // Экран в кеше переживает выключение экрана: дата и приветствие B1 к утру устарели.
         // Перерисовка внутри — только при смене строки.
         (screens[SCR_HOME] as? HomeScreen)?.refreshTime()
+        // Читалка вернулась из фона — отсчёт времени чтения продолжается (п. 22, B32).
+        currentReader()?.resumeNow()
+        // После чтения строка «Сегодня …» на B1 показывает новые минуты (п. 22).
+        (screens[SCR_HOME] as? HomeScreen)?.refreshTodayIfChanged()
         // Заставка B19 снимается: будильник и возврат из фона — одно и то же событие,
         // эхо после подъёма ничего не должно оставлять. План сна — от текущего момента.
         // Раньше заряда: если при пробуждении окажется 3 %, заставку поставит уже B20.
@@ -879,6 +886,8 @@ class EinkActivity : Activity() {
         // выглядит как «звук идёт сам по себе», а остановить его нечем — кнопка в книге.
         currentReader()?.stopSpeechNow()
         currentReader()?.saveNow()
+        // Время чтения (п. 22, B32): набежавшие минуты — в базу сейчас, процесс могут убить в фоне.
+        currentReader()?.pauseNow()
         // В фоне заставка не нужна и план не работает: система сама погасит экран.
         ui.removeCallbacks(sleepAt)
         // Батарею в фоне сторожит система; нам хватит проверки при возврате.
@@ -1006,7 +1015,7 @@ class EinkActivity : Activity() {
             }
             if (sc != "wifi" && sc != "updates" && sc != "licenses" && sc != "zone" &&
                 sc != "layouts" && sc != "net" && sc != "bt" && sc != "read" &&
-                sc != "firstread") return
+                sc != "firstread" && sc != "stats") return
             intent.removeExtra("screen")
             Trace.step("debug: screen $sc")
             val id = when (sc) {
@@ -1016,6 +1025,8 @@ class EinkActivity : Activity() {
                 "layouts" -> SCR_SET_LAYOUTS
                 "net" -> SCR_SET_NET
                 "bt" -> SCR_SET_BT
+                // B32 «Статистика чтения» (п. 22): проверка экрана без кликов по меню.
+                "stats" -> SCR_STATS
                 // B39 «Настройки · Чтение» и шаг 4 мастера (B62): на книге не пройти кликами —
                 // на пути к B39 два уровня списка, а мастер открывается только на первом запуске.
                 "read" -> SCR_SET_READ
@@ -1403,6 +1414,7 @@ class EinkActivity : Activity() {
             SCR_AUDIO_LIST -> AudioListScreen(this)
             SCR_AUDIO -> AudioScreen(this)
             SCR_AUDIO_CHAPTERS -> AudioChaptersScreen(this)
+            SCR_STATS -> StatScreen(this)
             SCR_FIRST_LANG -> FirstLangScreen(this)
             SCR_FIRST_WIFI -> FirstWifiScreen(this)
             SCR_FIRST_PERM -> FirstPermScreen(this)

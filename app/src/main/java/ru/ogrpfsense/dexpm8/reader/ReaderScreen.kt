@@ -121,6 +121,12 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
     /** Страниц перевёрнуто: каждое [FULL_EVERY]-е — полная перерисовка (B37). */
     private var flips = 0
 
+    // --- Время чтения (п. 22, B32 «Статистика»)
+    /** С какого момента (uptime, мс) считать время чтения; 0 — не считаем. */
+    private var readStart = 0L
+    /** Страниц перевёрнуто с прошлой записи времени в базу. */
+    @Volatile private var readPages = 0
+
     private val dialog = ErrorDialog(ink, icons)
     private var dialogOpen = false
     /** B59: какая страница не декодировалась (−1 — диалог B45 или его нет). */
@@ -1799,10 +1805,14 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         sp.onFail = { why -> post { Trace.step("tts: $why"); stopSpeech(); redraw() } }
         sp.speed(act.prefs.ttsSpeed)
         start()
+        // Время чтения (п. 22, B32): экран показан — начинаем или продолжаем отсчёт.
+        resumeReading()
     }
 
     override fun onDetachedFromWindow() {
         attached = false
+        // Время чтения (п. 22): экран уходит — сначала записываем набежавшее, потом всё остальное.
+        pauseReading()
         gen++                 // результат уже идущей отрисовки выбрасываем
         stopOpenDialog()
         // Чтение вслух уходит вместе с экраном: голос без страницы на экране — это уже
@@ -1997,6 +2007,8 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         val pct = (cur + 1).toLong().times(100).div(pages).toInt().coerceIn(0, 100)
         try {
             act.db.setPlace(e.id, pos, pct)
+            // Дочитана (п. 22): B32 считает «книг закончено» по этой метке.
+            if (pct >= 100) act.db.markFinished(e.id)
             Trace.step("b3: save page=${cur + 1}/$pages $pct% pos=${if (pos == null) "нет" else "ok"}")
         } catch (t: Throwable) {
             Trace.step("b3: save FAIL ${t.javaClass.simpleName}: ${t.message}")
@@ -2010,6 +2022,68 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
     fun saveNow() {
         if (!attached) return
         Engine.worker.execute { savePlace() }
+    }
+
+    /**
+     * Приложение вернулось из фона, а читалка на экране: продолжить отсчёт времени чтения (п. 22).
+     * Зовётся оболочкой из `onResume` — обратная пара к [pauseNow].
+     */
+    fun resumeNow() {
+        if (!attached) return
+        resumeReading()
+    }
+
+    /**
+     * Приложение ушло в фон: записать набежавшее время чтения (п. 22, B32). Зовётся оболочкой
+     * из `onPause` рядом с [saveNow] — процесс могут убить в фоне, и минуты не должны пропасть.
+     */
+    fun pauseNow() {
+        if (!attached) return
+        pauseReading()
+    }
+
+    /**
+     * Начать отсчёт времени чтения (п. 22, B32): книга открыта и видна на экране. Зовётся при
+     * показе экрана и при возврате приложения из фона; повторный вызов ничего не сбрасывает.
+     *
+     * Время идёт по `uptimeMillis` — это счётчик, который **не тикает в глубоком сне**: если
+     * экран погас и книга в фоне, время не зачтётся (для статистики это верно — человек не читал).
+     */
+    private fun resumeReading() {
+        if (readStart == 0L) readStart = android.os.SystemClock.uptimeMillis()
+    }
+
+    /**
+     * Записать набежавшее время чтения в базу и остановить отсчёт. Зовётся при уходе с экрана,
+     * в фон и при закрытии книги — так на E-Ink редкие записи, а не таймер.
+     *
+     * Запись идёт в поток движка: `addReading` пишет в базу, а UI-поток занят кадром. Короткие
+     * сеансы (меньше [READ_MIN_SEC]) не пишутся — иначе случайное открытие книги дарило бы
+     * минуты статистики.
+     */
+    private fun pauseReading() {
+        val start = readStart
+        readStart = 0L
+        if (start == 0L) return
+        val sec = (android.os.SystemClock.uptimeMillis() - start) / 1000L
+        val pages = readPages
+        readPages = 0
+        flushReading(sec, pages)
+    }
+
+    /** Дописать [sec] секунд и [pages] страниц за сегодня по открытой книге. */
+    private fun flushReading(sec: Long, pages: Int) {
+        val e = entry ?: return
+        if (e.id <= 0) return
+        if (sec < READ_MIN_SEC && pages <= 0) return
+        val day = LibraryDb.day()
+        Engine.worker.execute {
+            try {
+                act.db.addReading(e.id, day, sec, pages)
+            } catch (t: Throwable) {
+                Trace.step("b32: addReading FAIL ${t.javaClass.simpleName}: ${t.message}")
+            }
+        }
     }
 
     /**
@@ -2110,6 +2184,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
             if (wantPage == page) wantPage = -1
             chapter(page)
             flips++
+            readPages++               // страница — статистике B32
             refreshPageMarks()        // B52: метки живут на конкретной странице
             if (flips % SAVE_EVERY == 0) savePlace()
             val full = flips % FULL_EVERY == 0
@@ -2141,6 +2216,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         cur = page
         chapter(page)
         flips++
+        readPages++                   // страница — статистике B32
         refreshPageMarks()            // B52: метки живут на конкретной странице
         if (flips % SAVE_EVERY == 0) savePlace()
         val full = flips % FULL_EVERY == 0
@@ -2459,8 +2535,10 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
                 // «Вслух» (R6): начать с текущей страницы или остановить, если уже читаем.
                 // Меню при старте закрывается — иначе вместо текста видна панель.
                 ReaderMenu.ACT_TTS -> toggleSpeech()
-                // Мимо меню — закрыть. «Контраст» и «Ещё» ждут своих этапов:
-                // кнопки нарисованы, касание пока только закрывает меню.
+                // «Ещё» — B32 «Статистика чтения» (п. 22). Меню закрывается: экран полный.
+                ReaderMenu.ACT_MORE -> { closeMenu(); act.go(EinkActivity.SCR_STATS) }
+                // Мимо меню — закрыть. «Контраст» ждёт своего этапа:
+                // кнопка нарисована, касание пока только закрывает меню.
                 else -> closeMenu()
             }
             return
@@ -2863,6 +2941,12 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
          * позиция всё равно останется (выход из читалки сохраняет её отдельно).
          */
         private const val SAVE_EVERY = 10
+
+        /**
+         * Короче этого сеанс чтения в статистику не попадает (п. 22, B32): открыл книгу, посмотрел
+         * обложку, вышел — это не чтение. Страницы считаются всегда: листание — уже действие.
+         */
+        private const val READ_MIN_SEC = 20L
 
         private const val KEY_PAGEUP = android.view.KeyEvent.KEYCODE_PAGE_UP
         private const val KEY_PAGEDOWN = android.view.KeyEvent.KEYCODE_PAGE_DOWN

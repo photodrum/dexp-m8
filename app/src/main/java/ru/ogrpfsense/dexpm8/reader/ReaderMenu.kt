@@ -184,7 +184,9 @@ class ReaderMenu(private val ink: Ink, private val icons: Icons) {
                     BTN_TOC -> ACT_TOC
                     BTN_TEXT -> if (djvu) ACT_SCALE else ACT_TEXT
                     BTN_SPEAK -> ACT_TTS
-                    // «Контраст» (B37) и «Ещё» (борды нет) — их экранов ещё нет.
+                    // «Ещё» — B32 «Статистика чтения» (п. 22): своего борда у кнопки нет,
+                    // дверь открывает единственный экран, который за ней стоит.
+                    BTN_COUNT - 1 -> ACT_MORE
                     else -> ACT_NONE
                 }
             }
@@ -216,6 +218,9 @@ class ReaderMenu(private val ink: Ink, private val icons: Icons) {
          * с текущей страницы, второе (пока читает) — останавливает.
          */
         const val ACT_TTS = 10
+
+        /** «Ещё» в нижнем ряду — B32 «Статистика чтения» (п. 22). Своего борда «Ещё» нет. */
+        const val ACT_MORE = 11
 
         // Полосы: макет −10.1,−10.1 1423.2×222.1 и −10.1,1423.2 1423.2×463.4 (габарит с тенью).
         private const val PANEL_X = -10.1f
