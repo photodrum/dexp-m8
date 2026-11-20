@@ -90,7 +90,10 @@ class SettingsScreen(act: EinkActivity) : Screen(act) {
         }
         rows[5].value = SettingsData.langValue(act)
         rows[6].value = SettingsData.storage()?.let { (total, free) ->
-            "Занято ${SettingsData.gb1(total - free)} из ${SettingsData.capacityGb(total)} ГБ"
+            // Как на B42: занято = заявленный объём − свободно (системный резерв внутри «занято»),
+            // а не `StatFs`-объём 12,4 ГБ — иначе B13 и B42 показывали 1,7 и 5,1 ГБ.
+            val cap = SettingsData.capacityGb(total).toLong() * 1_000_000_000L
+            "Занято ${SettingsData.gb1((cap - free).coerceAtLeast(0L))} из ${SettingsData.capacityGb(total)} ГБ"
         } ?: ""
         rows[7].value = if (ver.isEmpty()) "Android ${Build.VERSION.RELEASE}"
             else "Android ${Build.VERSION.RELEASE} · версия оболочки $ver"

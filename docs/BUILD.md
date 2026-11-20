@@ -298,6 +298,24 @@ adb kill-server; adb start-server; adb devices
   на хосте → `adb push /tmp/shell.xml /data/local/tmp/` → `run-as … cp /data/local/tmp/shell.xml
   shared_prefs/shell.xml` (и `am force-stop` заранее).
 
+**Проверка экранов по тапам (2026-11-20).** `adb shell input tap X Y` — в **пикселях экрана**
+(1404×1872), а зоны касания в коде заданы в дизайн-px: при density 2.0 они совпадают, но зоны
+у кнопок узкие. Промах выглядит как «кнопка не работает»:
+
+- «Назад» в шапке на всех экранах — x 41.1…148, y ≈ 112…225 (то есть тап `92 170`). Тап в 410 по x
+  попадает в заголовок и ничего не делает;
+- на B42 «Очистить» — x 1040…1334, y 1024.5…1146.5 (`SetStorageScreen.onUp`);
+- на B6 «…» плитки — правый верхний угол 100×100 от угла плитки (`DOTS_HIT`).
+
+Каждый тап сверять с `onUp` нужного экрана, а не с положением подписи на снимке. `screencap`
+отдаёт кадр не сразу: между тапами держать 3–5 с, иначе следующий тап приходит на прежний экран.
+
+**Проверка «Удалить» на B12 без потери данных.** Ставить одноразовый файл, а не удалять книгу
+из библиотеки: положить `/tmp/zz-test-delete.fb2` в `/sdcard/Books/`, дождаться скана
+(B2 → «Новые» — свежий файл первый), открыть B12 → «Удалить» → «Удалить», затем проверить
+`adb shell ls /sdcard/Books/zz-test-delete.fb2` (`No such file`) и число книг в подзаголовке B2.
+
+
 ## adb на Windows (PowerShell)
 
 Папка `C:\platform-tools` не в `PATH`, а PowerShell не запускает программы из текущей папки
@@ -390,6 +408,17 @@ adb shell settings put secure accessibility_enabled 1
 adb shell am start -n ru.ogrpfsense.dexpm8/.ui.EinkActivity
 adb logcat -d | grep 'power: service connected'   # ожидаем строку трассы
 ```
+
+⚠️ **Грабля (2026-11-20, переустановка): этот порядок не всегда поднимает службу сразу.**
+Настройки записаны верно (`settings get secure enabled_accessibility_services` отдаёт имя службы,
+`accessibility_enabled` = 1), но `dumpsys accessibility` показывает `services:{}`, а в логе видно
+`ActivityManager: Scheduling restart of crashed service …/.core.PowerService`. Строки
+`power: service connected` в трассе нет. Проверено 2026-11-20: повторные `put` с
+`accessibility_enabled 0/1`, `delete` + `put`, `am force-stop` + `start` не помогли.
+**Помогает перезагрузка книги:** после `adb reboot` служба в списке
+(`services:{Service[label=DEXP M8 — выключение, …]}`) без новых команд. Грабля перезагрузки:
+`adb devices` после неё отдаёт пустой список — `adb kill-server; adb start-server`, подождать
+~30 с до `getprop sys.boot_completed` = 1.
 
 **Админ устройства (нужен для «Сна» на B5, `lockNow`).** Включается из adb одной командой
 (проверено 2026-11-20). Снять так же нельзя — `dpm remove-active-admin` без root отказывает
