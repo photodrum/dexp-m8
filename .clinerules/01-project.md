@@ -9,24 +9,22 @@
 
 1. **Ровно один** `run_commands` на ответ, вывод — в файл, читать его `read_files`: терминал один
    на чат и теряет вывод даже у одиночной команды («completion could not be observed»).
-   Act: `{ GIT_ASKPASS=$PWD/tools/git-askpass.sh GIT_TERMINAL_PROMPT=0 git pull --ff-only;
-   git status -sb; git config user.name; sed -n '12,$p' docs/CONTEXT.md; grep -n '^## '
-   docs/DEVLOG.md | head -2; } > /tmp/start.log 2>&1`, затем `read_files` `/tmp/start.log`.
-   Plan: то же без `git pull` (правки и слияние запрещены; при сильном расхождении — `git fetch`).
+   Act: `bash tools/start.sh > /tmp/start.log 2>&1`; Plan: `bash tools/start.sh plan >
+   /tmp/start.log 2>&1` (без `git pull`; правки и слияние запрещены; расхождение сильное —
+   `git fetch`), затем `read_files` `/tmp/start.log`. Независимые замеры шага — в ту же
+   составную команду (`{ …; }` в один лог); `read_files` можно звать несколько раз за ответ.
    Вывод потерян — команду не повторять, читать лог.
    Не прошло, есть незакоммиченное, `user.name` ≠ `denisle` — стоп, показать вывод, не сливать.
-2. «СЛЕДУЮЩИЙ ШАГ» — `docs/CONTEXT.md` (в п. 1 уже прочитан с 12-й строки — шаблон первого
-   сообщения выше не нужен). `docs/ROADMAP.md` не целиком: `grep -nE '^(## |[0-9]+\.)'
+2. «СЛЕДУЮЩИЙ ШАГ» — `docs/CONTEXT.md` (в п. 1 уже прочитан с 12-й строки; шаблон первого
+   сообщения — `docs/CONTEXT.md`, строки 3–9). `docs/ROADMAP.md` не целиком: `grep -nE '^(## |[0-9]+\.)'
    docs/ROADMAP.md`, затем нужный пункт `sed -n 'A,Bp'` (пункты плана — `15.`, `16.`, не `##`).
    `awk` с русским шаблоном в терминале зависает.
-3. `docs/DEVLOG.md` — только верхняя запись: `grep -n '^## ' docs/DEVLOG.md | head -2` даёт номер
-   первой записи и следующего заголовка, тело — `sed -n 'A,Bp'`. Шапка в файле начинается с `>`
-   и `#`, а не с `##`, поэтому `head -2` попадает в запись.
-4. По теме: макеты и UI — `docs/DESIGN_USAGE.md`, `design/README.md` (числа — `tools/design_flat.py`,
-   JSON целиком — если не хватило поля), `docs/DESIGN.md` — справочно; читалка — `docs/READER_SPEC.md`;
-   сборка, установка, git, токены, ошибки — `docs/BUILD.md`, тесты и проверки на хосте —
-   `docs/CHECKS.md`; рендер, структура кода, E-Ink — `docs/ARCHITECTURE.md`; чат дизайна —
-   `docs/DESIGN_QUESTIONS.md`; карта документов — `README.md`.
+3. `docs/DEVLOG.md` — верхняя запись: `grep -n '^## ' docs/DEVLOG.md | head -2` (шапка с `>` и
+   `#` в счёт не идёт), тело — `sed -n 'A,Bp'`.
+4. По теме (карта документов — `README.md`): макеты — `docs/DESIGN_USAGE.md`, `design/README.md`,
+   числа — `tools/design_flat.py` и `design/v5/*.json`; читалка — `docs/READER_SPEC.md`; сборка,
+   установка, git, ошибки — `docs/BUILD.md`; проверки на хосте — `docs/CHECKS.md`; рендер и E-Ink —
+   `docs/ARCHITECTURE.md`; `docs/DESIGN.md` — справочно; чат дизайна — `docs/DESIGN_QUESTIONS.md`.
 5. Бюджет стартового чтения — до ~8 КБ: CONTEXT с 12-й строки, заголовки ROADMAP, одна запись
    DEVLOG, дальше — по теме. Не влезло — сжимать документ, а не добирать `sed`.
 
@@ -42,7 +40,7 @@
   строка со ссылкой; грабли окружения — сразу в `BUILD.md`; пункт закрыт — «подробно» из ROADMAP и
   записи DEVLOG сразу в `docs/archive/`.
 - Бюджет перед коммитом документов: `wc -c docs/CONTEXT.md` ≤ 3,5 КБ, `grep -c '^## '
-  docs/DEVLOG.md` ≤ 5, `docs/ROADMAP.md` ≤ 12 КБ. Превышение — сначала архив, потом коммит.
+  docs/DEVLOG.md` ≤ 5, `docs/ROADMAP.md` ≤ 12 КБ (12288 Б, мерить `wc -c`). Превышение — сначала архив, потом коммит.
   «## СЛЕДУЮЩИЙ ШАГ» в CONTEXT — строго 12-я строка. Закрытое замечание сразу убрать из CONTEXT.
 - `docs/archive/` и `third_party/` — в `.clineignore`: нужен файл (по ссылке или движок) —
   закомментировать строку, после работы вернуть.
@@ -53,7 +51,7 @@
 - Коммит: `<пункт или раздел>: что сделано кратко`, по-русски, без точки
   (`R2.5б: рамка «Вручную» ставится касанием`, `BUILD: грабля — …`). Один шаг — один коммит.
 - Ответы и комментарии в коде — по-русски. Даты — по `date`.
-- Команды — `> /tmp/<имя>.log 2>&1`, затем `read_files` (см. п. 1). `JAVA_OPTS` скрипты ставят сами.
+- Команды — всегда в файл `/tmp/<имя>.log`, затем `read_files` (п. 1). `JAVA_OPTS` скрипты ставят сами.
   Многострочное и с кавычками — скриптом в `/tmp/*.sh` через редактор, в терминал — `bash /tmp/x.sh`.
 - Gradle — `~/.local/gradle-8.7/bin/gradle` (в PATH нет). Под `denisle`, не root. Токен git —
   `~/.config/dexp-m8/git-push-token`. git с русским текстом (`log`, `show`, `diff`) — только с

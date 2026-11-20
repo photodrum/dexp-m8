@@ -34,9 +34,7 @@
 
 ## Грабли
 
-- На книгу — только `gradle assembleDebug`: `tools/build.sh` собирает APK без натива.
-- `pm clear` сносит базу и `shell.xml`; мастер проверять через `--es screen first`.
-- Выключенный экран рисует прошивка (`/vendor/media/standby.jpg`); своя картинка —
-  `tools/standby_install.sh` под root (`docs/archive/DEVLOG-2026-11-18-standby.md`).
+`gradle assembleDebug` — на книгу, не `tools/build.sh` (он без натива); `pm clear` сносит базу и
+`shell.xml`; погашенный экран рисует прошивка. Подробно — `docs/BUILD.md`.
 
 Вопросы дизайну (не блокируют код) — `docs/DESIGN_QUESTIONS.md`.
