@@ -27,6 +27,13 @@ import android.graphics.Canvas
  * [onKey] — «клавиша нажата»: звук касания и полный кадр при вводе (B72, `EinkActivity.keyPressed`).
  * [langs] — текущая маска включённых раскладок (читается в момент нажатия, поэтому смена
  * настроек на B72 сразу видна и в уже созданных листах).
+ *
+ * Знаки: две страницы вместо одного ряда. Первая — цифры и частые знаки (нужна для номера
+ * квартиры и пароля без спецсимволов), вторая (#+=) — остальной печатный ASCII, который
+ * может встретиться в пароле: `$ # % * + = _ \ | ~ < > [ ] { } ^` и обратный апостроф.
+ * WPA2 разрешает любой печатный ASCII (33…126), а в срезе Manrope все эти глифы есть —
+ * ограничение только в наборе клавиш. Переключатель страниц — клавиша «↑» в ряду 3:
+ * в режиме букв она поднимает регистр, в режиме знаков ей всё равно нечего делать.
  */
 class Keyboard(private val ink: Ink, private val langs: () -> Int, private val onKey: () -> Unit) {
 
@@ -45,6 +52,7 @@ class Keyboard(private val ink: Ink, private val langs: () -> Int, private val o
     /** Номер раскладки в [LAYOUTS]: [LANG_RU] … [LANG_FR]. */
     private var lang = LANG_RU
     private var sym = false       // цифры и знаки
+    private var symPage = 0       // страница знаков: 0 — цифры и частые, 1 — #+=
     private var shift = false     // следующая буква заглавная
     private var action = "Готово"
     private var dirty = true
@@ -68,6 +76,7 @@ class Keyboard(private val ink: Ink, private val langs: () -> Int, private val o
         if (v != lang || sym || shift) {
             lang = v
             sym = false
+            symPage = 0
             shift = false
             dirty = true
         }
@@ -76,11 +85,15 @@ class Keyboard(private val ink: Ink, private val langs: () -> Int, private val o
     /** Нажата клавиша: текст для вставки или null (смена раскладки, «←», действие). */
     fun press(k: Key): String? {
         when (k.kind) {
-            K_SHIFT -> if (!sym) {
-                shift = !shift
+            K_SHIFT -> {
+                // В режиме знаков «↑» листает страницы (макет B48 знает одну; вторая — для
+                // символов пароля), в режиме букв — как раньше, регистр.
+                if (sym) symPage = 1 - symPage else shift = !shift
                 dirty = true
             }
             K_SYM -> {
+                // Возврат в буквы с любой страницы; вход — всегда с первой.
+                if (sym) symPage = 0
                 sym = !sym
                 shift = false
                 dirty = true
@@ -88,6 +101,7 @@ class Keyboard(private val ink: Ink, private val langs: () -> Int, private val o
             K_LANG -> {
                 lang = nextLang()
                 sym = false
+                symPage = 0
                 shift = false
                 dirty = true
             }
@@ -145,12 +159,12 @@ class Keyboard(private val ink: Ink, private val langs: () -> Int, private val o
         if (!dirty) return
         dirty = false
         keys.clear()
-        val rows = if (sym) SYM_ROWS else LAYOUTS[lang].rows
+        val rows = if (sym) SYM_ROWS[symPage] else LAYOUTS[lang].rows
         addRow(rows[0], Y0)
         addRow(rows[1], Y0 + STEP_Y)
         // Ряд 3: служебные клавиши по краям, знаки между ними.
         val y3 = Y0 + 2 * STEP_Y
-        keys.add(Key(K_SHIFT, "", "↑", 30f, y3, 162.5f))
+        keys.add(Key(K_SHIFT, "", if (sym && symPage == 1) "123" else "↑", 30f, y3, 162.5f))
         addRow(rows[2], y3)
         keys.add(Key(K_DEL, "", "←", 1216.5f, y3, 162.5f))
         val y4 = Y0 + 3 * STEP_Y
@@ -231,7 +245,19 @@ class Keyboard(private val ink: Ink, private val langs: () -> Int, private val o
         private const val PAD_X = 3.5f
         private const val PAD_Y = 3f
 
-        private val SYM_ROWS = arrayOf("1234567890", "-/:;()&@\"", "?!,'")
+        /**
+         * Страницы знаков: две, по три ряда. Первая — цифры и частые знаки, ровно как в B48.
+         * Вторая — остальной печатный ASCII, который WPA2 разрешает в пароле: `$ # % * + = < > ~`,
+         * обратный апостроф и `[ ] { } | \ ^ _`. Вместе с буквами это все 94 печатных символа
+         * ASCII (33…126); в срезе Manrope глифы есть у каждого.
+         *
+         * Ряды 0 и 1 тянутся на всю ширину (10–11 клавиш), ряд 2 сжат между «↑» (до 192.5)
+         * и «←» (с 1216.5) — в него влезает не больше девяти клавиш.
+         */
+        private val SYM_ROWS = arrayOf(
+            arrayOf("1234567890", "-/:;()&@\"", "?!,'"),
+            arrayOf("#\$%*+=<>~`", "[]{}|\\^_", "?!,'"),
+        )
     }
 
     /** Включена ли раскладка [i] по маске [langs]. */
