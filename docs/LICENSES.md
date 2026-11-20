@@ -33,6 +33,15 @@ AndroidX, Material и Kotlin stdlib в APK не входят (`app/build.gradle.
 Данные приходят по сети и в APK не входят, поэтому лицензию кода (`GPL-2.0-only`) не затрагивают.
 Строку «Викисловарь» на экран B75 стоит добавить при его вёрстке.
 
+## Где исходники (GPL-2.0 §3)
+
+APK раздаётся пользователю через B76 «Обновления» → `update.json` в ветке `main` того же публичного
+репозитория, где лежит исходный код: **https://git.ogrpfsense.ru/denisle/dexp-m8** (GitHub-зеркало —
+`https://github.com/photodrum/dexp-m8`). Код сборки — ровно тот, что соответствует выпущенному APK:
+теги/коммиты ветки `main`, подмодули зафиксированы в `git submodule status`. Тексты сторонних
+лицензий — в самих подмодулях (`COPYING`, `LICENSE*`), в APK их нет.
+Адрес продублирован на экране B75 «Лицензии» подписью «Исходники — git.ogrpfsense.ru/denisle/dexp-m8».
+
 ## Совместимость с GPL-2.0-only
 
 - Совместимы: MIT, BSD, zlib, libpng, IJG, LGPL-2.1+, GPL-2.0, GPL-2.0-or-later.
