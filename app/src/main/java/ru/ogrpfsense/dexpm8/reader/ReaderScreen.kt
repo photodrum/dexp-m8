@@ -1846,6 +1846,10 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
     }
 
     private fun start() {
+        // B12 «Оглавление»: книгу открыли из оболочки — флаг читаем здесь и снимаем сразу,
+        // чтобы он не сработал ещё раз (экран живёт в кэше и отвязывается).
+        val wantToc = act.bookToc
+        act.bookToc = false
         // Debug (R0): `--es probe <путь>` открывает файл напрямую, без базы.
         val dbg = ProbeScreen.debugPath
         ProbeScreen.debugPath = null
@@ -1855,7 +1859,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
                 format = dbg.substringAfterLast('.', "?").lowercase(java.util.Locale.ROOT),
                 title = dbg.substringAfterLast('/'), author = null, series = null, seriesNum = 0, lang = null,
                 coverId = null, progress = 0, status = 0, added = 0L, opened = 0L,
-            ))
+            ), wantToc)
             return
         }
         val e = try {
@@ -1878,10 +1882,14 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
             Trace.step("b3: markOpened FAIL ${t.javaClass.simpleName}: ${t.message}")
         }
         title = e.title
-        open(e)
+        open(e, wantToc)
     }
 
-    private fun open(e: LibraryDb.Entry) {
+    /**
+     * Открыть книгу. [wantToc] — после первой страницы показать оглавление B10: так на B12
+     * работает кнопка «Оглавление» (самих пунктов до открытия документа в движке нет).
+     */
+    private fun open(e: LibraryDb.Entry, wantToc: Boolean = false) {
         val w = D.px(TW)
         val h = D.px(TH)
         if (w <= 0 || h <= 0) return
@@ -1957,6 +1965,9 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
                 stopOpenDialog()
                 chapter(cur)
                 show(cur, 0)
+                // B12 «Оглавление»: страница под панелью уже нарисована — открываем список.
+                // Пустое оглавление (часть DjVu) панель не откроет: остаётся страница чтения.
+                if (wantToc) openToc()
             }
         }
     }

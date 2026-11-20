@@ -434,6 +434,17 @@ class FilesScreen(act: EinkActivity) : Screen(act) {
         super.onAttachedToWindow()
         status.attach()
         inLib.clear()       // вернулись из B12 или файл добавился — проверяем заново
+        // B12 «…» → «Открыть папку с файлом»: экран показывается в папке книги. Задание
+        // одноразовое — снимаем сразу; без задания папка остаётся той, где экран бросили.
+        val want = act.filesDir
+        if (want != null) {
+            act.filesDir = null
+            val f = File(want)
+            if (f.isDirectory && f.path.length >= root.path.length) {
+                dir = f
+                page = 0
+            }
+        }
         if (dir.path.length < root.path.length || !dir.exists()) dir = root
         load()
     }

@@ -12,8 +12,14 @@ import ru.ogrpfsense.dexpm8.core.LibraryDb
  * Данные — строка `LibraryDb` (`act.bookId`): название, автор, формат, размер, дата добавления,
  * прогресс. Нет данных до читалки — не рисуются: «Страниц» (на его месте «Добавлена»), строка
  * «Глава N из M · до конца» (вместо неё — статус: «Не начата» / «Читается» / «Прочитана»)
- * и карточка «Аннотация». Нажимаются «Назад» и «Продолжить чтение» (в читалку);
- * «На полку» открывает [ShelfPicker]; «Удалить» даёт диалог B53; «Оглавление» и «…» нарисованы, пока не работают.
+ * и карточка «Аннотация». Нажимаются «Назад», «Продолжить чтение» и «Оглавление» (обе — в читалку,
+ * вторая сразу с панелью B10), «На полку» открывает [ShelfPicker], «Удалить» даёт диалог B53,
+ * «…» в шапке — нижний лист [Sheet] с пунктом «Открыть папку с файлом» (B25 на каталог книги).
+ *
+ * Лист «…»: в макете его нет. Собран из нижних листов проекта (`ShelfPicker`): затемнение экрана,
+ * панель на всю ширину с радиусом 66, захват 117×11, заголовок 60/700, строка 132 высотой,
+ * подпись 38/700; «Готово» — тёмная кнопка, как на B35/B48. Вопрос дизайну про остальной
+ * состав листа — `docs/DESIGN_QUESTIONS.md`.
  *
  *   обложка      гнездо 43.9,248.6 431.4×603.3; обложка 65.8,270.6 387.6×559.4 (G14), корешок 18.3 (G3);
  *                название Literata 44/600 в 117,321.8 (ширина 320, до 2 строк), автор 32/600 G4
@@ -32,6 +38,8 @@ class BookScreen(act: EinkActivity) : Screen(act) {
     private val lines = arrayOfNulls<String>(2)
     private val picker = ShelfPicker(ink, icons)
     private var pickerOpen = false
+    /** Лист «…» из шапки B12. */
+    private var sheetOpen = false
     private var deleteOpen = false
     private var deleteError = false
     private val errorDialog = ErrorDialog(ink, icons)
@@ -48,7 +56,7 @@ class BookScreen(act: EinkActivity) : Screen(act) {
     }
 
     override fun render(c: Canvas) {
-        val dim = if (pickerOpen || deleteOpen || errorOpen) dimBegin(c) else -1
+        val dim = if (pickerOpen || sheetOpen || deleteOpen || errorOpen) dimBegin(c) else -1
         ink.rect(c, 0f, 0f, W, H, T.BG)
         header(c)
         val e = entry
@@ -60,6 +68,7 @@ class BookScreen(act: EinkActivity) : Screen(act) {
         if (dim >= 0) dimEnd(c, dim)
         status.draw(c)
         if (pickerOpen) picker.draw(c)
+        if (sheetOpen) sheet(c)
         val del = entry
         if (deleteOpen && del != null) deleteDialog(c, del)
         if (errorOpen) errorDialog.draw(c)
@@ -141,6 +150,51 @@ class BookScreen(act: EinkActivity) : Screen(act) {
         ink.convex(c, x, 1079.5f, 421.4f, 112.4f, R_BTN)
         ink.text(c, label, tx, T.base(ty, T.TS_LABEL_L, 1.2f), T.TS_LABEL_L, 700, T.G1)
         icons.draw(c, icon, ix, iy, 45.7f, 47.6f)
+    }
+
+    /**
+     * Лист «…» из шапки: «Открыть папку с файлом». Листа в макете нет — собрано из нижних
+     * листов проекта (B35/B48): панель на всю ширину, r 66, захват, заголовок 60/700, одна
+     * строка 132 высотой и «Готово» тёмной кнопкой. Вопрос дизайну — `DESIGN_QUESTIONS.md`.
+     */
+    private fun sheet(c: Canvas) {
+        ink.convex(c, -3f, 1110f, 1409f, 902f, 66f)
+        ink.roundRect(c, 644f, 1135f, 117f, 11f, 5.5f, T.G11)
+        ink.text(c, "Ещё", 59f, T.base(1172f, 60f, 1.25f), 60f, 700, T.G1)
+        ink.convex(c, 41.1f, 1290f, 1320.8f, 132f, R_BTN)
+        ink.text(c, "Открыть папку с файлом", 95.1f, T.base(1333f, T.TS_LABEL_L, 1.2f),
+            T.TS_LABEL_L, 700, T.G1)
+        icons.draw(c, "arrowR", 1265.1f, 1334f, 43.9f, 43.9f)
+        ink.convexDark(c, 41.1f, 1693f, 1320.8f, 142f, T.R_BUTTON)
+        ink.textCenter(c, "Готово", 44.1f, 1317.8f, T.base(1735.7f, T.TS_ACTION, 1.24f),
+            T.TS_ACTION, 700, T.G15)
+    }
+
+    private fun setSheet(on: Boolean) {
+        sheetOpen = on
+        act.bigFrame("book sheet $on")
+        redraw()
+    }
+
+    /** Касание в листе «…»: строка «Открыть папку с файлом», «Готово», мимо — закрыть. */
+    private fun sheetUp(x: Float, y: Float) {
+        if (x >= 41.1f && x <= 1362f && y >= 1290f && y <= 1422f) {
+            setSheet(false)
+            openFolder()
+            return
+        }
+        setSheet(false)
+    }
+
+    /**
+     * «…» → «Открыть папку с файлом»: B25 «Файлы» открывается в каталоге книги (`act.filesDir`).
+     * Файла нет — папки тоже: тогда остаётся корень памяти (B25 сам это проверит).
+     */
+    private fun openFolder() {
+        val e = entry ?: return
+        val f = java.io.File(e.path)
+        act.filesDir = (if (f.isDirectory) f else f.parentFile)?.path
+        act.go(EinkActivity.SCR_FILES)
     }
 
     /** Название в рамку [maxW]: до двух строк, перенос по последнему пробелу, который влезает. */
@@ -283,6 +337,10 @@ class BookScreen(act: EinkActivity) : Screen(act) {
             pickerUp(x, y)
             return
         }
+        if (sheetOpen) {
+            sheetUp(x, y)
+            return
+        }
         if (deleteOpen) {
             deleteUp(x, y)
             return
@@ -293,6 +351,17 @@ class BookScreen(act: EinkActivity) : Screen(act) {
         }
         if (entry != null && x >= 940.6f && x <= 1362f && y >= 1079.5f && y <= 1192f) {
             setDelete(true)
+            return
+        }
+        if (x >= 1255f && x <= 1361.9f && y >= 112.3f && y <= 224.7f) {
+            setSheet(true)
+            return
+        }
+        // «Оглавление» на B12: своих пунктов до открытия книги нет — открываем читалку и сразу
+        // панель B10 (`act.bookToc`, проверка формата и файла — та же, что у «Продолжить чтение»).
+        if (entry != null && x >= 41.1f && x <= 462.5f && y >= 1079.5f && y <= 1192f) {
+            act.bookToc = true
+            openReader(entry!!)
             return
         }
         if (entry != null && x >= 490.9f && x <= 912.3f && y >= 1079.5f && y <= 1192f) {
@@ -308,6 +377,7 @@ class BookScreen(act: EinkActivity) : Screen(act) {
      * «Продолжить чтение»: сначала проверяем, чем открывать. Читалки пока нет (R1) и PDF/CBZ
      * не поддерживаются (решение 2026-11-11) — вместо пустого экрана диалог B45 с причиной.
      * Файла нет на диске — тоже B45, с кнопкой «Удалить файл» (удаляет только строку базы).
+     * Та же проверка у «Оглавления»: при ошибке флаг `act.bookToc` снимается здесь же.
      */
     private fun openReader(e: LibraryDb.Entry) {
         val fmt = e.format.lowercase(Locale.ROOT)
@@ -326,6 +396,8 @@ class BookScreen(act: EinkActivity) : Screen(act) {
                 else "${fmt.uppercase(Locale.ROOT)}: читалка не поддерживает этот формат",
                 canDelete = missing,
             )
+            // «Оглавление» (флаг `act.bookToc`) не должно сработать на следующей книге.
+            act.bookToc = false
             setError(true)
             return
         }
@@ -366,6 +438,7 @@ class BookScreen(act: EinkActivity) : Screen(act) {
         super.onAttachedToWindow()
         status.attach()
         pickerOpen = false
+        sheetOpen = false
         deleteOpen = false
         deleteError = false
         errorOpen = false
