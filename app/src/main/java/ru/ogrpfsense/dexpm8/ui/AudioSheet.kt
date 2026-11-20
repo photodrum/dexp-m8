@@ -13,7 +13,7 @@ import ru.ogrpfsense.dexpm8.core.Prefs
  *             «60 мин», «Конец главы» (активный сегмент — выпуклая плашка)
  *   подсказка 59,1110 32/600 G4 («Остановится через 24 мин — в середине главы 14»)
  *   скорость  метка 59,1200; «−» 56,1250 115×120; значение 196,1250 240×116 (вдавленное, r 38);
- *             ползунок 470,1262 730×98 (трек 37, заполнение G3, ручка Ø88); «+» 1238,1250
+ *             «+» 1238,1250
  *   пресеты   желоб 56,1420 1292×88, пять подписей 32/600
  *   паузы     строка 59,1566: «Пропускать паузы» 42/700, описание 32/600 G4, тумблер 1206,1578
  *
@@ -22,8 +22,14 @@ import ru.ogrpfsense.dexpm8.core.Prefs
  *
  * Скорость меняется сразу (звук идёт с новой скоростью на ходу); таймер взводится по
  * «Готово» — в макете это одна кнопка на весь лист.
+ *
+ * **Ползунок скорости убран (решение 2026-11-20).** В макете скорость задаётся тремя способами
+ * сразу: «−/+», ползунком 470…1200 и линейкой пресетов. Ползунок дублировал остальные два и на
+ * E-Ink требовал попадания в дорожку 37 px, поэтому удалён вместе с зоной касания; линейка
+ * фиксированных значений 0,75× … 2× внизу осталась единственным способом выбора, «−/+» —
+ * шагом по ней. Место ползунка между значением и «+» остаётся пустым, как в макете.
  */
-internal class AudioSheet(private val ink: Ink, private val icons: Icons) {
+internal class AudioSheet(private val ink: Ink) {
 
     /** Что выбрано на листе. */
     var speed = 100
@@ -54,24 +60,19 @@ internal class AudioSheet(private val ink: Ink, private val icons: Icons) {
         ink.text(c, hint(sleepLeft, chapter, timerOn), 59f, T.base(1110f, T.TS_BODY_S, 1.25f),
             T.TS_BODY_S, 600, T.G4)
 
-        // Скорость: «−», значение, ползунок, «+» и пять пресетов.
+        // Скорость: «−», значение, «+» и пять пресетов. Ползунок макета 470…1200 не рисуем
+        // (решение 2026-11-20): он дублирует «−/+» и линейку пресетов.
         ink.text(c, "СКОРОСТЬ ЧТЕНИЯ", 59f, T.base(1200f, T.TS_META, 1.25f), T.TS_META, 600, T.G5)
         ink.convex(c, 56f, 1250f, 115f, 120f, 55f)
-        icons.draw(c, "minus", 95f, 1284f, 45.7f, 47.6f)
+        // «−» из снимка (minus~bxdhcj): штрих 3, путь 30.92, в макете стоит в 98.5,1308.
+        ink.line(c, 98.5f, 1308f, 98.5f + 30.92f, 1308f, 3f, T.G4)
         ink.inset(c, 196f, 1250f, 240f, 116f, 40f, T.G12)
         ink.textCenter(c, Prefs.Speed.label(speed), 199f, 235f, T.base(1278.3f, 48f, 1.2f), 48f, 700, T.G1)
         ink.convex(c, 1238f, 1250f, 115f, 120f, 55f)
-        // «+» на выпуклой клавише — тёмными штрихами (иконка `plus` белая: она для тёмной
-        // клавиши, как на B14). Тот же рисунок, что в снимке: 43.9 в +36,+34.
-        ink.line(c, 1274f + 21.9f, 1284f + 9.1f, 1274f + 21.9f, 1284f + 34.7f, 2.5f, T.G4)
-        ink.line(c, 1274f + 9.1f, 1284f + 21.9f, 1274f + 34.7f, 1284f + 21.9f, 2.5f, T.G4)
-
-        // Ползунок 470,1262: трек 730×37, заполнение G3, ручка Ø88.
-        val pct = (speed - Prefs.Speed.MIN).toFloat() / (Prefs.Speed.MAX - Prefs.Speed.MIN)
-        ink.inset(c, 470f, 1290f, 730f, 37f, 18f, T.G12)
-        val fillW = 715f * pct
-        if (fillW >= 10f) ink.roundRect(c, 473f, 1296f, fillW, 28f, 14f, T.G3)
-        ink.convex(c, 470f + fillW, 1262f, 93f, 98f, 44f)
+        // «+» из снимка: 30.9×30.9, штрих 3, центр 1295.96 / 1307.96 (макет 1280.5,1292.5
+        // + 15.46). Раньше рисовался линиями 25.6 со сдвигом вверх и влево.
+        ink.line(c, 1295.96f, 1307.96f - 15.46f, 1295.96f, 1307.96f + 15.46f, 3f, T.G4)
+        ink.line(c, 1295.96f - 15.46f, 1307.96f, 1295.96f + 15.46f, 1307.96f, 3f, T.G4)
 
         segments(c, 1420f, 88f, Prefs.Speed.LABELS, Prefs.Speed.PRESETS.indexOf(speed))
 
@@ -83,15 +84,28 @@ internal class AudioSheet(private val ink: Ink, private val icons: Icons) {
         ink.convex(c, if (skipPauses) 1276f else 1210f, 1582f, 63f, 68f, 29f)
     }
 
-    /** Пять сегментов в желобе 56,[y] 1292×[h]; активный — выпуклая плашка. */
+    /**
+     * Пять сегментов в желобе 56,[y] 1292×[h]; активный — выпуклая плашка.
+     *
+     * Числа из B35.json: подпись 60,1016 251.8×40 (шаг 256.8), плашка 573.6,994 256.8×90
+     * (у пресетов 573.6,1424 256.8×83), блик плашки — 251.8 × (h−15) с радиусом h/2−5.
+     *
+     * Отличия от первой версии (замечание 2026-11-20): шаг был 1287/5 = 257.4 вместо 256.8
+     * (к пятому сегменту набегало 2.4 px), плашка — step−5 × h−15 вместо 256.8 × h−5 (ниже
+     * макета на 10 px), подпись — по центру своей рамки 251.8, а не по центру плашки, и на
+     * 3.5 px ниже у пресетов. Активный сегмент в макете стоит на 1 px ниже соседей: жирное
+     * начертание (700) садится выше — компенсируем.
+     */
     private fun segments(c: Canvas, y: Float, h: Float, labels: Array<String>, active: Int) {
         ink.inset(c, 56f, y, 1292f, h, h / 2f, T.G12)
-        val step = 1287f / labels.size
+        val boxW = SEG_STEP - 5f          // 251.8 — рамка подписи и блик плашки
+        val plateH = h - 5f               // 90 у таймера, 83 у пресетов
         for (i in labels.indices) {
-            val x = 59f + step * i
+            val x = SEG_X0 + SEG_STEP * i
             val on = i == active
-            if (on) ink.convex(c, x, y + 4f, step - 5f, h - 15f, (h - 15f) / 2f)
-            ink.textCenter(c, labels[i], x, step - 5f, T.base(y + 26f, T.TS_BODY_S, 1.25f),
+            if (on) ink.convex(c, x, y + 4f, SEG_STEP, plateH, (plateH - T.SHADOW_DY) / 2f)
+            val top = y + h / 2f - 21.5f + if (on) 1f else 0f
+            ink.textCenter(c, labels[i], x, boxW, T.base(top, T.TS_BODY_S, 1.25f),
                 T.TS_BODY_S, if (on) 700 else 600, if (on) T.G1 else T.G5)
         }
     }
@@ -128,8 +142,7 @@ internal class AudioSheet(private val ink: Ink, private val icons: Icons) {
 
         // Таймер: сегмент 1..5.
         if (y >= 985f && y <= 1090f && x >= 56f && x <= 1348f) {
-            val step = 1287f / SLEEP_VALUES.size
-            val i = ((x - 59f) / step).toInt().coerceIn(0, SLEEP_VALUES.size - 1)
+            val i = ((x - SEG_X0) / SEG_STEP).toInt().coerceIn(0, SLEEP_VALUES.size - 1)
             if (sleep != SLEEP_VALUES[i]) {
                 sleep = SLEEP_VALUES[i]
                 result = true
@@ -144,21 +157,10 @@ internal class AudioSheet(private val ink: Ink, private val icons: Icons) {
             }
             return if (result == true) ACT_CHANGED else 0
         }
-        // Ползунок: касание дорожки — ближайший пресет из пяти.
-        if (y >= 1262f && y <= 1360f && x in 470f..1200f) {
-            val pct = ((x - 473f) / 715f).coerceIn(0f, 1f)
-            val v = Prefs.Speed.MIN + pct * (Prefs.Speed.MAX - Prefs.Speed.MIN)
-            val near = Prefs.Speed.PRESETS.minBy { Math.abs(it - v).toInt() }
-            if (near != speed) {
-                speed = near
-                result = true
-            }
-            return ACT_CHANGED
-        }
-        // Пресеты скорости.
+        // Пресеты скорости. Ползунка в ряду скорости больше нет (решение 2026-11-20):
+        // место между значением и «+» не отвечает на касание.
         if (y >= 1415f && y <= 1513f && x >= 56f && x <= 1348f) {
-            val step = 1287f / Prefs.Speed.PRESETS.size
-            val i = ((x - 59f) / step).toInt().coerceIn(0, Prefs.Speed.PRESETS.size - 1)
+            val i = ((x - SEG_X0) / SEG_STEP).toInt().coerceIn(0, Prefs.Speed.PRESETS.size - 1)
             if (Prefs.Speed.PRESETS[i] != speed) {
                 speed = Prefs.Speed.PRESETS[i]
                 result = true
@@ -186,6 +188,10 @@ internal class AudioSheet(private val ink: Ink, private val icons: Icons) {
     companion object {
         const val ACT_CLOSE = 1
         const val ACT_CHANGED = 2
+
+        /** Левая граница первого сегмента и шаг из B35.json: подписи 60, 316.8, 573.6 … */
+        private const val SEG_X0 = 60f
+        private const val SEG_STEP = 256.8f
 
         /** Подписи сегментов таймера из макета B35. */
         val SLEEP_LABELS = arrayOf("Выкл", "15 мин", "30 мин", "60 мин", "Конец главы")
