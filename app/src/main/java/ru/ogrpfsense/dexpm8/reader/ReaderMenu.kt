@@ -9,7 +9,7 @@ import ru.ogrpfsense.dexpm8.ui.T
  * B9 · «Меню чтения» — две панели поверх страницы книги (R3.1). Числа — `design/v5/B09.json`.
  *
  *   верх    полоса −10.1,−10.1 1423.2×222.1: тень G10, блик G15, поверхность G14
- *           клавиши Ø102.4 в 41.1 / 1021 / 1138 / 1255, y 44.8; иконки 49.4×51.4
+ *           клавиши Ø102.4 в 41.1 / 1138 / 1255, y 44.8; иконки 49.4×51.4
  *           название 175.5,45.7 Literata 44/600 G1; автор и глава 175.5,100.5 Manrope 32/600 G4
  *   низ     полоса −10.1,1423.2 1423.2×463.4 (те же слои, сдвиг +1433.3)
  *           клавиши Ø87.7 в 41.1 и 1269.6, y 1474.4; стрелки 42×43.9
@@ -24,8 +24,10 @@ import ru.ogrpfsense.dexpm8.ui.T
  * Затемнения под меню нет: страница остаётся как есть, панели просто лежат поверх — так же,
  * как лист B31 и шторка B4 (`docs/READER_SPEC.md`, «листы и диалоги без затемнения»).
  *
- * Кнопки, чьих экранов ещё нет (Поиск — B28, Контраст — B37, «Ещё» — борды нет),
- * нарисованы по макету, но касание не ловят; вопрос в `DESIGN_QUESTIONS.md`.
+ * Кнопки, чьих экранов ещё нет, нарисованы по макету, но касание не ловят —
+ * вопрос в `DESIGN_QUESTIONS.md`. Мёртвых кнопок в меню больше нет: «Ещё» (⋮) в шапке и
+ * «Контраст» в нижнем ряду убраны (решение пользователя 2026-11-21) — под ними не было ни
+ * экрана, ни действия, а контраст экрана давно живёт в шторке B5 и на B37.
  * Живые: «Назад» (закрыть книгу и вернуться туда, откуда её открыли — замечание 2026-11-16),
  * «Закладка» (поставить закладку на текущей странице, R4.1; решение 2026-11-16 — только ставит,
  * снимается крестиком в списке B27), листание (меню при этом НЕ закрывается — замечание
@@ -53,7 +55,7 @@ class ReaderMenu(private val ink: Ink, private val icons: Icons) {
 
     private fun top(c: Canvas, title: String, sub: String, marked: Boolean) {
         ink.convex(c, PANEL_X, PANEL_Y, PANEL_W, TOP_H, 0f)
-        for (i in 0 until 4) {
+        for (i in 0 until KEY_TOP_X.size) {
             // Вида «закладка поставлена» в макете нет: показываем вдавленной клавишей, как
             // выбранный вариант зон касаний на B39. Иконка одна и та же (`bookmark`). Кнопка
             // только ставит закладку (решение 2026-11-16), так что вдавленность значит
@@ -152,12 +154,12 @@ class ReaderMenu(private val ink: Ink, private val icons: Icons) {
     fun hit(x: Float, y: Float, djvu: Boolean): Int {
         if (y <= TOP_H) {
             if (y < KEY_TOP_Y || y > KEY_TOP_Y + TOP_KEY_D) return ACT_NONE
-            for (i in 0 until 4) {
+            for (i in 0 until KEY_TOP_X.size) {
                 if (x >= KEY_TOP_X[i] - HIT_PAD && x <= KEY_TOP_X[i] + TOP_KEY_D + HIT_PAD) {
-                    // Живые верхние клавиши: «Назад» закрывает книгу (возврат туда, откуда её
-                    // открыли), «Закладка» ставит закладку на текущей странице (R4.1, B27).
-                    // «Поиск» (B28) и «Ещё» (борда нет) ждут своих этапов — касание пока
-                    // только закрывает меню.
+                    // Три клавиши шапки: «Назад» закрывает книгу (возврат туда, откуда её
+                    // открыли), «Поиск» открывает B28, «Закладка» ставит закладку на текущей
+                    // странице (R4.1, B27). Мёртвой «Ещё» (⋮) в шапке больше нет — решение
+                    // пользователя 2026-11-21.
                     return when (i) {
                         0 -> ACT_CLOSE
                         1 -> ACT_SEARCH
@@ -178,14 +180,19 @@ class ReaderMenu(private val ink: Ink, private val icons: Icons) {
         }
         if (y < BTN_HIT_Y0) return ACT_NONE       // подпись «Стр. N из M» — касание закрывает
         for (i in 0 until BTN_COUNT) {
-            val bx = BTN_X + BTN_STEP * i
-            if (x >= bx - HIT_PAD && x <= bx + BTN_W + HIT_PAD) {
+            // Зона — слот до середины промежутка с соседями, а не только подпись 234: ряд шире
+            // макета (четыре кнопки вместо пяти), и касание между ними не должно просто закрывать
+            // меню — палец на E-Ink крупный.
+            val cx = BTN_X + BTN_STEP * i + BTN_W / 2f
+            if (x >= cx - BTN_STEP / 2f && x <= cx + BTN_STEP / 2f) {
                 return when (i) {
                     BTN_TOC -> ACT_TOC
                     BTN_TEXT -> if (djvu) ACT_SCALE else ACT_TEXT
                     BTN_SPEAK -> ACT_TTS
-                    // «Ещё» — B32 «Статистика чтения» (п. 22): своего борда у кнопки нет,
-                    // дверь открывает единственный экран, который за ней стоит.
+                    // «Ещё» в нижнем ряду — B32 «Статистика чтения» (п. 22): своего борда
+                    // у кнопки нет, дверь открывает единственный экран, который за ней стоит.
+                    // Это последняя кнопка ряда ([BTN_COUNT] − 1) — при смене числа кнопок
+                    // проверь, что она осталась последней.
                     BTN_COUNT - 1 -> ACT_MORE
                     else -> ACT_NONE
                 }
@@ -230,9 +237,11 @@ class ReaderMenu(private val ink: Ink, private val icons: Icons) {
         private const val BOT_Y = 1423.2f
         private const val BOT_H = 463.4f
 
-        // Верхние клавиши: блик Ø102.4 в 41.1 / 1021 / 1138 / 1255, y 44.8; иконки по макету.
-        // «Ещё» в шапке — 49.4×51.4, это основное имя `more` (крупнее — `more@54.8x57.1` внизу).
-        private val KEY_TOP_X = floatArrayOf(41.1f, 1021f, 1138f, 1255f)
+        // Верхние клавиши: блик Ø102.4, y 44.8; иконки по макету. В макете их четыре
+        // (41.1 / 1021 / 1138 / 1255), но правое «Ещё» (⋮) ничего не открывало — ни экрана,
+        // ни действия; решение пользователя 2026-11-21: клавишу убрать, а «Поиск» и «Закладку»
+        // сдвинуть на её место, сохранив шаг 117 и правый край полосы.
+        private val KEY_TOP_X = floatArrayOf(41.1f, 1138f, 1255f)
         private const val KEY_TOP_Y = 44.8f
         private const val TOP_KEY_D = 102.4f
         /** Индекс клавиши «Закладка» в [KEY_TOP_X]: по нему меню показывает поставленную закладку. */
@@ -240,12 +249,12 @@ class ReaderMenu(private val ink: Ink, private val icons: Icons) {
         private const val TOP_ICON_W = 49.4f
         private const val TOP_ICON_H = 51.4f
         private val ICON_TOP = arrayOf("back@49.4x51.4", "search@49.4x51.4",
-            "bookmark@49.4x51.4", "more")
+            "bookmark@49.4x51.4")
 
         private const val TITLE_X = 175.5f
-        /** Название не залезает под клавишу «Поиск» (1021 − 175.5 − 12). */
-        private const val TITLE_W = 833f
-        private const val SUB_W = 833f
+        /** Название не залезает под клавишу «Поиск» (1138 − 175.5 − 12). */
+        private const val TITLE_W = 950.5f
+        private const val SUB_W = 950.5f
 
         // Шкала: слой «Трек» 160.9,1506.4 1082.3×29.2; дно 1076.8×21; ручка Ø73.1 в 1481.7.
         private const val SCALE_X = 160.9f
@@ -263,23 +272,26 @@ class ReaderMenu(private val ink: Ink, private val icons: Icons) {
         private const val PLACE_Y0 = 1660f
         private const val BTN_HIT_Y0 = 1664.5f
 
-        // Ряд кнопок: 234×169 от 43.9 шагом 263.2; блик Ø117, иконка 54.8×57.1.
+        // Ряд кнопок: 234×169 от 43.9; блик Ø117, иконка 54.8×57.1. В макете кнопок пять
+        // (шаг 263.2), но «Контраст» ничего не открывал — своего экрана у него не было,
+        // решение пользователя 2026-11-21: кнопку убрать, четыре оставшиеся разложить
+        // равномерно между теми же краями (43.9 и 1330.7): шаг (1152.6 − 99.6) / 3 ≈ 351.
         private const val BTN_X = 43.9f
         private const val BTN_W = 234f
-        private const val BTN_STEP = 263.2f
-        private const val BTN_COUNT = 5
+        private const val BTN_STEP = 351f
+        private const val BTN_COUNT = 4
         private const val BTN_TOC = 0
         private const val BTN_TEXT = 1
         /** «Вслух» — чтение системным TTS (п. 19, R6). */
-        private const val BTN_SPEAK = 3
-        /** Круги ряда: блик Ø117 в 99.6 / 362.9 / 626.1 / 889.4 / 1152.6, y 1664.5. */
-        private val BTN_SEAT_X = floatArrayOf(99.6f, 362.9f, 626.1f, 889.4f, 1152.6f)
+        private const val BTN_SPEAK = 2
+        /** Круги ряда: блик Ø117 в 99.6 / 450.6 / 801.7 / 1152.6, y 1664.5. */
+        private val BTN_SEAT_X = floatArrayOf(99.6f, 450.6f, 801.7f, 1152.6f)
         private const val BTN_SEAT_Y = 1664.5f
         private const val BTN_ICON_W = 54.8f
         private const val BTN_ICON_H = 57.1f
-        private val BTN_LABEL = arrayOf("Оглавление", "Текст", "Контраст", "Вслух", "Ещё")
+        private val BTN_LABEL = arrayOf("Оглавление", "Текст", "Вслух", "Ещё")
         private val BTN_ICON = arrayOf("chapters@54.8x57.1", "font@54.8x57.1",
-            "contrast@54.8x57.1", "tts", "more@54.8x57.1")
+            "tts", "more@54.8x57.1")
         /** У DjVu «Текст» — это лист B31 «Масштаб и поля» (решение пользователя 2026-11-15). */
         private const val BTN_ZOOM = "Масштаб"
         private const val ICON_ZOOM = "font@54.8x57.1"
