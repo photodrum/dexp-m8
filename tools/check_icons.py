@@ -12,6 +12,7 @@ Kotlin:
 отсутствие поля — IndexOutOfBoundsException.
 Цвет — `#hex` или `stroke:#hex:ширина[:round]` (round — круглые концы линий).
 """
+import pathlib
 import re
 import sys
 
@@ -137,9 +138,30 @@ def main() -> int:
                         problems.append(f"{name}: странный d {d[:60]!r}")
 
     print(f"проблем: {len(problems)}")
+    problems += used_in_code(specs)
     for p in problems[:25]:
         print("  -", p)
     return 0 if not problems else 1
+
+
+def used_in_code(specs) -> list:
+    """Иконки, нарисованные из кода по имени-литералу, должны быть в IconSpecs.
+
+    `Icons.draw` молча выходит, если имени нет: так 2026-11-19 пропала чашка `cup`
+    (строку затёр коммит в icon_specs_extra.txt), а ни сборка, ни проверки не заметили.
+    """
+    have = {s.split("|")[0] for s in specs}
+    call = re.compile(r'icons\.(?:draw|drawRound|drawRoundRing|drawInset|drawCentered)\('
+                      r'\s*\w+,\s*"([^"]+)"')
+    out = []
+    for path in sorted(pathlib.Path("app/src/main/java").rglob("*.kt")):
+        if path.name == "IconSpecs.kt":
+            continue
+        for name in sorted(set(call.findall(path.read_text(encoding="utf-8")))):
+            if name not in have:
+                out.append(f"{path.name}: иконки «{name}» нет в IconSpecs.kt")
+    print(f"имён в коде без иконки: {len(out)}")
+    return out
 
 
 if __name__ == "__main__":

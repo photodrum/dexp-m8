@@ -71,7 +71,7 @@ class FirstPermScreen(act: EinkActivity) : Screen(act) {
             icons.draw(c, "check@51.2x51.2", 113.3f, y + 101.8f, 51.2f, 51.2f)
         } else {
             ink.ellipsoid(c, 87.8f, y + 76.7f, 102.4f, 102.4f, T.G10)
-            icons.draw(c, "lock@51.2x51.2", 113.3f, y + 101.8f, 51.2f, 51.2f)
+            icons.draw(c, "lock@51.2x53.3", 113.3f, y + 101.8f, 51.2f, 51.2f)
         }
         ink.text(c, title, 226.7f, T.base(y + 78.4f, T.TS_ACTION, 1.25f), T.TS_ACTION, 700, T.G1)
         ink.text(c, ink.ellipsize(why, 840f, T.TS_BODY, 600), 226.7f,
@@ -113,7 +113,7 @@ class FirstPermScreen(act: EinkActivity) : Screen(act) {
         ink.flat(c, 43.9f, y, 1316.2f, 255.9f, T.R_TILE, T.G13)
         ink.ring(c, 43.9f, y, 1316.2f, 255.9f, T.R_TILE, T.G11, 1.5f)
         ink.convex(c, 85f, y + 59.4f, 106.9f, 112.4f, 55f)
-        icons.draw(c, "home@51.2x53.3", 113.3f, y + 87.8f, 51.2f, 53.3f)
+        icons.draw(c, "home", 113.3f, y + 87.8f, 51.2f, 53.3f)
         ink.text(c, "Главный экран по умолчанию", 226.7f, T.base(y + 66.2f, T.TS_ACTION, 1.25f),
             T.TS_ACTION, 700, T.G8)
         ink.text(c, "Чтобы кнопка «Домой» открывала оболочку", 226.7f,
