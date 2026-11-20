@@ -197,6 +197,17 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
     private var selHref: String? = null
     /** Верх панели B50 на кадре: считается один раз при отрисовке, нужен касанию. */
     private var selBarY = 0f
+    /**
+     * Маркеры выделения на кадре — левый верхний угол каждого (дизайн-px). Считаются при
+     * отрисовке ([drawSelectionOver]) и нужны касанию ([markerHit]): геометрия у рисования
+     * и касаний одна (READER_SPEC, «одна геометрия для рисования и касаний»).
+     * [markShown] = false — маркеров на кадре нет (выделение снято или не отрисовано).
+     */
+    private var markStartX = 0f
+    private var markStartY = 0f
+    private var markEndX = 0f
+    private var markEndY = 0f
+    private var markShown = false
     /** Касание выделения обрабатывается в потоке движка: плашки нужны для меню. */
     @Volatile private var selecting = false
     // --- B51 «Новая заметка» (R4.3): нижний лист с цитатой и клавиатурой
@@ -318,7 +329,10 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         // Поверх страницы лист B51/B30, диалог или открытие книги: меню B50 не нарисовано,
         // и уступать нечему — зона шторки работает как у остальных экранов.
         if (noteOpen || dictOpen || dialogOpen || opening) return true
-        return selRects.isEmpty() || !selBar.contains(x, y, selBarY)
+        if (selRects.isEmpty()) return true
+        // Меню B50 или маркер выделения (2026-11-20): по ним касание расширяет выделение,
+        // а не открывает шторку.
+        return !selBar.contains(x, y, selBarY) && markerHit(x, y) == MARK_NONE
     }
 
     // ------------------------------------------------------------------ кадр
@@ -862,6 +876,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         selStart = null
         selEnd = null
         selHref = null
+        markShown = false            // маркеров на кадре больше нет — касание по ним не считается
         Engine.worker.execute { Engine.selectionClear() }
         redraw()
         Trace.step("b50: выделение снято")
@@ -914,10 +929,13 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
      * [bar] = false — только маркеры (под листом B51 меню всё равно закрыто листом).
      */
     private fun drawSelectionOver(c: Canvas, bar: Boolean = true) {
+        markShown = false
         var top = Float.MAX_VALUE
         var bottom = -Float.MAX_VALUE
         var firstX = 0f
         var lastRight = 0f
+        /** Верх последней строки выделения — от него ставится маркер конца. */
+        var lastTop = 0f
         var i = 0
         while (i + 3 < selRects.size) {
             val rx = TX + selRects[i] / D.u
@@ -928,23 +946,38 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
                 top = ry
                 firstX = rx
             }
-            if (ry + rh > bottom) bottom = ry + rh
-            if (rx + rw > lastRight) lastRight = rx + rw
+            if (ry + rh > bottom) {
+                bottom = ry + rh
+                lastTop = ry
+                lastRight = rx + rw
+            } else if (rx + rw > lastRight) lastRight = rx + rw
             i += 4
         }
         if (top > bottom) return
-        // Маркеры на 4 выше плашки (макет: 148,257.8 при плашке 150,261.8).
-        ink.rect(c, firstX - MARK_OFF_X, top - MARK_OFF_Y, MARK_W, MARK_H, T.G1)
-        ink.rect(c, lastRight + MARK_GAP_X, bottom - MARK_OFF_Y - MARK_EXTRA_Y,
-            MARK_W, MARK_H, T.G1)
+        // Маркеры 6×72.4 — по строке, у которой стоят: начало у верхней строки выделения
+        // (макет: 148,257.8 при плашке 150,261.8, то есть на 4 выше), конец — у последней
+        // строки (макет: 1305,326.2 при строке 330.2…394.6, тоже на 4 выше). Считать от низа
+        // всего выделения нельзя: на многострочном выделении маркер уезжал бы на высоту
+        // последней строки вверх — на меню B50.
+        markStartX = firstX - MARK_OFF_X
+        markStartY = top - MARK_OFF_Y
+        markEndX = lastRight + MARK_GAP_X
+        markEndY = lastTop - MARK_OFF_Y
+        markShown = true
+        ink.rect(c, markStartX, markStartY, MARK_W, MARK_H, T.G1)
+        ink.rect(c, markEndX, markEndY, MARK_W, MARK_H, T.G1)
         if (!bar) return
         selBarY = selBar.top(top, bottom)
         selBar.draw(c, selBarY)
     }
 
     /**
-     * Касание меню выделения (B50). `true` — касание наше: меню, само выделение или «мимо» —
-     * всё это не должно доходить до третей и меню B9.
+     * Касание меню выделения (B50). `true` — касание наше: меню, маркер, само выделение или
+     * «мимо» — всё это не должно доходить до третей и меню B9.
+     *
+     * Порядок: клавиши меню, затем маркеры, затем «мимо» — снять выделение. Маркеры
+     * проверяются после меню, потому что панель может стоять над выделением и накрывать их
+     * (у последних абзацев страницы): что нарисовано сверху, то и нажимается.
      */
     private fun selectionTouch(x: Float, y: Float): Boolean {
         if (selRects.isEmpty()) return false
@@ -958,9 +991,95 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
                 openSearch(w)
             }
             SelectionBar.ACT_COPY -> copySelection()
-            else -> clearSelection()          // мимо меню — снять выделение
+            else -> {
+                // Касание по маркеру двигает границу на слово: левый — начало, правый — конец.
+                // Правила E-Ink запрещают перетаскивание, поэтому расширение идёт касаниями:
+                // сколько раз нажал, на столько слов и растянулось (решение 2026-11-20).
+                when (markerHit(x, y)) {
+                    MARK_START -> extendSelection(-1)
+                    MARK_END -> extendSelection(1)
+                    else -> clearSelection()      // мимо меню и маркеров — снять выделение
+                }
+            }
         }
         return true
+    }
+
+    /**
+     * Какой маркер под точкой: [MARK_START], [MARK_END] или [MARK_NONE]. Геометрия — та же,
+     * что нарисована в [drawSelectionOver]. Сам маркер 6 дизайн-px шириной пальцем не поймать,
+     * поэтому попадание считается с запасом [MARK_HIT_PAD] по бокам и снизу-сверху: зона
+     * выходит 6 + 2×45 = 96 дизайн-px — минимум тач-зоны по правилам (`ARCHITECTURE.md`).
+     * Запас ограничен так, чтобы зоны начала и конца не смыкались на коротком выделении.
+     */
+    private fun markerHit(x: Float, y: Float): Int {
+        if (!markShown) return MARK_NONE
+        val padY = MARK_HIT_PAD_Y
+        // Половина расстояния между маркерами — предел запаса, иначе на слове в 3 буквы
+        // оба маркера ловили бы одно и то же касание.
+        val room = ((markEndX - markStartX) / 2f - MARK_W / 2f).coerceAtLeast(0f)
+        val padX = MARK_HIT_PAD.coerceAtMost(room)
+        if (y >= markStartY - padY && y <= markStartY + MARK_H + padY &&
+            x >= markStartX - padX && x <= markStartX + MARK_W + padX
+        ) return MARK_START
+        if (y >= markEndY - padY && y <= markEndY + MARK_H + padY &&
+            x >= markEndX - padX && x <= markEndX + MARK_W + padX
+        ) return MARK_END
+        return MARK_NONE
+    }
+
+    /**
+     * Расширить выделение на слово: [dir] < 0 — начало, > 0 — конец. Движок двигает границу
+     * сам ([Engine.selectionExtend]: идёт по видимым словам, поэтому курсив и сноски не рвут
+     * слово), нам остаётся перечитать текст, позиции и отрезки — ровно как после удержания.
+     *
+     * Перед запросом движок возвращается на показанную страницу ([Engine.syncPage]): фоновая
+     * отрисовка соседней страницы оставляет его на ней, и отрезки пришли бы не с этого кадра
+     * (та же грабля, что у [Engine.wordAt], 2026-11-17).
+     *
+     * Выделение при этом остаётся на месте — меняются плашки, маркеры и меню.
+     */
+    private fun extendSelection(dir: Int) {
+        if (selecting || selRects.isEmpty()) return
+        selecting = true
+        val page = cur
+        Engine.worker.execute {
+            val r = try { Engine.selectionExtend(dir) } catch (t: Throwable) {
+                Trace.step("b50: extend FAIL ${t.javaClass.simpleName}: ${t.message}")
+                -1
+            }
+            // 0 — край текста: расширять некуда, выделение не трогаем.
+            if (r <= 0) {
+                selecting = false
+                Trace.step("b50: расширение $dir — ${if (r == 0) "край текста" else "нет выделения"}")
+                return@execute
+            }
+            if (r > 0) Engine.syncPage(page)
+            val text = Engine.selectionText().orEmpty()
+            val a = Engine.selectionPos(0)
+            val b = Engine.selectionPos(1)
+            val rects = Engine.rangeRects(null, null) ?: IntArray(0)
+            // Слово за краем страницы: плашек на кадре нет, и выделение «пропало» бы с экрана,
+            // оставаясь в движке. Откатываем — так же, как у края текста.
+            if (r > 0 && rects.isEmpty()) {
+                try { Engine.selectionExtend(-dir) } catch (_: Throwable) {
+                }
+                selecting = false
+                Trace.step("b50: расширение $dir — за краем страницы, откат")
+                return@execute
+            }
+            selecting = false
+            if (rects.isEmpty()) return@execute
+            post {
+                if (!attached) return@post
+                selText = text
+                selStart = a
+                selEnd = b
+                selRects = rects
+                Trace.step("b50: расширено '${text.take(40)}' отрезков=${rects.size / 4}")
+                redraw()
+            }
+        }
     }
 
     /** «Копировать»: выделенный текст в системный буфер Android. */
@@ -1963,6 +2082,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
             selStart = null
             selEnd = null
             selHref = null
+            markShown = false
             Engine.worker.execute { Engine.selectionClear() }
         }
         if (page == shownPage && nextPage == -1) {    // уже на экране
@@ -2701,8 +2821,18 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         private const val MARK_OFF_X = 2f
         private const val MARK_OFF_Y = 4f
         private const val MARK_GAP_X = 0f
-        /** Нижний маркер поднят ещё на 4: в макете 326.2 против плашки 330.2 (верх 257.8). */
-        private const val MARK_EXTRA_Y = 4f
+        /**
+         * Запас касания по маркеру: сам он 6 дизайн-px шириной, пальцем в него не попасть.
+         * По 45 влево-вправо даёт зону 96 — минимум для тач-зон (`ARCHITECTURE.md`); запас
+         * урезается, если маркеры стоят близко, иначе их зоны слились бы в одну.
+         * По вертикали маркер 72.4 высотой, запас 12 — зона 96.4.
+         */
+        private const val MARK_HIT_PAD = 45f
+        private const val MARK_HIT_PAD_Y = 12f
+        /** Что под точкой: маркер начала, маркер конца или ничего. */
+        private const val MARK_NONE = 0
+        private const val MARK_START = 1
+        private const val MARK_END = 2
 
         // --- B52 «Метки» (R4.3)
         /** Подчёркивание цитаты: полоса G3 в 4 px по низу строки. */
