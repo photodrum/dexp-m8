@@ -24,14 +24,15 @@ import ru.ogrpfsense.dexpm8.ui.T
  * Затемнения под меню нет: страница остаётся как есть, панели просто лежат поверх — так же,
  * как лист B31 и шторка B4 (`docs/READER_SPEC.md`, «листы и диалоги без затемнения»).
  *
- * Кнопки, чьих экранов ещё нет (Поиск — B28, Контраст — B37, Вслух — R6, «Ещё» — борда нет),
+ * Кнопки, чьих экранов ещё нет (Поиск — B28, Контраст — B37, «Ещё» — борды нет),
  * нарисованы по макету, но касание не ловят; вопрос в `DESIGN_QUESTIONS.md`.
  * Живые: «Назад» (закрыть книгу и вернуться туда, откуда её открыли — замечание 2026-11-16),
  * «Закладка» (поставить закладку на текущей странице, R4.1; решение 2026-11-16 — только ставит,
  * снимается крестиком в списке B27), листание (меню при этом НЕ закрывается — замечание
  * 2026-11-16: им листают несколько страниц подряд), Оглавление
  * (B10) и «Текст» — у crengine лист B4 «Типографика», у DjVu «Масштаб» (лист B31, решение
- * пользователя 2026-11-15): у скана нет кегля.
+ * пользователя 2026-11-15): у скана нет кегля. «Вслух» — чтение системным TTS (R6): кнопка
+ * вдавлена, пока идёт чтение; у DjVu она мертва — текстового слоя у скана нет.
  *
  * Состояние держит экран ([ReaderScreen]): меню получает надписи и значения в [draw], что нажали —
  * возвращает кодом действия. Своих копий у него нет.
@@ -43,9 +44,9 @@ class ReaderMenu(private val ink: Ink, private val icons: Icons) {
      * (R4.1): клавиша «Закладка» в шапке тогда вдавлена, как выбранный вариант на B39.
      */
     fun draw(c: Canvas, title: String, sub: String, place: String,
-             pages: Int, cur: Int, djvu: Boolean, marked: Boolean) {
+             pages: Int, cur: Int, djvu: Boolean, marked: Boolean, speaking: Boolean) {
         top(c, title, sub, marked)
-        bottom(c, place, pages, cur, djvu)
+        bottom(c, place, pages, cur, djvu, speaking)
     }
 
     // ------------------------------------------------------------------ верх
@@ -76,7 +77,8 @@ class ReaderMenu(private val ink: Ink, private val icons: Icons) {
 
     // ------------------------------------------------------------------ низ
 
-    private fun bottom(c: Canvas, place: String, pages: Int, cur: Int, djvu: Boolean) {
+    private fun bottom(c: Canvas, place: String, pages: Int, cur: Int, djvu: Boolean,
+                       speaking: Boolean) {
         ink.convex(c, PANEL_X, BOT_Y, PANEL_W, BOT_H, 0f)
         circle(c, 41.1f, 1474.4f, 87.7f)
         icons.draw(c, "prev", 66.7f, 1500.9f, 42f, 43.9f)
@@ -86,7 +88,7 @@ class ReaderMenu(private val ink: Ink, private val icons: Icons) {
         val p = ink.ellipsize(place, PLACE_W, T.TS_BODY, 600)
         ink.textCenter(c, p, PLACE_X, PLACE_W, T.base(1588.2f, T.TS_BODY, 1.25f),
             T.TS_BODY, 600, T.G4)
-        for (i in 0 until BTN_COUNT) button(c, i, djvu)
+        for (i in 0 until BTN_COUNT) button(c, i, djvu, speaking)
     }
 
     /**
@@ -108,13 +110,26 @@ class ReaderMenu(private val ink: Ink, private val icons: Icons) {
         circle(c, hx, HANDLE_Y, HANDLE_D)
     }
 
-    /** Кнопка нижнего ряда [i]: круг Ø117 и подпись под ним; у DjVu «Текст» — «Масштаб». */
-    private fun button(c: Canvas, i: Int, djvu: Boolean) {
+    /**
+     * Кнопка нижнего ряда [i]: круг Ø117 и подпись под ним; у DjVu «Текст» — «Масштаб».
+     *
+     * «Вслух» ([BTN_SPEAK]) во время чтения рисуется вдавленной, как «Закладка» в шапке:
+     * вида «читает» в макете нет, а на E-Ink вдавленность — уже знакомый признак включённого
+     * состояния (B39, B27). Иконка и подпись те же.
+     */
+    private fun button(c: Canvas, i: Int, djvu: Boolean, speaking: Boolean) {
         val zoom = djvu && i == BTN_TEXT
-        circle(c, BTN_SEAT_X[i], BTN_SEAT_Y, 117f)
-        icons.drawCentered(c, if (zoom) ICON_ZOOM else BTN_ICON[i],
-            BTN_SEAT_X[i] + (117f + T.SURFACE_DX) / 2f, BTN_SEAT_Y + (117f + T.SURFACE_DY) / 2f,
-            BTN_ICON_W, BTN_ICON_H)
+        val on = speaking && i == BTN_SPEAK
+        if (on) {
+            ink.inset(c, BTN_SEAT_X[i], BTN_SEAT_Y, 117f, 117f, 117f / 2f)
+            icons.drawInset(c, BTN_ICON[i], BTN_SEAT_X[i], BTN_SEAT_Y, 117f, 117f,
+                BTN_ICON_W, BTN_ICON_H)
+        } else {
+            circle(c, BTN_SEAT_X[i], BTN_SEAT_Y, 117f)
+            icons.drawCentered(c, if (zoom) ICON_ZOOM else BTN_ICON[i],
+                BTN_SEAT_X[i] + (117f + T.SURFACE_DX) / 2f,
+                BTN_SEAT_Y + (117f + T.SURFACE_DY) / 2f, BTN_ICON_W, BTN_ICON_H)
+        }
         val label = if (zoom) BTN_ZOOM else BTN_LABEL[i]
         ink.textCenter(c, label, BTN_X + BTN_STEP * i, BTN_W,
             T.base(1793.5f, T.TS_BODY_S, 1.25f), T.TS_BODY_S, 600, T.G1)
@@ -168,7 +183,8 @@ class ReaderMenu(private val ink: Ink, private val icons: Icons) {
                 return when (i) {
                     BTN_TOC -> ACT_TOC
                     BTN_TEXT -> if (djvu) ACT_SCALE else ACT_TEXT
-                    // «Контраст» (B37), «Вслух» (R6) и «Ещё» (борда нет) — их экранов ещё нет.
+                    BTN_SPEAK -> ACT_TTS
+                    // «Контраст» (B37) и «Ещё» (борды нет) — их экранов ещё нет.
                     else -> ACT_NONE
                 }
             }
@@ -195,6 +211,11 @@ class ReaderMenu(private val ink: Ink, private val icons: Icons) {
         const val ACT_MARK = 8
         /** «Поиск» в шапке — экран B28 «Поиск по книге» (R4.3). */
         const val ACT_SEARCH = 9
+        /**
+         * «Вслух» в нижнем ряду — чтение системным TTS (п. 19, R6). Первое нажатие начинает
+         * с текущей страницы, второе (пока читает) — останавливает.
+         */
+        const val ACT_TTS = 10
 
         // Полосы: макет −10.1,−10.1 1423.2×222.1 и −10.1,1423.2 1423.2×463.4 (габарит с тенью).
         private const val PANEL_X = -10.1f
@@ -244,6 +265,8 @@ class ReaderMenu(private val ink: Ink, private val icons: Icons) {
         private const val BTN_COUNT = 5
         private const val BTN_TOC = 0
         private const val BTN_TEXT = 1
+        /** «Вслух» — чтение системным TTS (п. 19, R6). */
+        private const val BTN_SPEAK = 3
         /** Круги ряда: блик Ø117 в 99.6 / 362.9 / 626.1 / 889.4 / 1152.6, y 1664.5. */
         private val BTN_SEAT_X = floatArrayOf(99.6f, 362.9f, 626.1f, 889.4f, 1152.6f)
         private const val BTN_SEAT_Y = 1664.5f

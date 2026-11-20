@@ -311,6 +311,10 @@ adb shell getprop ro.product.cpu.abi    # ожидаем armeabi-v7a (проши
 adb shell wm size                       # ожидаем 1404x1872
 adb logcat -s DexpM8:V AndroidRuntime:E # логи и падения
 adb shell dumpsys meminfo ru.ogrpfsense.dexpm8   # PSS — главная метрика на 1 ГБ
+# чтение вслух (R6): движок, локаль, состояние звука; строки «tts: …» в трассе
+adb shell settings get secure tts_default_synth              # com.google.android.tts
+adb shell pm list packages | grep -i tts                     # + com.svox.pico (без русского)
+adb shell dumpsys audio | grep -A2 STREAM_TTS                # state:started — голос идёт
 # R0 (только debug): открыть файл на отладочном экране движков, минуя базу (EinkActivity.probeFromIntent)
 adb shell am start -W -n ru.ogrpfsense.dexpm8/.ui.EinkActivity --es probe "'/sdcard/Books/r0/r0-cover.fb2'"
 adb logcat -s DexpM8:V | grep probe     # «probe: <движок> rc=0 <мс>»
@@ -330,6 +334,18 @@ adb shell am start -n ru.ogrpfsense.dexpm8/.ui.EinkActivity --es reader "'/sdcar
 **Грабля:** `make_fonts.py` пересобирает весь список `JOBS` и перезаписывает уже лежащие
 начертания (`literata_500/600`, `manrope_200/300/500`) — они те же по размеру, но в git
 висят как изменённые; после прогона вернуть их `git checkout -- app/src/main/res/font/`.
+
+**Грабля: русский голос TTS лежит не в `app_voices`.** `TextToSpeech` (`com.google.android.tts`,
+`/system/app/TTS`) держит скачанные голоса в `/data/user_de/0/com.google.android.tts/app_voices_greco_v15/`
+(`ru-ru-x-dfc`, 32 МБ; в интерфейсе движка «Набор голосов 1, 64 МБ»), а `/data/data/.../app_voices`
+пуст — по нему нельзя судить, есть ли русский. Проверять так: `adb root` (на книге root доступен),
+`adb shell ls /data/user_de/0/com.google.android.tts/app_voices_greco_v15`, либо через приложение —
+строка «tts: lang ru=1 default(ru_RU)=1» в трассе. Запасной `com.svox.pico` (`/system/tts/lang_pico`)
+знает только de/en/es/fr/it — русского у него нет; без проверки `isLanguageAvailable` движок молча
+читает кириллицу латиницей. Экран движка для проверки:
+`adb shell am start -n com.google.android.tts/.local.voicepack.ui.VoiceDataInstallActivity`.
+**Грабля: `adb root` роняет сервер.** После него `adb` перестаёт отвечать (`Address already in use`);
+лечится `pkill -f 'adb.*server'` и `adb start-server`.
 
 **Грабля: `install -r` не перезапускает процесс.** Новая `.so` лежит в APK, но приложение
 осталось с загруженной старой — новый JNI-метод не находится (`UnsatisfiedLinkError: No

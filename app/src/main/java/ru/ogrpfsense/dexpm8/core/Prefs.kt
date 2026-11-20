@@ -125,6 +125,14 @@ class Prefs(ctx: Context) {
     var volumeKeys: Int
         get() = sp.getInt("volume_keys", VOLUME_PAGING)
         set(v) = sp.edit().putInt("volume_keys", v).apply()
+    /**
+     * Скорость чтения вслух (R6), проценты: 100 — как у голоса, 140 — заметно живее на слух.
+     * Отдельной строки в макете B39 нет (вопрос дизайну — `docs/DESIGN_QUESTIONS.md`), поэтому
+     * пока только значение без экрана: читалка берёт его при показе экрана.
+     */
+    var ttsSpeed: Int
+        get() = sp.getInt("tts_speed", TTS_SPEED_DEFAULT)
+        set(v) = sp.edit().putInt("tts_speed", v.coerceIn(50, 300)).apply()
 
     // B40 «Сон и питание»
     /** Хочется ли экономия: включена — при заряде ниже порога она включается сама (B20). */
@@ -268,5 +276,10 @@ class Prefs(ctx: Context) {
         const val VOLUME_SOUND = 1
         /** Подписи значения строки «Кнопки громкости» на B39 — по индексу [volumeKeys]. */
         val VOLUME_LABELS = arrayOf("Листание", "Громкость")
+        /**
+         * Скорость чтения вслух по умолчанию, %. 100 — темп голоса как есть; 140 выбран
+         * на слух: книжный текст в системе читается медленнее, чем человек читает глазами.
+         */
+        const val TTS_SPEED_DEFAULT = 140
     }
 }

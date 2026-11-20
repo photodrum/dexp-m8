@@ -14,6 +14,7 @@ import ru.ogrpfsense.dexpm8.core.Downloads
 import ru.ogrpfsense.dexpm8.core.LibraryDb
 import ru.ogrpfsense.dexpm8.core.Opds
 import ru.ogrpfsense.dexpm8.core.Prefs
+import ru.ogrpfsense.dexpm8.core.Speech
 import ru.ogrpfsense.dexpm8.core.Sys
 import ru.ogrpfsense.dexpm8.core.UpdateCheck
 
@@ -175,6 +176,17 @@ class EinkActivity : Activity() {
 
     /** Плеер (п. 12) — один на приложение: уход с B7 на B33 не останавливает звук. */
     val audio: AudioPlayer by lazy { AudioPlayer(db) }
+
+    /**
+     * Чтение вслух системным TTS (п. 19, R6) — один на приложение: `TextToSpeech` после
+     * `shutdown()` не поднимается, а `init` асинхронный (1–2 с на книге). Поднимается при
+     * первом обращении из читалки; на прошивке с движком и русским голосом
+     * (`com.google.android.tts` + `ru-ru-x-dfc`) синтез идёт офлайн.
+     */
+    val speech: Speech by lazy { Speech(this).also { it.init(); speechUsed = true } }
+
+    /** `Speech` уже создан: в `onDestroy` его нужно закрыть, но создавать там нельзя. */
+    private var speechUsed = false
 
     /** Сканер аудиокниг (п. 12): папки Audio и Books. */
     val audioScan: AudioBooks by lazy { AudioBooks(this, db) }
@@ -863,7 +875,10 @@ class EinkActivity : Activity() {
     override fun onPause() {
         // Читалка уходит в фон (кнопка «Домой», выключение экрана): сохраняем место чтения
         // сейчас, не дожидаясь закрытия экрана — процесс могут убить в фоне (R1.4).
-        (current() as? ru.ogrpfsense.dexpm8.reader.ReaderScreen)?.saveNow()
+        // Чтение вслух (R6) в фоне прекращается: голос из свёрнутого приложения на E-Ink
+        // выглядит как «звук идёт сам по себе», а остановить его нечем — кнопка в книге.
+        currentReader()?.stopSpeechNow()
+        currentReader()?.saveNow()
         // В фоне заставка не нужна и план не работает: система сама погасит экран.
         ui.removeCallbacks(sleepAt)
         // Батарею в фоне сторожит система; нам хватит проверки при возврате.
@@ -1166,6 +1181,10 @@ class EinkActivity : Activity() {
     /** Экран наверху стека (под шторкой). */
     private fun current(): Screen? = if (stack.isEmpty()) null else screens[stack[stack.size - 1]]
 
+    /** Текущий экран, если это читалка (чтение вслух и место чтения живут в ней). */
+    private fun currentReader(): ru.ogrpfsense.dexpm8.reader.ReaderScreen? =
+        current() as? ru.ogrpfsense.dexpm8.reader.ReaderScreen
+
     /**
      * Открыть шторку B5 поверх текущего экрана: экран затемняется ([Screen.dimmed]), шторка —
      * второй View в `host`. Касания под шторкой экрану не доходят: шторка на весь экран.
@@ -1407,6 +1426,8 @@ class EinkActivity : Activity() {
         writeWaiter = null
         adminWaiter = null
         installWaiter = null
+        // TTS-движок — отдельный процесс-сервис: без shutdown он живёт до смерти процесса.
+        if (speechUsed) speech.shutdown()
         screens.clear()
         shade = null
         if (lastInstance === this) lastInstance = null

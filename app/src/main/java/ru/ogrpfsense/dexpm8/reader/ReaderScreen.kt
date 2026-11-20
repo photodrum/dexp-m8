@@ -141,6 +141,13 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
      * `volatile`: пишется в потоке движка (`refreshMark`), читается в [render] с UI-потока.
      */
     @Volatile private var marked = false
+    /** Идёт чтение вслух (R6): кнопка «Вслух» меню B9 вдавлена, листание идёт за голосом. */
+    @Volatile private var ttsOn = false
+    /**
+     * Листание, которое заказало само чтение вслух. Такое листание не останавливает голос —
+     * в отличие от ручного (касание, клавиши, меню).
+     */
+    private var ttsTurn = false
     // --- B10 «Оглавление» (R3.2) и B27 «Закладки» (R4.2): одна панель, две вкладки
     private val tocView = TocScreen(ink, icons)
     /** Открыт список B10/B27. */
@@ -398,7 +405,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         // B52: метки на полях; B50: маркеры выделения и меню действий — поверх страницы.
         if (pageMarks.isNotEmpty()) drawPageMarks(c)
         if (selRects.isNotEmpty()) drawSelectionOver(c)
-        if (menuOpen) menu.draw(c, title, menuSub(), menuPlace(), pages, cur, Engine.djvu, marked)
+        if (menuOpen) menu.draw(c, title, menuSub(), menuPlace(), pages, cur, Engine.djvu, marked, ttsOn)
         if (dim >= 0) dimEnd(c, dim)
         if (opening) openDialog.draw(c)
         if (dialogOpen) dialog.draw(c)
@@ -1509,12 +1516,155 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
     /**
      * Подпись под треком. В макете «35% · 4 мин до конца главы»; скорость чтения не
      * измеряется, поэтому вместо минут — страницы (записано в `docs/DESIGN_QUESTIONS.md`).
-     * Главы нет (в книге нет оглавления) — только проценты.
+     * Главы нет (в книге нет оглавления) — только проценты. При чтении вслух (R6) подпись
+     * говорит об этом: панель B9 при старте закрыта, и другого признака на экране нет.
      */
     private fun caption(pct: Int): String {
+        if (ttsOn) return "Читаю вслух · $pct%"
         val end = chapterEnd
         if (end <= cur) return "$pct%"
         return "$pct% · ${end - cur} стр. до конца главы"
+    }
+
+    // ------------------------------------------------------------------ чтение вслух (R6)
+
+    /**
+     * «Вслух» меню B9 (п. 19, R6): начать чтение с текущей страницы или остановить.
+     *
+     * Меню закрывается при старте — читают с экрана, а не через панель; открыв меню снова,
+     * человек увидит «Вслух» вдавленной и остановит чтение тем же нажатием. Остановка
+     * без меню — любое ручное листание (см. [show]) и уход с экрана.
+     *
+     * Текст берётся в потоке движка: `Engine.pageText` читает разметку, и позиция вида
+     * возвращается на страницу экрана ([Engine.syncPage]) — иначе фоновая отрисовка соседней
+     * страницы подсунула бы текст следующей.
+     *
+     * У DjVu текстового слоя нет — кнопка мертва, как и выделение с поиском (READER_SPEC, R4).
+     */
+    private fun toggleSpeech() {
+        if (Engine.djvu) {
+            closeMenu()
+            Trace.step("b3: вслух — у DjVu текста нет")
+            return
+        }
+        if (ttsOn) {
+            stopSpeech()
+            redraw()
+            return
+        }
+        val page = cur
+        closeMenu()
+        ttsTurn = false
+        // Движок поднимается при первом обращении; готовность приходит колбэком.
+        val sp = act.speech
+        if (sp.ready == false || (sp.ready == true && !sp.hasRu)) return speechUnavailable()
+        if (sp.ready == null) {
+            // `init` на книге — 1–2 с; начинаем от готовности.
+            act.speech.init()
+        }
+        ttsOn = true                                         // подпись «Читаю вслух» сразу
+        setStayAwake(true)
+        redraw()
+        Engine.worker.execute { readPageAloud(page, 0) }
+    }
+
+    /**
+     * Отдать страницу [page] голосу. Только в `Engine.worker`: текст берётся у разметки
+     * движка.
+     *
+     * Страница без текста (обложка, иллюстрация, пустая страница перед главой) — не повод
+     * останавливать чтение: листаем дальше и читаем следующую. [skipped] считает такие
+     * страницы подряд — на конце книги голос не должен крутиться по кругу.
+     */
+    private fun readPageAloud(page: Int, skipped: Int) {
+        if (!ttsOn || page < 0 || page >= pages) return
+        Engine.syncPage(page)
+        val text = try { Engine.pageText() } catch (t: Throwable) {
+            Trace.step("tts: pageText FAIL ${t.javaClass.simpleName}: ${t.message}")
+            null
+        }
+        if (text.isNullOrBlank()) {
+            if (page >= pages - 1 || skipped >= TTS_SKIP_MAX) {
+                Trace.step("tts: текста нет — стоп стр.$page пропущено=$skipped")
+                post { stopSpeech(); redraw() }
+                return
+            }
+            Trace.step("tts: стр.$page без текста — дальше")
+            post {
+                if (attached && ttsOn) {
+                    ttsTurn = true
+                    show(page + 1, 1)
+                    Engine.worker.execute { readPageAloud(page + 1, skipped + 1) }
+                }
+            }
+            return
+        }
+        post { if (attached && ttsOn) act.speech.readPage(page, text) }
+    }
+
+    /**
+     * Голос дочитал страницу: листаем вперёд и читаем следующую — это и есть приёмка R6
+     * «листание идёт за чтением». На последней странице чтение заканчивается.
+     */
+    private fun onSpeechPageDone() {
+        if (!attached || !ttsOn) return
+        if (cur >= pages - 1) {
+            Trace.step("tts: конец книги")
+            stopSpeech()
+            redraw()
+            return
+        }
+        val target = cur + 1
+        ttsTurn = true
+        show(target, 1)
+        Engine.worker.execute { readPageAloud(target, 0) }
+        Trace.step("tts: листание -> стр.${target + 1}")
+        redraw()
+    }
+
+    /** Остановить чтение (второе нажатие «Вслух», ручное листание, уход с экрана). */
+    private fun stopSpeech() {
+        setStayAwake(false)
+        if (!ttsOn) {
+            act.speech.stop()
+            return
+        }
+        ttsOn = false
+        ttsTurn = false
+        act.speech.stop()
+    }
+
+    /**
+     * Чтение вслух — это прослушивание, а не касания: без этого флага система погасила бы
+     * экран по тайм-ауту сна (`SCREEN_OFF_TIMEOUT`) посреди главы, и книга замолчала бы.
+     * Флаг у окна, а не `WakeLock`: ни права на него, ни утечки.
+     */
+    private fun setStayAwake(on: Boolean) {
+        try {
+            keepScreenOn = on
+        } catch (t: Throwable) {
+            Trace.step("tts: keepScreenOn FAIL ${t.javaClass.simpleName}")
+        }
+    }
+
+    /**
+     * Читать нечем: на прошивке нет движка TTS или у него нет русского голоса (у запасного
+     * `com.svox.pico` русского нет вовсе; на книге стоит `com.google.android.tts`
+     * с голосом `ru-ru-x-dfc`, но проверка обязательна — на другой прошивке его может не быть).
+     */
+    private fun speechUnavailable() {
+        Trace.step("act: вслух — голоса нет (ready=${act.speech.ready} ru=${act.speech.hasRu})")
+        dialog.open(
+            title = "Чтение вслух недоступно",
+            sub = if (title.isEmpty()) "Книга" else title,
+            note = "На устройстве нет движка синтеза речи с русским голосом.",
+            label = "ЧТО СДЕЛАТЬ",
+            code = "Настройки → Язык и ввод → Синтез речи",
+            canDelete = false,
+        )
+        badPage = -1
+        dialogOpen = true
+        redraw()
     }
 
     // ------------------------------------------------------------------ открытие
@@ -1524,6 +1674,11 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         attached = true
         // Экран живёт в кэше и отвязывается: подписка на прогресс — на каждый показ.
         Engine.setProgressListener { p -> post { onOpenProgress(p) } }
+        // Чтение вслух (R6): голос дочитал страницу — листать дальше; отказ движка — стоп.
+        val sp = act.speech
+        sp.onPageDone = { post { onSpeechPageDone() } }
+        sp.onFail = { why -> post { Trace.step("tts: $why"); stopSpeech(); redraw() } }
+        sp.speed(act.prefs.ttsSpeed)
         start()
     }
 
@@ -1531,6 +1686,11 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         attached = false
         gen++                 // результат уже идущей отрисовки выбрасываем
         stopOpenDialog()
+        // Чтение вслух уходит вместе с экраном: голос без страницы на экране — это уже
+        // не «чтение книги», а брошенный звук.
+        stopSpeech()
+        act.speech.onPageDone = null
+        act.speech.onFail = null
         sheetOpen = false
         // Оверлеи R4.3 снимаем вместе с экраном: при возврате книга откроется на месте чтения,
         // а выделение и лист заметки к ушедшей странице уже не относятся.
@@ -1733,6 +1893,16 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         Engine.worker.execute { savePlace() }
     }
 
+    /**
+     * Остановить чтение вслух снаружи — оболочка зовёт в `onPause`: приложение ушло в фон
+     * (кнопка «Домой», выключение экрана), голос из свёрнутой книги мешал бы всему остальному.
+     */
+    fun stopSpeechNow() {
+        if (!ttsOn) return
+        stopSpeech()
+        redraw()
+    }
+
     /** Ошибка открытия: диалог B45 поверх пустой страницы. */
     private fun fail(rc: Int, text: String) {
         Trace.step("b3: FAIL $rc $text")
@@ -1780,6 +1950,11 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
     private fun show(page: Int, dir: Int) {
         if (loading) return             // книга ещё открывается, листать нечего
         if (page < 0 || page >= pages) return
+        // Ручное листание прекращает чтение вслух (R6): голос, ушедший от страницы на экране,
+        // читал бы не то, что видно. Листание самого чтения помечено [ttsTurn].
+        val bySpeech = ttsTurn
+        ttsTurn = false
+        if (!bySpeech && ttsOn) stopSpeech()
         // Выделение живёт на конкретной странице: при листании его снимаем (пункт 17 ROADMAP —
         // выделение по рамкам слов текущей страницы, ушедшая страница их уже не отрисует).
         if (selRects.isNotEmpty()) {
@@ -2161,7 +2336,10 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
                 // «Закладка» в шапке (R4.1): поставить или снять на текущей странице. Меню
                 // остаётся открытым — видно, что клавиша стала вдавленной (или перестала).
                 ReaderMenu.ACT_MARK -> addBookmark()
-                // Мимо меню — закрыть. «Контраст», «Вслух» и «Ещё» ждут своих этапов:
+                // «Вслух» (R6): начать с текущей страницы или остановить, если уже читаем.
+                // Меню при старте закрывается — иначе вместо текста видна панель.
+                ReaderMenu.ACT_TTS -> toggleSpeech()
+                // Мимо меню — закрыть. «Контраст» и «Ещё» ждут своих этапов:
                 // кнопки нарисованы, касание пока только закрывает меню.
                 else -> closeMenu()
             }
@@ -2490,6 +2668,11 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         /** Полная перерисовка каждые N страниц (READER_SPEC, раздел 6; в B37 пока нет). */
         private const val FULL_EVERY = 6
 
+        /**
+         * Чтение вслух (R6): сколько страниц подряд без текста (иллюстрации, обложка) голос
+         * перешагивает, прежде чем остановиться. 40 — заведомо больше любой вклейки картинок.
+         */
+        private const val TTS_SKIP_MAX = 40
         /**
          * Ширина половины колонтитула B3: строка 73.1…1330.8 (1257.7) делится пополам с зазором 40.
          * Раньше обе половины были по 780 и налезали друг на друга у длинных глав.
