@@ -239,7 +239,7 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
                 val author = e.author ?: "Автор неизвестен"
                 rowIds.add(e.id)
                 books.add(Book(e.title, "$author · $fmt", kind, pct))
-                gridBooks.add(GridCard(e.title, author, kind, pct))
+                gridBooks.add(GridCard(e.title, e.author, kind, pct))
             }
             selectedId = db.lastOpened()?.id ?: -1L
             val all = db.count()
@@ -394,8 +394,9 @@ class LibraryScreen(act: EinkActivity) : Screen(act) {
             bookState(c, b, y)
 
             // Разделитель — на обложка + 145, кроме выбранной и последней строки.
+            // Блок 3…102.6 (99.6 px) по центру ячейки 184: 3 + (184 − 1.8 + 99.6) / 2 = 143.9.
             if (!sel && i < books.size - 1) {
-                ink.rect(c, TEXT_X, y + 145f, 1104.2f, 1.8f, T.G11)
+                ink.rect(c, TEXT_X, y + 143.9f, 1104.2f, 1.8f, T.G11)
             }
         }
     }

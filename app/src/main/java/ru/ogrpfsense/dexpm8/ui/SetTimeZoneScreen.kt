@@ -141,8 +141,11 @@ class SetTimeZoneScreen(act: EinkActivity) : Screen(act) {
         private const val ROW_STEP = 106f
         /** Описание ниже города: 44. */
         private const val DESC_DY = 44f
-        /** Разделитель ниже города: 100. */
-        private const val DIVIDER_DY = 100f
+        /**
+         * Разделитель: блок 0…79 по центру ячейки 106 — (106 − 2 + 79) / 2 = 91.5. Было 100:
+         * до следующей строки оставалось 4 px, а над разделителем 21.
+         */
+        private const val DIVIDER_DY = 91.5f
         /** Левый край колонок: 88 и 780; граница касания — посередине (710.6). */
         private val COL_X = floatArrayOf(88f, 780f)
         private const val COL_SPLIT = 710.6f

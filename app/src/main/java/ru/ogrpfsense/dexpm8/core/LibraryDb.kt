@@ -1070,8 +1070,8 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
 
     /**
      * Поставить закладку на позицию [pos] (R4.1). Повторная постановка на ту же позицию
-     * ничего не меняет (`UNIQUE (book_id, pos)` с `IGNORE`): кнопка «Закладка» в меню B9 —
-     * переключатель, и «поставить дважды» значит «оставить одну».
+     * ничего не меняет (`UNIQUE` с `IGNORE`). Кнопка «Закладка» в меню B9 — переключатель
+     * (решение 2026-11-21): на странице с закладкой она зовёт [removeMark], а не `addMark`.
      *
      * [page] — номер страницы на момент постановки: по нему список B27 показывает «Стр. N»,
      * если книгу нельзя открыть прямо сейчас. Сама навигация идёт по [pos], поэтому после
@@ -1119,10 +1119,14 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
             SQLiteDatabase.CONFLICT_IGNORE)
     }
 
-    /** Снять закладку с позиции [pos]. true — строка была и удалена. */
-    fun removeMark(bookId: Long, pos: String): Boolean =
-        writableDatabase.delete("bookmarks", "book_id = ? AND pos = ?",
-            arrayOf(bookId.toString(), pos)) > 0
+    /**
+     * Снять запись вида [kind] (по умолчанию закладку) с позиции [pos]. true — строка была и
+     * удалена. Вид обязателен в условии: цитата или заметка может начинаться там же, где стоит
+     * закладка страницы (`UNIQUE` включает вид), и удаление одной не должно трогать другую.
+     */
+    fun removeMark(bookId: Long, pos: String, kind: Int = MARK_BOOKMARK): Boolean =
+        writableDatabase.delete("bookmarks", "book_id = ? AND pos = ? AND kind = ?",
+            arrayOf(bookId.toString(), pos, kind.toString())) > 0
 
     /**
      * Есть ли закладка книги на позиции [pos]: по этому меню B9 рисует кнопку нажатой.

@@ -83,7 +83,8 @@ class DownloadsScreen(act: EinkActivity) : Screen(act) {
             val it = items[idx]
             val y = ROW_Y0 + i * ROW_STEP
             row(c, it, y)
-            if (idx < items.size - 1) ink.rect(c, 219.4f, y + 196.2f, 1096.9f, 1.8f, T.G11)
+            // Блок 7.1…142.6 (135.5 px) по центру ячейки 237.4: 7.1 + 135.5 + 50 = 192.6.
+            if (idx < items.size - 1) ink.rect(c, 219.4f, y + 192.6f, 1096.9f, 1.8f, T.G11)
         }
     }
 

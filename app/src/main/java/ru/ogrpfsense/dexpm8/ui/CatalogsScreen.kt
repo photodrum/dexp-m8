@@ -77,7 +77,8 @@ class CatalogsScreen(act: EinkActivity) : Screen(act) {
                 T.base(y + 56f, T.TS_BODY_S, 1.25f), T.TS_BODY_S, 600, T.G4)
             ink.text(c, r.seen, 234f, T.base(y + 100f, T.TS_META, 1.27f), T.TS_META, 600, T.G5)
             icons.draw(c, "next", 1295.2f, y + 49.1f, 43.9f, 43.9f)
-            if (idx < rows.size - 1) ink.rect(c, 234f, y + 181.3f, 1089.6f, 1.8f, T.G11)
+            // Блок из трёх строк 138 px по центру ячейки 207.9: 138 + (207.9 − 1.8 − 138) / 2 = 172.1.
+            if (idx < rows.size - 1) ink.rect(c, 234f, y + 172.1f, 1089.6f, 1.8f, T.G11)
         }
     }
 

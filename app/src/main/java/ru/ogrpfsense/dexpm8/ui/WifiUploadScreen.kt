@@ -116,7 +116,10 @@ class WifiUploadScreen(act: EinkActivity) : Screen(act) {
         const val ROW_Y0 = 901.5f
         const val ROW_STEP = 172f
         const val ROWS = 4
-        const val DIVIDER_DY = 147f
+        /** Строка рисуется на 4.5 ниже и стоит так же, как в «Файлах» (B25): блок текста на +9.5. */
+        const val ROW_DY = 4.5f
+        /** Как в «Файлах»: 9.5 + (172 − 2 + 93) / 2 = 141 — поровну до разделителей. */
+        const val DIVIDER_DY = 141f
         const val TEXT_X = 237f
 
         /** Имя обрезаем до дорожки и «Готово»: в макете текст кончается до 1064.7. */
@@ -241,7 +244,7 @@ class WifiUploadScreen(act: EinkActivity) : Screen(act) {
         val from = Math.max(0, items.size - ROWS)
         for (i in from until items.size) {
             val y = ROW_Y0 + (i - from) * ROW_STEP
-            row(c, items[i], y)
+            row(c, items[i], y + ROW_DY)
             if (i < items.size - 1) ink.rect(c, TEXT_X, y + DIVIDER_DY, 1079f, 2f, T.G11)
         }
     }

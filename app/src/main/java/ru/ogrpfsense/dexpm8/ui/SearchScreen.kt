@@ -72,7 +72,8 @@ class SearchScreen(act: EinkActivity) : Screen(act) {
         const val TAB_STEP = 327f
 
         const val AUTHOR_H = 149.5f
-        const val AUTHOR_PITCH = 173.5f
+        /** Шаг строк автора и книги одинаковый — 182 (было 173.5 у автора). */
+        const val AUTHOR_PITCH = 182f
         const val BOOK_H = 132f
         const val BOOK_PITCH = 182f
 
@@ -321,7 +322,8 @@ class SearchScreen(act: EinkActivity) : Screen(act) {
             42f, 700, T.G1)
         ink.text(c, r.b, 237f, T.base(y + 62.5f, T.TS_BODY_S, 1.25f), T.TS_BODY_S, 600, T.G4)
         icons.draw(c, "next@11x23.8", 1305f, y + 47f, 11f, 23.8f)
-        if (divider) ink.rect(c, 237f, y + 147.5f, 1079f, 2f, T.G11)
+        // Шаг как у строки книги (182): блок 9.5…102.5 по центру — 9.5 + 93 + 43.5 = 146.
+        if (divider) ink.rect(c, 237f, y + 146f, 1079f, 2f, T.G11)
     }
 
     private fun bookRowDraw(c: Canvas, r: Row, y: Float, divider: Boolean) {

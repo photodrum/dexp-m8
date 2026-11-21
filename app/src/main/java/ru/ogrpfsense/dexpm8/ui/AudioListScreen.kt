@@ -34,6 +34,7 @@ class AudioListScreen(act: EinkActivity) : Screen(act) {
     private val db = act.db
     private val status = StatusBar(act, this, ink, icons)
     private val lit = T.literata(ink.res, 600)
+    private val coverText = CoverText(ink)
     private val empty = EmptyState(ink, icons)
     private val kit = SettingsKit(ink, icons)
 
@@ -81,7 +82,7 @@ class AudioListScreen(act: EinkActivity) : Screen(act) {
         val b = current ?: return
         ink.convex(c, 41f, 246f, 1321f, 340f, T.R_TILE)
         ink.inset(c, 88f, 296f, 236f, 236f, 36f, T.G12)
-        cover(c, 106f, 308f, 200f, b.title, 23f)
+        cover(c, 106f, 308f, 200f, b.title, b.author, 23f)
         ink.text(c, "СЕЙЧАС СЛУШАЕТЕ", 364f, T.base(302f, T.TS_META, 1.25f), T.TS_META, 700, T.G5)
         ink.text(c, ink.ellipsize(b.title, 452f, 42f, 600, lit), 364f,
             T.base(346f, 42f, 1.15f, true), 42f, 600, T.G1, lit)
@@ -140,7 +141,7 @@ class AudioListScreen(act: EinkActivity) : Screen(act) {
      * (у начатой), статус (у новой) или «Прослушана» с галочкой.
      */
     private fun row(c: Canvas, b: LibraryDb.Audio, y: Float, divider: Boolean) {
-        cover(c, 88f, y, 132f, b.title, 0f)
+        cover(c, 88f, y, 132f, b.title, null, 0f)
         ink.text(c, ink.ellipsize(b.title, 660f, 42f, 600, lit), 260f,
             T.base(y + 11f, 42f, 1.15f, true), 42f, 600, T.G1, lit)
         ink.text(c, ink.ellipsize(metaLine(b), 674f, T.TS_BODY_S, 600), 260f,
@@ -165,7 +166,9 @@ class AudioListScreen(act: EinkActivity) : Screen(act) {
                     T.base(y + 41f, T.TS_BODY, 1.25f), T.TS_BODY, 700, T.G1)
             }
         }
-        if (divider) ink.rect(c, 260f, y + 165f, 1056f, 2f, T.G11)
+        // Блок 11…107 (96 px) по центру ячейки 160: 11 + (160 − 2 + 96) / 2 = 138. Было 165 —
+        // разделитель падал уже в следующую строку, на 6 px выше её названия.
+        if (divider) ink.rect(c, 260f, y + 138f, 1056f, 2f, T.G11)
     }
 
     private fun metaLine(b: LibraryDb.Audio): String {
@@ -173,16 +176,17 @@ class AudioListScreen(act: EinkActivity) : Screen(act) {
         return if (b.duration > 0) "$a · ${AudioKit.hours(b.duration)}" else a
     }
 
-    /** Миниатюра: гнездо G12 + корешок G7 и название-заглушка на «обложке». */
-    private fun cover(c: Canvas, x: Float, y: Float, side: Float, title: String, fs: Float) {
+    /**
+     * Миниатюра: гнездо G12 + корешок G7. На большой обложке ([fs] > 0) — название сверху и автор
+     * снизу, как на остальных ([CoverText]); на малой (строка списка) текста нет — он не читается.
+     */
+    private fun cover(c: Canvas, x: Float, y: Float, side: Float, title: String, author: String?,
+                      fs: Float) {
         ink.roundRect(c, x, y, side, side, side * 0.0833f, T.G12)
         ink.roundRect(c, x, y, side * 0.0985f, side, side * 0.0833f, T.G7)
         if (fs <= 0f) return
-        val lines = ink.ellipsize2(title, side * 0.66f, fs, 600, lit, 2)
-        val base = y + side * 0.166f
-        for ((i, s) in lines.withIndex()) {
-            ink.text(c, s, x + side * 0.21f, base + i * fs * 1.2f, fs, 600, T.G1, lit)
-        }
+        coverText.draw(c, title, author, x + side * 0.21f, side * 0.66f, y + side * 0.166f,
+            y + side - side * 0.07f, fs, 1.2f, T.TS_CAPTION - 6f, 1.25f)
     }
 
     // ------------------------------------------------------------- пусто и пагинация

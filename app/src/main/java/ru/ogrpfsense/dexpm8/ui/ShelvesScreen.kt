@@ -109,7 +109,8 @@ class ShelvesScreen(act: EinkActivity) : Screen(act) {
         val d = if (r.auto) Words.books(r.count) + " · автоматически" else Words.books(r.count)
         ink.text(c, d, 227f, T.base(y + 62.5f, T.TS_BODY_S, 1.25f), T.TS_BODY_S, 600, T.G4)
         icons.draw(c, "next@11x23.8", 1312f, y + 47f, 11f, 23.8f)
-        if (divider) ink.rect(c, 227f, y + 152f, 1096f, 2f, T.G11)
+        // Блок 9.5…102.5 по центру ячейки 186: 9.5 + 93 + (186 − 2 − 93) / 2 = 148.
+        if (divider) ink.rect(c, 227f, y + 148f, 1096f, 2f, T.G11)
     }
 
     /** Закладка 22.1×44.2 (B23: rect 22.1×42 r 4, обводка 3, точка 11): блик со сдвигом +2.2, затем G4. */

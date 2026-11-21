@@ -489,13 +489,13 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
     }
 
     /**
-     * Поставить закладку на текущей странице (кнопка «Закладка» меню B9).
+     * Поставить или снять закладку на текущей странице (кнопка «Закладка» меню B9).
      *
-     * Решение пользователя 2026-11-16: **нажатие только ставит закладку**, снимать — крестиком
-     * в списке B27. Раньше кнопка была переключателем, и второе нажатие молча удаляло закладку:
-     * со стороны это выглядело как «нажимаю — ничего не происходит». Повторное нажатие на той же
-     * странице теперь ничего не меняет (`UNIQUE (book_id, pos)` с `CONFLICT_IGNORE`), клавиша
-     * остаётся вдавленной — видно, что закладка уже есть.
+     * Решение пользователя 2026-11-21 (отменяет решение 2026-11-16 «только ставит»): кнопка —
+     * переключатель. Первое нажатие ставит закладку, и клавиша становится вдавленной; повторное
+     * на той же странице снимает её, и клавиша снова выпуклая. Так видно, что нажатие сработало
+     * (в обоих случаях меняется вид клавиши), а в списке B27 закладку по-прежнему можно удалить
+     * корзиной строки.
      *
      * Позицию берём у движка в его потоке (`Engine.pos`) — это тот же вызов, которым читалка
      * сохраняет место чтения, значит закладка и `books.pos` всегда об одном тексте.
@@ -507,14 +507,12 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
      * раньше он стоял внутри `post`, то есть на UI-потоке: `Engine.pos` там возвращал null,
      * клавиша оставалась выпуклой, и нажатие выглядело как «не работает» (замечание 2026-11-16).
      */
-    private fun addBookmark() {
+    private fun toggleBookmark() {
         val e = entry ?: return
         if (e.id <= 0 || pages <= 0) return
         val page = cur
         val chapter = chapterTitle.ifEmpty { null }
         Engine.worker.execute {
-            // `pageText` читает разметку движка — только в его потоке (правило ARCHITECTURE).
-            val txt = try { Engine.pageText() } catch (t: Throwable) { null }
             val pos = try { Engine.pos(page) } catch (t: Throwable) { null }
             if (pos.isNullOrEmpty()) {
                 Trace.step("b3: mark — позиции нет")
@@ -522,8 +520,17 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
             }
             val already = try { act.db.hasMark(e.id, pos) } catch (t: Throwable) { false }
             if (already) {
-                Trace.step("b3: mark уже есть стр.${page + 1}")
+                // Повторное нажатие — снять закладку (решение 2026-11-21).
+                try {
+                    act.db.removeMark(e.id, pos)
+                    Trace.step("b3: mark снята стр.${page + 1}")
+                } catch (t: Throwable) {
+                    Trace.step("b3: removeMark FAIL ${t.javaClass.simpleName}: ${t.message}")
+                    return@execute
+                }
             } else {
+                // `pageText` читает разметку движка — только в его потоке (правило ARCHITECTURE).
+                val txt = try { Engine.pageText() } catch (t: Throwable) { null }
                 val line = txt?.replace('\u00A0', ' ')?.trim()?.take(MARK_TEXT_MAX)
                 try {
                     act.db.addMark(e.id, pos, page, chapter, line)
@@ -1560,7 +1567,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         if (i < 0 || i >= list.size) return
         val e = entry ?: return
         val m = list[i]
-        val ok = try { act.db.removeMark(e.id, m.pos) } catch (t: Throwable) {
+        val ok = try { act.db.removeMark(e.id, m.pos, m.kind) } catch (t: Throwable) {
             Trace.step("b3: removeMark FAIL ${t.javaClass.simpleName}: ${t.message}")
             false
         }
@@ -1571,11 +1578,18 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         if (tocPage >= pages) tocPage = pages - 1
         redraw()
         if (!ok) return
-        // Кнопка «Закладка» меню B9 должна знать правду: `refreshMark` сам спрашивает позицию
-        // текущей страницы у движка в его потоке и сверяет с базой.
+        // Состояние после удаления пересчитываем в потоке движка (позиции и прямоугольники
+        // спрашиваются у него): клавиша «Закладка» меню B9 и метка на поле B52. Без
+        // `refreshPageMarks` значок цитаты/заметки оставался на странице до следующей
+        // перерисовки с пересчётом (замечание 2026-11-21).
         Engine.worker.execute {
             refreshMark()
-            post { if (attached && menuOpen) redraw() }
+            refreshPageMarks()
+            post {
+                if (!attached) return@post
+                reloadNotes()
+                redraw()
+            }
         }
     }
 
@@ -2542,7 +2556,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
                 ReaderMenu.ACT_GOTO -> { closeMenu(); openGoto() }
                 // «Закладка» в шапке (R4.1): поставить или снять на текущей странице. Меню
                 // остаётся открытым — видно, что клавиша стала вдавленной (или перестала).
-                ReaderMenu.ACT_MARK -> addBookmark()
+                ReaderMenu.ACT_MARK -> toggleBookmark()
                 // «Вслух» (R6): начать с текущей страницы или остановить, если уже читаем.
                 // Меню при старте закрывается — иначе вместо текста видна панель.
                 ReaderMenu.ACT_TTS -> toggleSpeech()

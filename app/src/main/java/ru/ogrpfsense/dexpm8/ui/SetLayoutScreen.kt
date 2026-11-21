@@ -132,7 +132,7 @@ class SetLayoutScreen(act: EinkActivity) : Screen(act) {
         const val DESC_DY = 53.5f
         /** Тумблер ниже названия: 340.4 − 327. */
         const val TOGGLE_DY = 13.4f
-        /** Разделитель ниже названия: 451 − 327. */
-        const val DIVIDER_DY = 124f
+        /** Разделитель: блок 0…93.5 по центру ячейки 152 — (152 − 2 + 93.5) / 2 = 121.8. */
+        const val DIVIDER_DY = 121.8f
     }
 }

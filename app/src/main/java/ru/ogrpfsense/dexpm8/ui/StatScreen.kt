@@ -400,7 +400,8 @@ class StatScreen(act: EinkActivity) : Screen(act) {
         val ps = "$pct%"
         ink.text(c, ps, 1316f - ink.measure(ps, T.TS_BODY, 700), T.base(y + 44.6f, T.TS_BODY, 1.2f),
             T.TS_BODY, 700, T.G1)
-        if (divider) ink.rect(c, 219f, y + 162f, 1097f, 2f, T.G11)
+        // Блок 14…110 (96 px) по центру между соседними строками: 14 + (211 − 2 + 96) / 2 = 166.5.
+        if (divider) ink.rect(c, 219f, y + 166f, 1097f, 2f, T.G11)
     }
 
     // ------------------------------------------------------------------ ввод

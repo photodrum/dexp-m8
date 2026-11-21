@@ -42,6 +42,8 @@ class SleepScreen(act: EinkActivity) : Screen(act) {
         const val COVER_TEXT_X = 423f
         const val COVER_TEXT_W = 586f
         const val COVER_FS = 84f
+        /** Поле под текстом автора: низ последней строки — на 60 выше низа обложки. */
+        const val COVER_PAD = 60f
         /** Дорожка и подсказка вдавленные — дно G11 на фоне экрана. */
         const val TRACK_X = 352f
         const val TRACK_Y = 1470f
@@ -59,8 +61,8 @@ class SleepScreen(act: EinkActivity) : Screen(act) {
     /** Последняя открытая книга; null — ничего не открывали. */
     private var book: LibraryDb.Entry? = null
 
-    /** Название на обложке, до двух строк: первая — всегда, вторая — null, если влезло в одну. */
-    private val coverLines = arrayOfNulls<String>(2)
+    /** Название и автор на обложке — общая раскладка [CoverText]. */
+    private val coverText = CoverText(ink)
 
     /** Шторка B5 на заставке не открывается: касание будит оболочку, а не показывает панель. */
     override val shadeZone: Float get() = 0f
@@ -92,42 +94,10 @@ class SleepScreen(act: EinkActivity) : Screen(act) {
         ink.roundRect(c, COVER_X, COVER_Y, COVER_W, COVER_H, COVER_R, T.G14)
         ink.roundRect(c, COVER_X, COVER_Y, SPINE_W, COVER_H, COVER_R, T.G3)
 
-        val lit = T.literata(ink.res, 600)
-        coverTitle(e.title)
-        val b = T.base(271f, COVER_FS, 1.2f, true)
-        ink.text(c, coverLines[0]!!, COVER_TEXT_X, b, COVER_FS, 600, T.G1, lit)
-        coverLines[1]?.let {
-            ink.text(c, it, COVER_TEXT_X, b + COVER_FS * 1.2f, COVER_FS, 600, T.G1, lit)
-        }
+        // Название сверху, автор снизу — единая раскладка обложек ([CoverText]).
         // «Автор неизвестен» на обложку не ставим: в макете на ней только настоящее имя.
-        e.author?.let {
-            ink.text(c, ink.ellipsize(it, COVER_TEXT_W, T.TS_PAGE, 600), COVER_TEXT_X,
-                T.base(492.6f, T.TS_PAGE, 1.25f), T.TS_PAGE, 600, T.G4)
-        }
-    }
-
-    /**
-     * Название на обложке: одна строка, либо перенос по последнему пробелу, который влезает
-     * в 586 px; вторая строка обрезается «…». Кегль здесь 84 против 30 на B1, поэтому перенос
-     * считается по своему кеглю, а не общим `HomeScreen.coverTitle`.
-     */
-    private fun coverTitle(s: String) {
-        val lit = T.literata(ink.res, 600)
-        coverLines[0] = s
-        coverLines[1] = null
-        if (ink.measure(s, COVER_FS, 600, lit) <= COVER_TEXT_W) return
-        var cut = -1
-        var sp = s.indexOf(' ')
-        while (sp >= 0 && ink.measure(s.substring(0, sp), COVER_FS, 600, lit) <= COVER_TEXT_W) {
-            cut = sp
-            sp = s.indexOf(' ', sp + 1)
-        }
-        if (cut < 0) {
-            coverLines[0] = ink.ellipsize(s, COVER_TEXT_W, COVER_FS, 600, lit)
-            return
-        }
-        coverLines[0] = s.substring(0, cut)
-        coverLines[1] = ink.ellipsize(s.substring(cut + 1), COVER_TEXT_W, COVER_FS, 600, lit)
+        coverText.draw(c, e.title, e.author, COVER_TEXT_X, COVER_TEXT_W, 271f,
+            COVER_Y + COVER_H - COVER_PAD, COVER_FS, 1.2f, T.TS_PAGE, 1.25f)
     }
 
     // --------------------------------------------------------------- подписи

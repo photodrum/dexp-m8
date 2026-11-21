@@ -7,6 +7,20 @@
 поддерживается). Читалка закрыта целиком (R1–R6).
 Лицензия — GPL-2.0-only.
 
+## Как выглядит
+
+Снимки с книги (1404×1872, 16 градаций серого): главный экран, библиотека, приложения.
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/img/home.png" width="300" alt="Главный экран"><br><sub>Главный экран</sub></td>
+    <td align="center"><img src="docs/img/library.png" width="300" alt="Библиотека"><br><sub>Библиотека</sub></td>
+    <td align="center"><img src="docs/img/apps.png" width="300" alt="Приложения"><br><sub>Приложения</sub></td>
+  </tr>
+</table>
+
+Снимки делаются `adb exec-out screencap -p` — порядок и грабли в `docs/BUILD.md`.
+
 ## Документация
 
 | Файл | О чём |

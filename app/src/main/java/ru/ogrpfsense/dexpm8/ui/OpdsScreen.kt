@@ -228,7 +228,8 @@ class OpdsScreen(act: EinkActivity) : Screen(act) {
             }
             val y = ROW_Y0 + i * ROW_STEP
             if (r.section != null) sectionRow(c, r, y) else bookRow(c, r, y)
-            if (idx < rows.size - 1) ink.rect(c, 212.1f, y + 186.4f, 1104.2f, 1.8f, T.G11)
+            // Блок 0…148 (с плашкой форматов) по центру ячейки 214: (214 − 1.8 + 148) / 2 = 180.1.
+            if (idx < rows.size - 1) ink.rect(c, 212.1f, y + 180.1f, 1104.2f, 1.8f, T.G11)
         }
     }
 

@@ -77,7 +77,12 @@ class FilesScreen(act: EinkActivity) : Screen(act) {
         const val ROW_STEP = 172f
         const val ROW_HIT_H = 162f
         const val PER_PAGE = 7
-        const val DIVIDER_DY = 152f
+        /**
+         * Разделитель: блок «название + описание» 93 px стоит с верха строки на 9.5, шаг 172 —
+         * по 38.5 до разделителя сверху и снизу: 9.5 + (172 − 2 + 93) / 2 = 141.
+         */
+        const val DIVIDER_DY = 141f
+        const val FILE_DY = 4.5f
         const val TEXT_X = 237f
         const val TEXT_W = 730f        // до статуса «В библиотеке» (984.8) и «+» (1225)
         const val STATUS_RIGHT = 1264.8f
@@ -248,7 +253,9 @@ class FilesScreen(act: EinkActivity) : Screen(act) {
         for (i in first until last) {
             val y = ROW_Y0 + (i - first) * ROW_STEP
             val r = rows[i]
-            if (r.folder) folderRow(c, r, y) else fileRow(c, r, y)
+            // Строка файла в макете на 4.5 выше строки папки: выравниваем, чтобы блок текста
+            // стоял в ячейке одинаково у обоих видов строк (замечание 2026-11-21).
+            if (r.folder) folderRow(c, r, y) else fileRow(c, r, y + FILE_DY)
             if (i < last - 1) ink.rect(c, TEXT_X, y + DIVIDER_DY, 1079f, 2f, T.G11)
         }
     }

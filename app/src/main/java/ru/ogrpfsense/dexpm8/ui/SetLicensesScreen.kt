@@ -138,8 +138,8 @@ class SetLicensesScreen(act: EinkActivity) : Screen(act) {
         private const val ROW_STEP = 152f
         /** Описание ниже названия: 380.5 − 327. */
         private const val DESC_DY = 53.5f
-        /** Разделитель ниже названия: 451 − 327. */
-        private const val DIVIDER_DY = 124f
+        /** Разделитель: блок 0…93.5 по центру ячейки 152 — (152 − 2 + 93.5) / 2 = 121.8. */
+        private const val DIVIDER_DY = 121.8f
         /** Ширина описания: колонка до 1305 (там в макете шеврон), минус запас. */
         private const val TEXT_W = 1188f
 

@@ -189,7 +189,8 @@ class AppsScreen(act: EinkActivity) : Screen(act) {
         if (desc != null) {
      ink.text(c, desc, 208f, T.base(top + 62.5f, T.TS_BODY_S, 1.25f), T.TS_BODY_S, 600, T.G4)
         }
- if (divider) ink.rect(c, 208f, top + 132f, 1137f, 2f, T.G11)
+        // Блок 9.5…102.5 по центру ячейки 150: 9.5 + (150 − 2 + 93) / 2 = 130.
+ if (divider) ink.rect(c, 208f, top + 130f, 1137f, 2f, T.G11)
     }
 
     /** Тумблер 139×73 в (1206, [y]); как в SettingsKit.toggle. */

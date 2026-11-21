@@ -119,20 +119,10 @@ class HomeScreen(act: EinkActivity) : Screen(act) {
             return
         }
 
-        // Название на обложке — Literata 30/600, lh 1.15, до двух строк.
-        val lit600 = T.literata(ink.res, 600)
-        val b1 = T.base(376.6f, 30f, 1.15f, true)
-        coverTitle(e.title)
-        ink.text(c, coverLines[0]!!, 131.6f, b1, 30f, 600, T.G1, lit600)
-        if (coverLines[1] != null) {
-            ink.text(c, coverLines[1]!!, 131.6f, b1 + 30f * 1.15f, 30f, 600, T.G1, lit600)
-        }
+        // Название сверху, автор снизу — единая раскладка обложек ([CoverText]).
         val author = e.author ?: "Автор неизвестен"
-        // На обложке только настоящий автор: «Автор неизвестен» не влезает в 200 px.
-        if (e.author != null) {
-            ink.text(c, ink.ellipsize(author, COVER_TEXT_W, T.TS_CAPTION, 600), 131.6f,
-                T.base(458.6f, T.TS_CAPTION, 1.25f), T.TS_CAPTION, 600, T.G4)
-        }
+        coverText.draw(c, e.title, e.author, 131.6f, COVER_TEXT_W, 376.6f, COVER_BOTTOM,
+            30f, 1.15f, T.TS_CAPTION, 1.25f)
 
         ink.text(c, ink.ellipsize(e.title, TITLE_MAX_W, T.TS_TITLE, 500, T.literata(ink.res, 500)),
             tx, T.base(364.4f, T.TS_TITLE, 1.2f, true), T.TS_TITLE, 500, T.G1,
@@ -152,26 +142,6 @@ class HomeScreen(act: EinkActivity) : Screen(act) {
         ink.inset(c, tx, 716.6f, 884.8f, 29.2f, T.R_TRACK, T.G12)
         val fill = 879.3f * pct / 100f
         if (fill >= 21f) ink.roundRect(c, 434.2f, 722.1f, fill, 21f, 10.51171875f, T.G3)
-    }
-
-    /** Название на обложке: одна строка, либо перенос по последнему пробелу, который влезает. */
-    private fun coverTitle(s: String) {
-        val lit = T.literata(ink.res, 600)
-        coverLines[0] = s
-        coverLines[1] = null
-        if (ink.measure(s, 30f, 600, lit) <= COVER_TEXT_W) return
-        var cut = -1
-        var sp = s.indexOf(' ')
-        while (sp >= 0 && ink.measure(s.substring(0, sp), 30f, 600, lit) <= COVER_TEXT_W) {
-            cut = sp
-            sp = s.indexOf(' ', sp + 1)
-        }
-        if (cut < 0) {
-            coverLines[0] = ink.ellipsize(s, COVER_TEXT_W, 30f, 600, lit)
-        } else {
-            coverLines[0] = s.substring(0, cut)
-            coverLines[1] = ink.ellipsize(s.substring(cut + 1), COVER_TEXT_W, 30f, 600, lit)
-        }
     }
 
     private fun continueButton(c: Canvas) {
@@ -198,7 +168,7 @@ class HomeScreen(act: EinkActivity) : Screen(act) {
 
     /** Данные из базы: последняя открытая книга и число книг. Только UI-поток. */
     private var book: LibraryDb.Entry? = null
-    private val coverLines = arrayOfNulls<String>(2)
+    private val coverText = CoverText(ink)
 
     /**
      * «Сегодня 42 мин · 31 стр.» — сводка дня для строки-двери в B32 (п. 22); null — сегодня
@@ -312,6 +282,8 @@ class HomeScreen(act: EinkActivity) : Screen(act) {
         const val BTN_W = 1233.1f
         const val BTN_H = 141.6f
         const val COVER_TEXT_W = 200f     // обложка 252.3 минус поля 25.6 с каждой стороны
+        /** Низ текста автора на обложке: обложка 340…723.9 минус поле 25.6. */
+        const val COVER_BOTTOM = 698f
  const val TITLE_MAX_W = 884.8f    // от 431.4 до края дорожки
         /** Иконки плиток B1 нарисованы под 73.1×76.2 — только они годятся для закреплённого приложения. */
         val PINNED_ICONS = setOf("apps", "settings", "library", "audio")

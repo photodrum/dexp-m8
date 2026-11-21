@@ -35,7 +35,8 @@ class BookScreen(act: EinkActivity) : Screen(act) {
     private val lit600: Typeface = T.literata(ink.res, 600)
 
     private var entry: LibraryDb.Entry? = null
-    private val lines = arrayOfNulls<String>(2)
+    /** Название и автор — [CoverText]: название сверху, автор снизу. Обложка 270.6…830, поле 25. */
+    private val coverText = CoverText(ink)
     private val picker = ShelfPicker(ink, icons)
     private var pickerOpen = false
     /** Лист «…» из шапки B12. */
@@ -89,15 +90,9 @@ class BookScreen(act: EinkActivity) : Screen(act) {
         ink.roundRect(c, 65.8f, 270.6f, 43.875f, 559.4f, 21.9375f, T.G3)
         ink.rect(c, 65.8f + 18.3f, 270.6f, 43.875f, 559.4f, T.G14)
 
-        val n = wrap(e.title, 320f, 44f, lit600)
-        for (k in 0 until n) {
-            ink.text(c, lines[k]!!, 117f, T.base(321.8f + k * 44f * 1.2f, 44f, 1.2f, true), 44f, 600, T.G1, lit600)
-        }
-        val a = e.author
-        if (a != null) {
-            ink.text(c, ink.ellipsize(a, 320f, T.TS_BODY_S, 600), 117f,
-                T.base(321.8f + n * 52.8f + 22.2f, T.TS_BODY_S, 1.3f), T.TS_BODY_S, 600, T.G4)
-        }
+        // Название сверху, автор снизу — единая раскладка обложек ([CoverText]).
+        coverText.draw(c, e.title, e.author, 117f, 320f, 321.8f, 805f, 44f, 1.2f,
+            T.TS_BODY_S, 1.3f)
     }
 
     private fun info(c: Canvas, e: LibraryDb.Entry) {
@@ -198,26 +193,6 @@ class BookScreen(act: EinkActivity) : Screen(act) {
     }
 
     /** Название в рамку [maxW]: до двух строк, перенос по последнему пробелу, который влезает. */
-    private fun wrap(s: String, maxW: Float, size: Float, font: Typeface): Int {
-        if (ink.measure(s, size, 600, font) <= maxW) {
-            lines[0] = s
-            return 1
-        }
-        var cut = -1
-        var sp = s.indexOf(' ')
-        while (sp >= 0 && ink.measure(s.substring(0, sp), size, 600, font) <= maxW) {
-            cut = sp
-            sp = s.indexOf(' ', sp + 1)
-        }
-        if (cut < 0) {
-            lines[0] = ink.ellipsize(s, maxW, size, 600, font)
-            return 1
-        }
-        lines[0] = s.substring(0, cut)
-        lines[1] = ink.ellipsize(s.substring(cut + 1), maxW, size, 600, font)
-        return 2
-    }
-
     private fun sizeText(bytes: Long): String {
         val ru = Locale("ru")
         return when {

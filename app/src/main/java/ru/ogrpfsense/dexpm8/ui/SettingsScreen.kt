@@ -27,14 +27,16 @@ class SettingsScreen(act: EinkActivity) : Screen(act) {
 
     private val status = StatusBar(act, this, ink, icons)
 
+    // Шаг строк ровный — 177.56 (в макете 184.9 / 175.5 / 180.5: у крайних строк он разный).
+    // Разделитель по центру между блоками текста: 9.4 + (177.56 − 1.8 + 92.3) / 2 = 143.4.
     private val rows = arrayOf(
-        Row("Экран", "contrast", 287.3f, 32.1f, 441.1f, EinkActivity.SCR_SET_SCREEN),
-        Row("Сеть", "wifi@53x55.2", 472.2f, 27.1f, 616.6f, EinkActivity.SCR_SET_NET),
-        Row("Чтение", "font", 647.7f, 32.1f, 792.1f, EinkActivity.SCR_SET_READ),
-        Row("Кнопки и жесты", "more@53x55.2", 823.2f, 32.1f, 967.6f, EinkActivity.SCR_SET_KEYS),
-        Row("Сон и питание", "moon", 998.7f, 32.1f, 1143.1f, EinkActivity.SCR_SET_SLEEP),
-        Row("Дата, время, язык", "clock", 1174.2f, 32.1f, 1318.6f, EinkActivity.SCR_SET_LANG),
-        Row("Память", "files", 1349.7f, 32.1f, 1494.1f, EinkActivity.SCR_SET_STORAGE),
+        Row("Экран", "contrast", 287.3f, 32.1f, 430.7f, EinkActivity.SCR_SET_SCREEN),
+        Row("Сеть", "wifi@53x55.2", 464.9f, 27.1f, 608.3f, EinkActivity.SCR_SET_NET),
+        Row("Чтение", "font", 642.4f, 32.1f, 785.8f, EinkActivity.SCR_SET_READ),
+        Row("Кнопки и жесты", "more@53x55.2", 820f, 32.1f, 963.4f, EinkActivity.SCR_SET_KEYS),
+        Row("Сон и питание", "moon", 997.5f, 32.1f, 1140.9f, EinkActivity.SCR_SET_SLEEP),
+        Row("Дата, время, язык", "clock", 1175.1f, 32.1f, 1318.5f, EinkActivity.SCR_SET_LANG),
+        Row("Память", "files", 1352.6f, 32.1f, 1496f, EinkActivity.SCR_SET_STORAGE),
         Row("Об устройстве", "info", 1530.2f, 32.2f, 0f, EinkActivity.SCR_SET_ABOUT)
     )
 

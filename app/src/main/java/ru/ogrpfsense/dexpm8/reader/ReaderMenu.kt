@@ -57,9 +57,9 @@ class ReaderMenu(private val ink: Ink, private val icons: Icons) {
         ink.convex(c, PANEL_X, PANEL_Y, PANEL_W, TOP_H, 0f)
         for (i in 0 until KEY_TOP_X.size) {
             // Вида «закладка поставлена» в макете нет: показываем вдавленной клавишей, как
-            // выбранный вариант зон касаний на B39. Иконка одна и та же (`bookmark`). Кнопка
-            // только ставит закладку (решение 2026-11-16), так что вдавленность значит
-            // «на этой странице закладка уже есть».
+            // выбранный вариант зон касаний на B39. Иконка одна и та же (`bookmark`). Кнопка —
+            // переключатель (решение 2026-11-21): вдавленность значит «на этой странице закладка
+            // есть», повторное нажатие её снимает.
             if (i == KEY_MARK && marked) {
                 ink.inset(c, KEY_TOP_X[i], KEY_TOP_Y, TOP_KEY_D, TOP_KEY_D, TOP_KEY_D / 2f)
                 icons.drawInset(c, ICON_TOP[i], KEY_TOP_X[i], KEY_TOP_Y, TOP_KEY_D, TOP_KEY_D,

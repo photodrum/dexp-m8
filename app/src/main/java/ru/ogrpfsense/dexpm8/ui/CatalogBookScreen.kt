@@ -30,6 +30,7 @@ class CatalogBookScreen(act: EinkActivity) : Screen(act) {
 
     private var entry: Opds.Entry? = null
     private val lit = T.literata(ink.res, 600)
+    private val coverText = CoverText(ink)
     private var formats = ArrayList<Opds.Link>()
 
     /** Вход каталога: без него защищённый сервер отдаёт 401 на скачивание. */
@@ -82,17 +83,9 @@ class CatalogBookScreen(act: EinkActivity) : Screen(act) {
         ink.inset(c, 43.9f, 248.6f, 431.4f, 603.3f, 40.2f)
         ink.flat(c, 65.8f, 270.6f, 387.6f, 559.4f, 21.9f, T.G14)
         ink.roundRect(c, 65.8f, 270.6f, 18.3f, 559.4f, 21.9f, T.G7)
-        val title = ink.ellipsize2(e.title, 320f, 44f, 600, lit)
-        var y = 321.7f
-        for (line in title) {
-            ink.text(c, line, 117f, T.base(y, 44f, 1.25f), 44f, 600, T.G1, lit)
-            y += 55f
-        }
-        val a = shortAuthor(e.author)
-        if (a.isNotEmpty()) {
-            ink.text(c, ink.ellipsize(a, 300f, T.TS_BODY_S, 600), 117f,
-                T.base(447.7f, T.TS_BODY_S, 1.25f), T.TS_BODY_S, 600, T.G4)
-        }
+        // Название сверху, автор снизу — единая раскладка обложек ([CoverText]).
+        coverText.draw(c, e.title, e.author.ifBlank { null }, 117f, 320f, 321.7f, 805f, 44f, 1.2f,
+            T.TS_BODY_S, 1.3f)
     }
 
     /** Название, автор и свойства: год, язык, серия, страниц (чего сервер не дал — «—»). */
@@ -185,13 +178,6 @@ class CatalogBookScreen(act: EinkActivity) : Screen(act) {
             t.contains("djvu") -> "DJVU"
             else -> null
         }
-    }
-
-    /** «Михаил Булгаков» → «М. Булгаков» — на обложке макета автор сокращён. */
-    private fun shortAuthor(a: String): String {
-        val parts = a.trim().split(' ').filter { it.isNotEmpty() }
-        if (parts.size < 2) return a
-        return parts[0].take(1) + ". " + parts.drop(1).joinToString(" ")
     }
 
     private fun langName(code: String): String = when (code.lowercase()) {
