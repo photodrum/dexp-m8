@@ -13,7 +13,8 @@ import ru.ogrpfsense.dexpm8.core.Scanner
  * B25 · Файлы — обзор папок памяти. Числа — из design/v5/B25.json.
  *
  *   шапка      «Назад» 41,113.5 107×112 (иконка 87.9,155.3 12.3×26.6); «Файлы» 176,105 60/700;
- *      «Свободно N из M ГБ» 176,181 32/600 G4; сортировка 1255,113.5 107×112, «sort» 1290.6,153.2
+ *      «Свободно N из M ГБ» 176,181 32/600 G4; сортировка 1255,113.5 107×112, «sort» 1290.6,153.2;
+ *      «Загрузка по Wi-Fi» 1138,113.5 107×112 («download» — стрелка вниз) → B26 (в макете нет)
  *   крошки     вдавленные 44,249 1316×102 r44; «вверх» 51,255 89×94, иконка 86,295 20×11.7;
  *      путь 160,276.9 36/600 G4, текущая папка 36/700 G1
  *   панель     41,389 1321×1280 (выпуклая, r 51)
@@ -67,6 +68,7 @@ class FilesScreen(act: EinkActivity) : Screen(act) {
         const val R_ROW = 55f         // клавиша папки 115×120: слои 110.4×109.9
         const val R_PLUS = 44f        // «+» 93×98: слои 88.4×87.9
         const val R_PAGE = 58.5f
+        const val WIFI_X = 1138f      // «Загрузка по Wi-Fi» (B26): шаг 117 влево от сортировки
 
         const val SORT_NAME = 0
         const val SORT_DATE = 1
@@ -175,6 +177,8 @@ class FilesScreen(act: EinkActivity) : Screen(act) {
         icons.drawRound(c, "back@12.3x26.6", 41f, 113.5f, 107f, 112f, 12.3f, 26.6f)
         ink.text(c, "Файлы", 176f, T.base(105f, T.TS_TITLE, 1.25f), T.TS_TITLE, 700, T.G1)
         ink.text(c, freeText(), 176f, T.base(181f, T.TS_BODY_S, 1.25f), T.TS_BODY_S, 600, T.G4)
+        ink.convex(c, WIFI_X, 113.5f, 107f, 112f, ROUND)
+        icons.drawRound(c, "download", WIFI_X, 113.5f, 107f, 112f, 47.5f, 49.5f)
         ink.convex(c, 1255f, 113.5f, 107f, 112f, ROUND)
         icons.drawRound(c, "sort", 1255f, 113.5f, 107f, 112f, 36.8f, 30.6f)
     }
@@ -337,6 +341,10 @@ class FilesScreen(act: EinkActivity) : Screen(act) {
     override fun onUp(x: Float, y: Float) {
         if (inRect(x, y, 41f, 113.5f, 107f, 112f)) {
             act.pop()
+            return
+        }
+        if (inRect(x, y, WIFI_X, 113.5f, 107f, 112f)) {
+            act.go(EinkActivity.SCR_WIFI)
             return
         }
         if (inRect(x, y, 1255f, 113.5f, 107f, 112f)) {

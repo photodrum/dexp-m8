@@ -8,7 +8,9 @@ import ru.ogrpfsense.dexpm8.core.Downloads
  * B14 · Сетевые каталоги (п. 10). Числа — design/v5/B14.json.
  *
  *   шапка     «Назад» 41.1,112.9 106.9×112.4; заголовок 175.5,105 60/700;
- *             подзаголовок 175.5,181 32/600 G4 «3 каталога · OPDS»
+ *             подзаголовок 175.5,181 32/600 G4 «3 каталога · OPDS»;
+ *             «Загрузка по Wi-Fi» 1255,112.9 106.9×112.4 («download» — стрелка вниз) → B26
+ *             (в макете нет)
  *   панель    41.1,245.9 1320.8×653.6 — строки каталогов, шаг 207.9:
  *             круглая клавиша 77.7,y 121.6×127.1 (иконка 113.3,y+45.4 51.2×53.3),
  *             название 234,y 42/700, адрес 234,y+56 32/600 G4,
@@ -54,6 +56,8 @@ class CatalogsScreen(act: EinkActivity) : Screen(act) {
         val n = rows.size
         val sub = if (n == 0) "OPDS" else Words.plural(n, "каталог", "каталога", "каталогов") + " · OPDS"
         ink.text(c, sub, 175.5f, T.base(181f, T.TS_BODY_S, 1.25f), T.TS_BODY_S, 600, T.G4)
+        ink.convex(c, 1255f, 112.9f, 106.9f, 112.4f, R_BACK)
+        icons.drawRound(c, "download", 1255f, 112.9f, 106.9f, 112.4f, 47.5f, 49.5f)
     }
 
     /** Три строки каталогов: панель 245.9…899.5, шаг 207.9. */
@@ -137,6 +141,10 @@ class CatalogsScreen(act: EinkActivity) : Screen(act) {
     override fun onUp(x: Float, y: Float) {
         if (inRect(x, y, 41.1f, 112.9f, 106.9f, 112.4f)) {
             act.pop()
+            return
+        }
+        if (inRect(x, y, 1255f, 112.9f, 106.9f, 112.4f)) {
+            act.go(EinkActivity.SCR_WIFI)
             return
         }
         if (inRect(x, y, 41.1f, 1693.6f, 1320.8f, 141.7f)) {
