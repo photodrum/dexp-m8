@@ -21,10 +21,19 @@ import ru.ogrpfsense.dexpm8.core.Sys
  *   быстро      круглые Ø138.9 в 196.3 / 630.2 / 1064.1, y 816.3; подпись 32/600 G4 y 970.8
  *   захват      643.5,1020.1 117×11 G11
  *
+ * Клавиш четыре, но набор другой, чем в макете B05 (решение человека 2026-11-21): «Чёткий» и
+ * «Быстрый» — одна клавиша-переключатель (отжата — «Чёткий», нажата — «Быстрый»), на месте
+ * «Быстрого» — «Wi-Fi» (бывшая «Сеть»), на месте «Сети» — «Bluetooth». «Очистка» на месте —
+ * геометрия и числа всех четырёх взяты из макета, менялись только подписи и иконки. Макет с двумя
+ * клавишами режима и подписью «Сеть» расходится с кодом — вопрос в `docs/DESIGN_QUESTIONS.md`.
+ *
  * «Чёткий / Быстрый» — `Prefs.refreshMode` (общий с B37) → `EinkActivity.applyRefreshMode`
  * («Быстрый» — A2-режим на мелкие изменения; открытие и закрытие шторки — полной перерисовкой,
  * `EinkActivity.bigFrame`); «Очистка» закрывает шторку и полностью перерисовывает
- * экран одним кадром (`EinkActivity.cleanScreen`) — п. 8.2.
+ * экран одним кадром (`EinkActivity.cleanScreen`) — п. 8.2. «Wi-Fi» и «Bluetooth» включаются
+ * и выключаются сразу (`Sys.setWifi`/`Sys.setBt`), а вид клавиши догоняет событием системы:
+ * итог приходит в `WIFI_STATE_CHANGED` / `ACTION_STATE_CHANGED`, и `StatusBar` перерисовывает
+ * шторку — так нажатая клавиша не врёт, если система отказала.
  */
 class ShadeScreen(act: EinkActivity) : Screen(act) {
 
@@ -58,12 +67,22 @@ class ShadeScreen(act: EinkActivity) : Screen(act) {
         private const val KEY_R = 43.875f
         private val KEY_X = floatArrayOf(621.6f, 1005.5f, 621.6f, 1005.5f)
         private val KEY_Y = floatArrayOf(372.9f, 372.9f, 577.7f, 577.7f)
-        private val KEY_ICON_DY = floatArrayOf(36.8f, 36.8f, 40f, 34.2f)
-        private val KEY_LABEL = arrayOf("Чёткий", "Быстрый", "Очистка", "Сеть")
-        private const val K_SHARP = 0
-        private const val K_FAST = 1
+        /**
+         * Коробка иконки клавиши: левый край от [KEY_X] и верх от [KEY_Y], ширина и высота — как фигуры
+         * в макете. У Bluetooth коробка своя (22.1×42): глиф узкий и высокий, и в общей коробке 53×55.2
+         * `Icons.draw` растянул бы его по ширине и он стал бы вдвое крупнее соседей. Отступы ему
+         * посчитаны по видимому контуру: центры контуров стоят там же, где у `modeNormal`/`refresh`
+         * (x 62.1, y 63.3 от угла клавиши — центры рамки у них 26.5 и 27.6 при полутолщине штриха).
+         */
+        private val KEY_ICON_X = floatArrayOf(35.6f, 35.6f, 35.6f, 51f)
+        private val KEY_ICON_Y = floatArrayOf(36.8f, 34.2f, 40f, 43.4f)
+        private val KEY_ICON_W = floatArrayOf(53f, 53f, 53f, 22.1f)
+        private val KEY_ICON_H = floatArrayOf(55.2f, 55.2f, 55.2f, 42f)
+        private val KEY_LABEL = arrayOf("Чёткий", "Wi-Fi", "Очистка", "Bluetooth")
+        private const val K_MODE = 0
+        private const val K_WIFI = 1
         private const val K_CLEAN = 2
-        private const val K_NET = 3
+        private const val K_BT = 3
 
         // Быстрые действия: левый край подписи (ширина 329.1), клавиша на +92.3.
         private val QUICK_X = floatArrayOf(104f, 537.9f, 971.8f)
@@ -111,11 +130,16 @@ class ShadeScreen(act: EinkActivity) : Screen(act) {
         brightness(c)
         contrast(c)
         ink.text(c, "Режим экрана", 621.6f, T.base(307.9f, T.TS_LABEL_L, 1.25f), T.TS_LABEL_L, 700, T.G1)
-        val mode = act.prefs.refreshMode
-        key(c, K_SHARP, "modeNormal", mode == 0)
-        key(c, K_FAST, "modeFast", mode == 1)
+        // Одна клавиша на два режима (решение 2026-11-21): отжата — «Чёткий», нажата — «Быстрый».
+        // Подпись меняется вместе с состоянием, иначе клавиша называла бы режим, которого нет.
+        // Третий режим B37 «Без мерцания» (2) работает как «Чёткий» — клавиша стоит отжатой, а
+        // касание по ней ставит «Быстрый»: обратно в 2 возвращает только B37.
+        val fast = act.prefs.refreshMode == 1
+        key(c, K_MODE, if (fast) "modeFastDark" else "modeNormalDim", fast,
+            if (fast) "Быстрый" else "Чёткий")
+        key(c, K_WIFI, if (status.wifi) "wifiDark" else "wifi@53x55.2", status.wifi)
         key(c, K_CLEAN, "refresh@53x55.2", false)
-        key(c, K_NET, if (status.wifi) "wifiDark" else "wifi@53x55.2", status.wifi)
+        key(c, K_BT, if (status.bt) "bluetoothKeyDark" else "bluetoothKey", status.bt)
         quick(c, Q_POWER, "power", 64f, 66.7f, notes[Q_POWER] ?: "Выключение")
         quick(c, Q_SLEEP, "moon@64x66.7", 64f, 66.7f, "Сон")
         quick(c, Q_SHOT, "shot", 62.2f, 64.7f, notes[Q_SHOT] ?: "Снимок")
@@ -160,16 +184,25 @@ class ShadeScreen(act: EinkActivity) : Screen(act) {
         ink.line(c, DIAL_CX + cs * r0, DIAL_CY + sn * r0, DIAL_CX + cs * r1, DIAL_CY + sn * r1, w, color)
     }
 
-    /** Клавиша «Режима экрана»: нажата — углубление, «Вкл» G1 / 800; отжата — выпуклая, «Выкл» G5 / 600. */
-    private fun key(c: Canvas, k: Int, icon: String, on: Boolean) {
+    /**
+     * Клавиша «Режима экрана»: нажата — углубление, подпись 800 / G1; отжата — выпуклая, 600 / G5.
+     * [label] — подпись клавиши: у режима она меняется вместе с состоянием, у остальных постоянна.
+     * «Очистка» состояния не имеет — у неё нет «Вкл/Выкл».
+     */
+    private fun key(c: Canvas, k: Int, icon: String, on: Boolean, label: String = KEY_LABEL[k]) {
         val x = KEY_X[k]
         val y = KEY_Y[k]
         if (on) ink.inset(c, x, y, KEY_W, KEY_H, KEY_R, T.G12)
         else ink.convex(c, x - T.SURFACE_DX, y - T.SURFACE_DY, KEY_W + T.SHADOW_DX, KEY_H + T.SHADOW_DY, KEY_R)
-        icons.draw(c, icon, x + 35.6f, y + KEY_ICON_DY[k], 53f, 55.2f)
-        ink.text(c, KEY_LABEL[k], x + 36.5f, T.base(y + 99.6f, T.TS_LABEL_L, 1.25f), T.TS_LABEL_L,
+        // Иконка Bluetooth (22.1×42) уже и выше остальных: коробку ей даём по её пропорциям, иначе
+        // Icons.draw растянул бы глиф по ширине 53 и он стал бы заметно крупнее соседей.
+        icons.draw(c, icon, x + KEY_ICON_X[k], y + KEY_ICON_Y[k], KEY_ICON_W[k], KEY_ICON_H[k])
+        ink.text(c, label, x + 36.5f, T.base(y + 99.6f, T.TS_LABEL_L, 1.25f), T.TS_LABEL_L,
             if (on) 800 else 600, if (on) T.G1 else T.G5)
-        if (k != K_CLEAN) {
+        // «Вкл/Выкл» — только у клавиш-переключателей с постоянной подписью (Wi-Fi, Bluetooth).
+        // У «Очистки» состояния нет; у режима подпись сама называет действующий режим, и «Чёткий» +
+        // «Выкл» читалось бы как «чёткий выключен».
+        if (k == K_WIFI || k == K_BT) {
             right(c, if (on) "Вкл" else "Выкл", x + 318f, y + 45.4f, T.TS_META, 700, if (on) T.G1 else T.G5)
         }
     }
@@ -262,8 +295,9 @@ class ShadeScreen(act: EinkActivity) : Screen(act) {
 
     private fun keyHit(k: Int) {
         when (k) {
-            K_SHARP, K_FAST -> {
-                act.prefs.refreshMode = if (k == K_FAST) 1 else 0
+            K_MODE -> {
+                // Одна клавиша на два режима: нажата — «Быстрый», отжата — «Чёткий» (решение 2026-11-21).
+                act.prefs.refreshMode = if (act.prefs.refreshMode == 1) 0 else 1
                 act.applyRefreshMode()
             }
             K_CLEAN -> {
@@ -272,10 +306,16 @@ class ShadeScreen(act: EinkActivity) : Screen(act) {
                 act.cleanScreen()
                 return
             }
-            K_NET -> {
+            K_WIFI -> {
                 val on = !status.wifi
                 Trace.step("shade: wifi -> $on (${act.sys.setWifi(on)})")
                 // Итог придёт в StatusBar событием WIFI_STATE_CHANGED, он и перерисует шторку.
+                return
+            }
+            K_BT -> {
+                val on = !status.bt
+                Trace.step("shade: bt -> $on (${act.sys.setBt(on)})")
+                // Итог придёт в StatusBar событием ACTION_STATE_CHANGED.
                 return
             }
         }

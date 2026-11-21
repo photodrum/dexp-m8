@@ -41,7 +41,7 @@ class StatusBar(
     private var timeFmt = SimpleDateFormat("HH:mm", Locale.getDefault())
     private var clock = timeFmt.format(Date())
     private var battery = 78
-    /** Wi-Fi включён (по последнему событию системы); читает и шторка B5 для клавиши «Сеть». */
+    /** Wi-Fi включён (по последнему событию системы); читает и шторка B5 для клавиши «Wi-Fi». */
     var wifi = true
         private set
     /** Bluetooth включён (по последнему событию системы). */
