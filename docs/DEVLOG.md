@@ -4,13 +4,12 @@
 > Формат: заголовок `## <дата> — <что> (<модель>)`, в записи ≤ 6 строк-маркеров, подробности —
 > сразу в `docs/archive/DEVLOG-<дата>-<пункт>.md`. Не больше ~5 записей: пункт закрылся — в архив.
 
-## 2026-11-21 — Первая релизная сборка: assembleRelease, установка на книгу (Sonnet)
+## 2026-11-21 — Первая релизная сборка и выпуск 1.0.0: assembleRelease, книга, GitLab Packages (Sonnet)
 
-- `assembleRelease` ок за 1 мин 51 с: `app-release.apk` 4 478 840 б, sha256 `0ebb6627…c34c643`, подпись `dexp-m8` (SHA-256 `9edff2d1…7317fc`, `apksigner verify` ок). `lintVitalRelease` печатает `ExpiredTargetSdkVersion` (targetSdk 27) — сборку не роняет, для книги и обновления через GitLab не важно.
-- `install -r -d` поверх debug: `Success`, 0.3.0 (код 3), данные целы. Старт ~1,7 с, `HomeScreen attached`, `storage: granted`, падений нет; `run-as` → `not debuggable`.
-- Отладочный вход `--es screen read` в релизе не срабатывает — открывается обычная `HomeScreen` (`BuildConfig.DEBUG = false`).
-- `PowerService` после `install -r` + `force-stop` не поднялся (`services:{}`) — вторая грабля из BUILD; после `adb reboot` настройки сбросились, помогла повторная запись с `--user 0`: `power: service connected`, в списке «DEXP M8 — выключение».
-- На экране книги пользователь смотрит сам (B1, библиотека, открытие книги).
+- Первая `assembleRelease` ок (1 мин 51 с), подпись `dexp-m8` (`9edff2d1…7317fc`, `apksigner verify` ок). `lintVitalRelease` печатает `ExpiredTargetSdkVersion` (targetSdk 27) — сборку не роняет, на книгу и обновления через GitLab не влияет.
+- Поверх debug: данные целы, старт ~1,7 с, падений нет, `run-as` → `not debuggable`, отладочный `--es screen read` не срабатывает (`BuildConfig.DEBUG = false`). Человек проверил экраны на книге — ок.
+- **Выпуск 1.0.0 (код 4)**: версия поднята в `app/build.gradle.kts` и `tools/build.sh` (было 0.3.0 / 3: тот же код у новой сборки не дал бы B43 увидеть обновление). APK `c9f31d18…`, 4 478 840 б; `gl_publish_apk.py` → 201, скачанный файл совпал по сумме; `update.json` → 1.0.0; книга обновлена до 1.0.0.
+- `PowerService` после `install -r` + `force-stop` не поднимается, пока не записать настройки заново с `--user 0` (после `adb reboot` и после переустановки) — грабля из BUILD, не баг релиза.
 
 
 ## 2026-11-21 — Правки по замечаниям: главы и списки, закладки, обложки, README (Sonnet)

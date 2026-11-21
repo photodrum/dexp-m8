@@ -26,8 +26,8 @@ MIN_SDK=27
 TARGET_SDK=27
 APP_ID=ru.ogrpfsense.dexpm8
 # Держать в согласии с `app/build.gradle.kts` (п. 20): versionCode только вверх.
-VERSION_CODE=3
-VERSION_NAME=0.3.0
+VERSION_CODE=4
+VERSION_NAME=1.0.0
 
 echo "==> окружение"
 echo "    SDK:     $SDK"

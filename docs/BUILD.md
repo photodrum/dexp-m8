@@ -167,7 +167,7 @@ alias `dexp-m8`, `CN=DEXP M8, O=ogrpfsense, C=RU`, срок до 2054. `tools/bu
 
 ```bash
 sha256sum app/build/outputs/apk/release/app-release.apk      # в "sha256"
-python3 tools/gl_publish_apk.py app/build/outputs/apk/release/app-release.apk 0.3.0   # APK в GitLab Packages
+python3 tools/gl_publish_apk.py app/build/outputs/apk/release/app-release.apk 1.0.0   # APK в GitLab Packages
 ```
 
 Скрипт сам печатает `sha256`, `size` и готовый кусок `update.json` — вписывать их руками

@@ -1,8 +1,8 @@
 {
-  "versionCode": 3,
-  "versionName": "0.3.0",
-  "url": "https://git.ogrpfsense.ru/api/v4/projects/denisle%2Fdexp-m8/packages/generic/dexp-m8/0.3.0/app-release.apk",
-  "sha256": "dde03fe673e763a3d3d49b9f121519aa76382aca6add6db58738fb18ee3b24cb",
-  "size": 4413268,
-  "notes": "0.3.0: «Контраст» на B37 ползунком, кнопка «Автор» с QR-кодом на Бусти (B43), имя автора в строке версии."
+  "versionCode": 4,
+  "versionName": "1.0.0",
+  "url": "https://git.ogrpfsense.ru/api/v4/projects/denisle%2Fdexp-m8/packages/generic/dexp-m8/1.0.0/app-release.apk",
+  "sha256": "c9f31d181e217b405d5c149041496a93f4315192209980fee1a91cf894b5ff96",
+  "size": 4478840,
+  "notes": "1.0.0: первый релиз. Ровные главы и списки, закладка-переключатель, единый текст обложек, вход «Загрузка по Wi-Fi» из «Файлов» и «Сетевых каталогов», оглавление и «Открыть папку с файлом» на карточке книги."
 }

@@ -36,8 +36,8 @@ android {
         // versionCode только вверх: B43 сравнивает его с `update.json`, а Android —
         // при установке (`INSTALL_FAILED_VERSION_DOWNGRADE`). П. 20 — первый
         // подписанный выпуск, поэтому 2 (0.1.0 ходила без подписи).
-        versionCode = 3
-        versionName = "0.3.0"
+        versionCode = 4
+        versionName = "1.0.0"
 
         ndk {
             // Прошивка книги может быть 32-битной даже на 64-битном PX30:
