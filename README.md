@@ -9,13 +9,18 @@
 
 ## Как выглядит
 
-Снимки с книги (1404×1872, 16 градаций серого): главный экран, библиотека, приложения.
+Снимки с книги (1404×1872, 16 градаций серого): главный экран, библиотека, приложения,
+веб-сервер для загрузки книг через браузер, открытая книга.
 
 <table>
   <tr>
     <td align="center"><img src="docs/img/home.png" width="300" alt="Главный экран"><br><sub>Главный экран</sub></td>
     <td align="center"><img src="docs/img/library.png" width="300" alt="Библиотека"><br><sub>Библиотека</sub></td>
     <td align="center"><img src="docs/img/apps.png" width="300" alt="Приложения"><br><sub>Приложения</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/img/webserver.png" width="300" alt="Веб-сервер загрузки книг"><br><sub>Веб-сервер: загрузка книг через браузер</sub></td>
+    <td align="center"><img src="docs/img/reader.png" width="300" alt="Открытая книга"><br><sub>Открытая книга</sub></td>
   </tr>
 </table>
 
