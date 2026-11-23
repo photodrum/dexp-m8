@@ -153,14 +153,20 @@ def used_in_code(specs) -> list:
     have = {s.split("|")[0] for s in specs}
     call = re.compile(r'icons\.(?:draw|drawRound|drawRoundRing|drawInset|drawCentered)\('
                       r'\s*\w+,\s*"([^"]+)"')
-    out = []
+    lit = re.compile(r'"([A-Za-z][A-Za-z0-9]*(?:@[0-9.]+x[0-9.]+)?)"')
+    out, literals = [], set()
     for path in sorted(pathlib.Path("app/src/main/java").rglob("*.kt")):
         if path.name == "IconSpecs.kt":
             continue
-        for name in sorted(set(call.findall(path.read_text(encoding="utf-8")))):
+        text = path.read_text(encoding="utf-8")
+        literals.update(lit.findall(text))
+        for name in sorted(set(call.findall(text))):
             if name not in have:
                 out.append(f"{path.name}: иконки «{name}» нет в IconSpecs.kt")
     print(f"имён в коде без иконки: {len(out)}")
+    # Не ошибка: новую иконку сначала рисуют на странице «icons», потом подключают в коде.
+    idle = sorted(have - literals)
+    print(f"иконок, которых нет в коде: {len(idle)}" + (f" ({', '.join(idle)})" if idle else ""))
     return out
 
 

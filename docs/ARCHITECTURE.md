@@ -124,7 +124,7 @@ app/src/main/java/ru/ogrpfsense/dexpm8/
   ui/   EinkActivity   единственная Activity: стек экранов, immersive, без анимаций, полная перерисовка при смене экрана, cleanRefresh
         Epd            режим панели через скрытый API прошивки `View.requestEpdMode` (рефлексия)
         Screen         базовый View: layout/render/onUp, касания без скролла
-        Ink, Tokens, D, Icons, IconSpecs   рисование, палитра G0..G15, дизайн-px, иконки (IconSpecs генерирует tools/icon_specs.py)
+        Ink, Tokens, D, Icons, IconSpecs   рисование, палитра G0..G15, дизайн-px, иконки (IconSpecs генерирует tools/icon_specs.py из design/icons.txt)
         StatusBar      время / батарея / Wi-Fi
         HomeScreen B1 · LibraryScreen, LibraryGrid B2/B11 · BookScreen B12 · AppsScreen B6/B36
         FilesScreen B25 (обзор папок; плитка «Файлы» в B6 синтетическая — пакета нет)

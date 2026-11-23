@@ -1,26 +1,22 @@
 #!/usr/bin/env python3
-"""Генератор IconSpecs.kt из снимка макета design/v5/icons/*.json.
+"""Генератор IconSpecs.kt из design/icons.txt.
 
-Что делает:
-  - читает tokens.json (палитра G0..G15 -> hex) и все файлы иконок;
-  - раскрывает группы, пропускает скрытые слои (hid), порядок слоёв сохраняет
-    (первый — снизу);
-  - варианты одной иконки (wifi~mpgmg0 и wifi~1pen2hs) сливает по имени:
-    разница чисел до 0.1 допустима, больше — ошибка;
-  - иконки, которых нет в снимке, берёт без изменений из tools/icon_specs_extra.txt;
-  - пишет app/src/main/java/ru/ogrpfsense/dexpm8/ui/IconSpecs.kt.
+design/icons.txt — единственный источник геометрии иконок (с 2026-11-23). Его правят на странице
+«icons» файла «UI» в Penpot и снимают обратно (tools/penpot_icons_dump.js, design/README.md,
+«Иконки: страница icons»). Снимок бордов v5 (design/v5/icons/*.json) нужен только проверке
+экранов: из него IconSpecs.kt больше не собирается.
 
 Формат строки спеки — см. Icons.kt:
   имя|ширина|высота|примитив|...
   r x y w h radius <#hex | stroke:#hex:w[:round]>
   e x y w h        <#hex | stroke:#hex:w[:round]>
   p x y w h sw     <#hex | stroke:#hex:w[:round]> d
+Строки, начинающиеся с «#», — комментарии. Порядок строк = порядок в IconSpecs.kt.
 
 Запуск:
   python3 tools/icon_specs.py          записать IconSpecs.kt
   python3 tools/icon_specs.py --check  сравнить с файлом в репозитории (код 1 при отличии)
 """
-import json
 import re
 import sys
 from pathlib import Path
@@ -28,174 +24,27 @@ from pathlib import Path
 sys.dont_write_bytecode = True
 
 ROOT = Path(__file__).resolve().parent.parent
-ICONS_DIR = ROOT / "design" / "v5" / "icons"
-TOKENS = ROOT / "design" / "v5" / "tokens.json"
-EXTRA = ROOT / "tools" / "icon_specs_extra.txt"
+SRC = ROOT / "design" / "icons.txt"
 OUT = ROOT / "app/src/main/java/ru/ogrpfsense/dexpm8/ui/IconSpecs.kt"
-
-TOL = 0.1
-
-# Иконки, которые есть в снимке в нескольких размерах: размер, который остаётся под обычным
-# именем (на него ссылается код). Остальные размеры — `имя@ШxВ`, например `wifi@53x55.2`.
-PRIMARY = {
-    "wifi": (38.4, 40.2),
-    "back": (45.7, 47.6),
-    "list": (45.7, 47.6),
-    "grid": (45.7, 47.6),
-    "search": (45.7, 47.6),
-    "filter": (45.7, 47.6),
-    "next": (43.9, 43.9),
-    "arrowR": (43.9, 43.9),
-    "more": (49.4, 51.4),
-    "check": (42, 43.9),
-    "moon": (53, 55.2),
-    "font": (53, 55.2),
-    "files": (53, 55.2),
-    "info": (53, 55.2),
-    "refresh": (32.9, 36.9),
-    "clock": (53, 55.2),
-    "dict": (98.7, 102.8),
-    "gallery": (39.8, 35.4),
-    "trash": (45.7, 47.6),
-    "sunLow": (16.1, 18),
-    "sunHigh": (41, 42.9),
-    "lock": (27.5, 35.8),
-    # Размеры, которые уже рисует код по имени (проверено по экранам оболочки, 9.5).
-    "audio": (73.1, 76.2),        # плитка «Аудиокниги» на B1
-    "bookmark": (45.7, 47.6),     # «На полку» на B12
-    "close": (22.1, 24.3),        # B6, строка «Скрыть приложение»
-    "download": (35.3, 40.9),     # B42, «Очистить кэш»
-    "library": (73.1, 76.2),      # плитка B1 и строка автора на B21
-    "settings": (73.1, 76.2),     # плитка B1
-    # Сетевые каталоги (п. 10): размеры строк B14/B16/B17/B18.
-    "browser": (51.2, 53.3),      # строка открытого каталога на B14
-    "home": (51.2, 53.3),         # строка Calibre на B14
-    # R3 (B9 «Меню чтения»): нижний ряд и листание. Код ссылается на размеры B9, остальные
-    # размеры в снимке получают имя `имя@ШxВ`.
-    "chapters": (45.7, 47.6),     # B12 «Оглавление» (в B9 — 54.8×57.1)
-    "contrast": (53, 55.2),       # B13 «Экран» (в B9 — 54.8×57.1)
-    "prev": (42, 43.9),           # B9, клавиша Ø87.7
-    "nxt": (42, 43.9),            # B9, клавиша Ø87.7
-    # Статус-бар: батарея 36.4×21.1 — размер из statusbar (в B5 и B7 — крупнее, 53.8×31.2).
-    "battery": (36.4, 21.1),
-    # Иконки R4/R5 и плеера: экранов ещё нет, код по имени не рисует. Основной — крупный
-    # размер из борда-источника, остальные получают имя `имя@ШxВ`.
-    "highlight": (39.8, 35.4),    # B50 «Выделение»
-    "note": (35.3, 39.8),         # B51 «Заметка»
-    "notes": (98.7, 102.8),       # плитка B1
-    "pause": (87.8, 87.8),        # B7 плеер, крупная клавиша
-    "plus": (43.9, 43.9),         # B14 «Добавить каталог» (в B4 — 45.7 из icon_specs_extra.txt)
-    "minus": (45.7, 47.6),        # B4 «Типографика» (R3), клавиша Ø102.4
-}
-# Цветовой вариант той же формы под своим именем: файл → имя в IconSpecs.kt.
-# search~fapjtl (G1, шапка B6/B36) отличается от search~hhvmhx (G5, B2) только цветом.
-COLOR_ALIAS = {
-    "search~fapjtl.json": "searchDark",
-    # wifi~vtqgbs (G1, «Сеть» включена на B5) — та же форма, что wifi~1qmu6za (G4, B13).
-    "wifi~vtqgbs.json": "wifiDark",
-    # next~g4mq3l (G15, B02) — белая стрелка на тёмной клавише пагинации; `next` (G6)
-    # на ней сливается с поверхностью (замечание 16). Размер тот же, 43.9×43.9.
-    "next~g4mq3l.json": "nextLight",
-    # chapters~a7o3qr (G1) — «Оглавление» на светлой клавише B12, chapters~tsjxmj (G4) — B9.
-    # Под обычным именем остаётся размер B12 (PRIMARY), контрастный вариант — отдельно.
-    "chapters~a7o3qr.json": "chaptersDark",
-}
-NUM_RE = re.compile(r"-?\d+(?:\.\d+)?")
-
-# Файлы снимка, которые пока не берём.
-# plus~oohzz2 снят неполным (только блик G15, без контура) — переснять с B4 в R3;
-# plus~1201ai8 и plus~ou9h7o — уменьшенные варианты B4/списков, в коде не рисуются.
-SKIP = {
-    "plus~oohzz2.json",
-    "plus~1201ai8.json",
-    "plus~ou9h7o.json",
-    # minus~bxdhcj — один штрих (30.9×2.2) без клавиши: кусок ползунка B4, не иконка.
-    "minus~bxdhcj.json",
-}
-
-# Копии иконок, нарисованные «под листом» по старому правилу (светлее на 4–5 ступеней,
-# замечание 15): G15 → G13, G1/G4 → G8/G9, G10 → G11. В коде содержимое под листом затемняет
-# Screen.DIM, поэтому эти файлы не нужны — иначе генератор видит в них «вариант другой формы».
-# Список явный: новый такой файл в снимке снова уронит проверку, и это правильно.
-SKIP_DIM = {
-    "audio~1y6kbrh.json",
-    "back~1669nm4.json",
-    "back~17385ri.json",
-    "back~185lzao.json",
-    "back~19mwmtk.json",
-    "back~1nwoxff.json",
-    "back~ce9cq0.json",
-    "bookmark~1oi0ewj.json",
-    "check~aylj0v.json",
-    "check~jitolp.json",
-    "check~ze2z26.json",
-    "filter~1bkbv0.json",
-    "grid~qwycyx.json",
-    "library~11rzxmi.json",
-    "list~smglpz.json",
-    "more~mt365b.json",
-    "next~837lsk.json",
-    "next~bh2g0t.json",
-    "next~fawyjb.json",
-    "next~fkcejo.json",
-    "plus~lcbp9f.json",
-    "search~wgbvc3.json",
-    "back~34utwk.json",
-    "back~4xa23n.json",
-    "back~mk9u0y.json",
-    "check~1lsr44q.json",
-    "download~gcxxg8.json",
-    "next~1mi8kyq.json",
-    "search~1ow5j29.json",
-    # bluetooth~j7yixa (G13/G9) — та же копия «под листом», что и выше: приехала с полным
-    # снимком бордов 2026-11-15 и до B74 «Bluetooth» в коде не нужна.
-    "bluetooth~j7yixa.json",
-    # home~1fjzmnv (G9) — приглушённая копия иконки Calibre для строки под листом
-    # (замечание 15): в коде её заменяет Screen.DIM, нужен вариант G4 (home~34k3ik).
-    "home~1fjzmnv.json",
-    # Остальные копии «под листом» из того же полного снимка 2026-11-15 (борды B53–B59, B44, B57,
-    # B26 и т. п.): первый цвет G13. В коде их заменяет Screen.DIM.
-    "back~1n9hy89.json",
-    "check~ysf73p.json",
-    "download~1pnimbo.json",
-    "info~196u19n.json",
-    "lock~1s9bj7k.json",
-    "refresh~1vbxckf.json",
-    "refresh~1xkab7h.json",
-    "wifi~19ciduc.json",
-    "wifi~19l5vi6.json",
-    "wifi~1ynfy68.json",
-    "wifi~sdp14d.json",
-    # НЕ копия «под листом»: next~g4mq3l — белая (G15) стрелка на тёмной клавише B02,
-    # подключена как `nextLight` через COLOR_ALIAS (замечание 16).
-}
 
 HEADER = '''package ru.ogrpfsense.dexpm8.ui
 
 /**
- * Геометрия иконок, снятая с макета Penpot: design/v5/icons.
+ * Геометрия иконок: design/icons.txt (правится на странице «icons» в Penpot).
  *
- * Каждая иконка в макете — две копии одной формы: нижняя белая (блик) со сдвигом
+ * Каждая иконка — обычно две копии одной формы: нижняя белая (блик) со сдвигом
  * вниз и верхняя цветная. Координаты — в собственной системе иконки, поэтому
  * масштабирование в [Icons.draw] не плывёт относительно толщины штриха.
  * Концы линий: stroke:#hex:w:round — круглые, без суффикса — прямые.
  *
- * ФАЙЛ СГЕНЕРИРОВАН, руками не править: перегенерация — tools/icon_specs.py,
- * иконки не из снимка — tools/icon_specs_extra.txt.
+ * ФАЙЛ СГЕНЕРИРОВАН, руками не править: перегенерация — tools/icon_specs.py.
  */
 object IconSpecs {
 
     val SPECS: Array<String> = arrayOf(
 '''
-EXTRA_COMMENT = (
-    "        // Иконки не из снимка: перенесены без изменений из tools/icon_specs_extra.txt\n"
-)
 FOOTER = "    )\n}\n"
-
-
-def fmt(v) -> str:
-    s = ("%.3f" % float(v)).rstrip("0").rstrip(".")
-    return "0" if s in ("", "-0") else s
+PALETTE = {"#%02x%02x%02x" % (i * 17, i * 17, i * 17) for i in range(16)}
 
 
 def fail(msg: str):
@@ -203,173 +52,27 @@ def fail(msg: str):
     sys.exit(1)
 
 
-def load_palette() -> dict:
-    pal = json.loads(TOKENS.read_text(encoding="utf-8"))["palette"]
-    return {k: v.lower() for k, v in pal.items()}
-
-
-def check_d(d: str, where: str):
-    if not re.fullmatch(r"[MLCZ0-9.,\-]+", d):
-        fail(f"{where}: в пути допустимы только M L C Z и числа: {d[:60]!r}")
-
-
-def make_prim(n: dict, pal: dict, where: str) -> dict:
-    fills = n.get("f") or []
-    strokes = n.get("s") or []
-    name = n.get("n")
-    if len(fills) + len(strokes) != 1:
-        fail(f"{where}/{name}: нужна ровно одна заливка или одна обводка")
-    paint = fills[0] if fills else strokes[0]
-    if "o" in paint:
-        fail(f"{where}/{name}: прозрачность запрещена")
-    if "a" in paint:
-        fail(f"{where}/{name}: выравнивание обводки inner/outer не поддерживается")
-    color = pal[paint["c"]]
-    is_stroke = bool(strokes)
-    cap = paint.get("cap")
-    if cap not in (None, "round"):
-        fail(f"{where}/{name}: cap {cap!r} не поддерживается")
-    geom = [n["x"], n["y"], n["w"], n["h"]]
-    t = n["t"]
-    prim = {"color": color, "stroke": is_stroke, "round": cap == "round", "d": None}
-    if is_stroke:
-        prim["sw"] = paint["w"]
-    if t == "rectangle":
-        r = n.get("r", 0)
-        if isinstance(r, list):
-            if len(set(r)) != 1:
-                fail(f"{where}/{name}: разные радиусы углов {r}")
-            r = r[0]
-        prim["t"] = "r"
-        prim["nums"] = geom + [r]
-    elif t == "ellipse":
-        prim["t"] = "e"
-        prim["nums"] = geom
-    elif t == "path":
-        d = n.get("d")
-        if not d:
-            fail(f"{where}/{name}: у path нет d")
-        check_d(d, f"{where}/{name}")
-        prim["t"] = "p"
-        prim["nums"] = geom + [paint["w"] if is_stroke else 0]
-        prim["d"] = d
-    else:
-        fail(f"{where}/{name}: тип {t!r} не поддерживается")
-    return prim
-
-
-def walk(nodes: list, pal: dict, where: str, out: list):
-    for n in nodes:
-        if n.get("hid"):
-            continue
-        if n["t"] in ("group", "board"):
-            walk(n.get("c", []), pal, where, out)
-        else:
-            out.append(make_prim(n, pal, where))
-
-
-def d_skeleton(d: str):
-    return NUM_RE.sub("#", d), [float(x) for x in NUM_RE.findall(d)]
-
-
-def same(a: dict, b: dict) -> str:
-    """Пустая строка, если примитивы совпадают в пределах TOL, иначе причина."""
-    for key in ("t", "color", "stroke", "round"):
-        if a[key] != b[key]:
-            return f"{key}: {a[key]!r} != {b[key]!r}"
-    if abs(a.get("sw", 0) - b.get("sw", 0)) > TOL:
-        return f"штрих {a.get('sw')} != {b.get('sw')}"
-    if len(a["nums"]) != len(b["nums"]):
-        return "разное число полей"
-    for u, v in zip(a["nums"], b["nums"]):
-        if abs(u - v) > TOL:
-            return f"{u} != {v}"
-    if (a["d"] is None) != (b["d"] is None):
-        return "path и не path"
-    if a["d"] is not None:
-        sa, na = d_skeleton(a["d"])
-        sb, nb = d_skeleton(b["d"])
-        if sa != sb:
-            return "разные команды пути"
-        for u, v in zip(na, nb):
-            if abs(u - v) > TOL:
-                return f"в пути {u} != {v}"
-    return ""
-
-
-def render(p: dict) -> str:
-    nums = [fmt(v) for v in p["nums"]]
-    if p["stroke"]:
-        paint = f"stroke:{p['color']}:{fmt(p['sw'])}" + (":round" if p["round"] else "")
-    else:
-        paint = p["color"]
-    s = f"{p['t']} " + " ".join(nums) + " " + paint
-    if p["d"] is not None:
-        s += " " + p["d"]
-    return s
-
-
-def load_snapshot(pal: dict) -> dict:
-    """имя иконки -> (w, h, [примитивы]).
-
-    Файлы одного имени и одного размера (с допуском TOL) — цветовые варианты одной формы,
-    их геометрия должна совпасть. Файлы другого размера — другой рисунок (штрих, концы линий
-    зависят от размера), поэтому получают имя `имя@ШxВ`. Обычное имя остаётся у размера из
-    PRIMARY: на него ссылается код экранов.
-    """
-    groups: dict = {}   # имя -> список [w, h, prims, файл]
-    for path in sorted(ICONS_DIR.glob("*.json")):
-        if path.name in SKIP or path.name in SKIP_DIM:
-            continue
-        data = json.loads(path.read_text(encoding="utf-8"))
-        name = data["name"].split("/")[-1].strip()
-        file_name = path.name.split("~")[0]
-        if name != file_name:
-            fail(f"{path.name}: имя иконки {name!r} не совпадает с именем файла")
-        name = COLOR_ALIAS.get(path.name, name)
-        prims: list = []
-        walk(data["c"], pal, path.name, prims)
-        if not prims:
-            fail(f"{path.name}: нет видимых слоёв")
-        found = None
-        for g in groups.setdefault(name, []):
-            if abs(g[0] - data["w"]) <= TOL and abs(g[1] - data["h"]) <= TOL:
-                found = g
-                break
-        if found is None:
-            groups[name].append([data["w"], data["h"], prims, path.name])
-            continue
-        old = found[2]
-        if len(old) != len(prims):
-            fail(f"{path.name}: число слоёв {len(prims)} != {len(old)}")
-        for i, (a, b) in enumerate(zip(old, prims)):
-            why = same(a, b)
-            if why:
-                fail(f"{path.name}: вариант отличается от первого больше {TOL}, слой {i}: {why}")
-
-    icons = {}
-    for name, sizes in groups.items():
-        if len(sizes) == 1:
-            icons[name] = (sizes[0][0], sizes[0][1], sizes[0][2])
-            continue
-        pin = PRIMARY.get(name)
-        if pin is None:
-            fail(f"{name}: в снимке несколько размеров, а в PRIMARY нет основного: "
-                 + ", ".join(f"{fmt(g[0])}x{fmt(g[1])}" for g in sizes))
-        if not any(abs(g[0] - pin[0]) <= TOL and abs(g[1] - pin[1]) <= TOL for g in sizes):
-            fail(f"{name}: основного размера {pin[0]}x{pin[1]} из PRIMARY нет в снимке")
-        for w, h, prims, _ in sizes:
-            main = abs(w - pin[0]) <= TOL and abs(h - pin[1]) <= TOL
-            icons[name if main else f"{name}@{fmt(w)}x{fmt(h)}"] = (w, h, prims)
-    return icons
-
-
-def load_extra() -> list:
-    out = []
-    for line in EXTRA.read_text(encoding="utf-8").splitlines():
+def load_specs() -> list:
+    """[(имя, ширина, высота, [примитив, …])] в порядке файла; ошибка — с номером строки."""
+    out, seen = [], set()
+    for no, line in enumerate(SRC.read_text(encoding="utf-8").splitlines(), 1):
         line = line.strip()
-        if line and not line.startswith("#"):
-            out.append(line)
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split("|")
+        where = f"{SRC.name}:{no}"
+        if len(parts) < 4:
+            fail(f"{where}: нужны имя|ширина|высота и хотя бы один примитив")
+        name = parts[0]
+        if name in seen:
+            fail(f"{where}: иконка {name} уже есть выше")
+        seen.add(name)
+        for c in re.findall(r"#[0-9a-fA-F]{6}", "|".join(parts[3:])):
+            if c.lower() not in PALETTE:
+                fail(f"{where}/{name}: цвет {c} не из палитры G0–G15")
+        out.append((name, parts[1], parts[2], parts[3:]))
+    if not out:
+        fail(f"{SRC.name}: нет ни одной иконки")
     return out
 
 
@@ -380,33 +83,21 @@ def entry(head: str, prims: list) -> str:
     return " +\n".join(lines)
 
 
-def generate(icons: dict) -> str:
-    blocks = []
-    for name in sorted(icons):
-        w, h, prims = icons[name]
-        blocks.append(entry(f"{name}|{fmt(w)}|{fmt(h)}", [render(p) for p in prims]))
-    extra_blocks = []
-    for line in load_extra():
-        parts = line.split("|")
-        if parts[0] in icons:
-            fail(f"{parts[0]}: есть и в снимке, и в icon_specs_extra.txt")
-        extra_blocks.append(entry("|".join(parts[:3]), parts[3:]))
-    body = ",\n\n".join(blocks)
-    if extra_blocks:
-        body += ",\n\n" + EXTRA_COMMENT + ",\n\n".join(extra_blocks)
-    return HEADER + body + "\n" + FOOTER
+def generate(specs: list) -> str:
+    blocks = [entry(f"{n}|{w}|{h}", prims) for n, w, h, prims in specs]
+    return HEADER + ",\n\n".join(blocks) + "\n" + FOOTER
 
 
 def main() -> int:
-    icons = load_snapshot(load_palette())
-    text = generate(icons)
-    note = f"{len(icons)} из снимка + {len(load_extra())} не из снимка"
+    specs = load_specs()
+    text = generate(specs)
+    note = f"{len(specs)} иконок"
     if "--check" in sys.argv:
         cur = OUT.read_text(encoding="utf-8") if OUT.exists() else ""
         if cur != text:
-            print("IconSpecs.kt не совпадает со снимком: запустить python3 tools/icon_specs.py")
+            print("IconSpecs.kt не совпадает с design/icons.txt: запустить python3 tools/icon_specs.py")
             return 1
-        print(f"IconSpecs.kt совпадает со снимком: {note}")
+        print(f"IconSpecs.kt совпадает с design/icons.txt: {note}")
         return 0
     OUT.write_text(text, encoding="utf-8")
     print(f"записано {OUT.relative_to(ROOT)}: {note}")
@@ -415,4 +106,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-
