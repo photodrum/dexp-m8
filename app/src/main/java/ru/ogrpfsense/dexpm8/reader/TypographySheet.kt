@@ -130,12 +130,15 @@ class TypographySheet(private val ink: Ink, private val icons: Icons) {
             if (i == face) ink.inset(c, x, FACE_Y, FACE_W, FACE_H, R_FACE, T.G12)
             else ink.convex(c, x, FACE_Y_CONVEX, FACE_W + T.SHADOW_DX,
                 FACE_H + T.SHADOW_DY, R_FACE)
-            ink.text(c, "Аа", FACE_AA_X[i], T.base(FACE_AA_TOP, TS_AA, 1.25f, i == FACE_SERIF),
-                TS_AA, 500, T.G1, faceFont(i))
+            // Базовая линия «Аа» — как в макете (рамка 66/1.2: у «Антиквы» верх 1337.3, у
+            // остальных 1341.3, оба дают ≈1406), название стоит на той же линии: в макете
+            // базовые линии «Аа» и названия совпадают.
+            val base = if (i == FACE_SERIF) T.base(FACE_AA_TOP_SERIF, TS_AA, 1.2f, true)
+            else T.base(FACE_AA_TOP, TS_AA, 1.2f)
+            ink.text(c, "Аа", FACE_AA_X[i], base, TS_AA, 500, T.G1, faceFont(i))
             // Название обрезается по правому краю клавиши: «PT Serif» шире 301.9.
             ink.text(c, ink.ellipsize(FACE_LABELS[i], FACE_W - 124f, TS_FACE_NAME,
-                if (i == face) 800 else 600), FACE_NAME_X[i],
-                T.base(FACE_NAME_TOP, TS_FACE_NAME, 1.25f), TS_FACE_NAME,
+                if (i == face) 800 else 600), FACE_NAME_X[i], base, TS_FACE_NAME,
                 if (i == face) 800 else 600, if (i == face) T.G1 else T.G4)
         }
     }
@@ -158,19 +161,21 @@ class TypographySheet(private val ink: Ink, private val icons: Icons) {
 
     /**
      * Желоб с тремя сегментами. Он шире, чем `SettingsKit.segments` (614.2×102.4 против
-     * 1221×95), поэтому нарисован здесь: сегмент шага = (W − 5.5) / 3, плашка — на 4.6 ниже
-     * дна и на 2.7 уже шага, подпись 28/600.
+     * 1221×95), поэтому нарисован здесь. Числа макета B04: поверхность плашки и рамка
+     * подписи 199.9 шириной, шаг 199.9 от +7.3; группа плашки с тенью 204.5×97.8 лежит
+     * на −2.8 по x и +4.6 по y от поверхности (`Ink.convex` берёт габарит с тенью, поэтому
+     * 87.7 слоя в него передавать нельзя — снизу оставался зазор больше, чем сверху).
+     * Подпись 28/600 в рамке с верхом +32.8, у активной 700.
      */
     private fun groove(c: Canvas, x: Float, y: Float, w: Float, labels: Array<String>,
                        active: Int) {
         ink.inset(c, x, y, w, SPACING_H, R_GROOVE, T.G12)
-        val step = (w - T.INSET_W) / labels.size
         for (i in labels.indices) {
-            val sx = x + T.INSET_DX + step * i
+            val sx = x + SEG_PAD + SEG_W * i          // поверхность плашки и рамка подписи
             val on = i == active
-            if (on) ink.convex(c, sx, y + SEG_DY, step - SEG_SHRINK, SEG_H, R_SEG)
-            ink.textCenter(c, labels[i], sx, step,
-                T.base(y + (if (on) SEG_TEXT_DY else SEG_TEXT_DY - 1f), TS_SEG, 1.25f),
+            if (on) ink.convex(c, sx - T.SURFACE_DX, y + SEG_DY, SEG_W + T.SHADOW_DX, SEG_GROUP_H,
+                R_SEG)
+            ink.textCenter(c, labels[i], sx, SEG_W, T.base(y + SEG_TEXT_DY, TS_SEG, 1.25f),
                 TS_SEG, if (on) 700 else 600, if (on) T.G1 else T.G4)
         }
     }
@@ -264,8 +269,7 @@ class TypographySheet(private val ink: Ink, private val icons: Icons) {
     /** Номер сегмента желоба ([gx], ширина [w]) под касанием или −1. */
     private fun segment(x: Float, gx: Float, w: Float): Int {
         if (x < gx || x > gx + w) return -1
-        val step = (w - T.INSET_W) / 3f
-        return ((x - gx - T.INSET_DX) / step).toInt().coerceIn(0, 2)
+        return ((x - gx - SEG_PAD) / SEG_W).toInt().coerceIn(0, 2)
     }
 
     /** Доля шкалы для кегля [size] (0…1). */
@@ -403,9 +407,10 @@ class TypographySheet(private val ink: Ink, private val icons: Icons) {
         private val FACE_X = floatArrayOf(58.5f, 386.9f, 715.2f, 1043.6f)
         private val FACE_AA_X = floatArrayOf(95.1f, 423.5f, 751.8f, 1080.2f)
         private const val FACE_AA_TOP = 1341.3f
+        /** «Аа» Literata (макет, «Антиква»): рамка выше на 4 — шрифт с другими метриками. */
+        private const val FACE_AA_TOP_SERIF = 1337.3f
         private const val TS_AA = 66f
         private val FACE_NAME_X = floatArrayOf(198.5f, 526.9f, 855.2f, 1183.6f)
-        private const val FACE_NAME_TOP = 1372.7f
         private const val TS_FACE_NAME = 30f
 
         // Желоба «Интервал» и «Поля»: 58.5 / 731.3, y 1528.3, 614.2×102.4 r 51.19;
@@ -418,12 +423,16 @@ class TypographySheet(private val ink: Ink, private val icons: Icons) {
         private const val R_GROOVE = 51.1875f
         private const val MARGIN_X = 731.3f
         private const val MARGIN_W = 614.2f
+        /** Группа плашки (с тенью): верх на +4.6 от желоба, высота 97.8. */
         private const val SEG_DY = 4.6f
-        private const val SEG_H = 87.7f
-        private const val SEG_SHRINK = 2.7f
+        private const val SEG_GROUP_H = 97.8f
+        /** Шаг сегмента и ширина поверхности/подписи 199.9, первый — на +7.3 от края желоба. */
+        private const val SEG_W = 199.9f
+        private const val SEG_PAD = 7.3f
         private const val R_SEG = 43.875f
         private const val TS_SEG = 28f
-        private const val SEG_TEXT_DY = 27f
+        /** Верх рамки подписи 28/1.25 — на +32.8 от желоба (макет 1561.1 − 1528.3). */
+        private const val SEG_TEXT_DY = 32.8f
 
         // «Переносы слов»: подпись 731.3,1688.8 34/600, тумблер 1206.6,1674.6 138.9×73,
         // ручка 63.1×68.6 — справа (+70) включён, слева (+4) выключен.

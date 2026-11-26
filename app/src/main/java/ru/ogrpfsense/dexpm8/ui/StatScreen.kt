@@ -254,9 +254,10 @@ class StatScreen(act: EinkActivity) : Screen(act) {
             ink.roundRect(c, x, BAR_BOTTOM - h, BAR_W, h, 4f, color)
         }
         // Ось: число месяца под каждым седьмым столбцом (у года — месяцы через один).
+        // Подпись — по центру столбца: в макете рамка 60 шириной, её центр = центр столбца.
         for ((i, s) in axisLabels(n)) {
-            val x = 122f + step * i
-            ink.textCenter(c, s, x - 16.25f, 43f, T.base(1116f, 28f, 1.25f), 28f, 600, T.G5)
+            val x = 122f + step * i + BAR_W / 2f - AXIS_W / 2f
+            ink.textCenter(c, s, x, AXIS_W, T.base(1116f, 28f, 1.25f), 28f, 600, T.G5)
         }
     }
 
@@ -440,6 +441,9 @@ class StatScreen(act: EinkActivity) : Screen(act) {
         const val BAR_BOTTOM = 1070f
         const val BAR_MIN = 6f
         const val BAR_MAX = 260f
+
+        /** Рамка подписи оси (макет: 60×35, текст по центру) — центр совпадает с центром столбца. */
+        const val AXIS_W = 60f
 
         /** Месяцы в родительном падеже: «21 октября», «3–9 ноября». */
         val MONTHS = arrayOf(
