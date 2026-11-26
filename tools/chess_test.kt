@@ -399,6 +399,7 @@ fun main() {
     ruleChecks()
     searchChecks()
     screenChecks()
+    ficsChecks(::check)
 
     println(if (fails == 0) "=== ВСЁ ОК ($oks проверок)" else "=== ПРОВАЛОВ: $fails из ${oks + fails}")
     if (fails != 0) exitProcess(1)

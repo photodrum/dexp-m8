@@ -307,6 +307,8 @@ class EinkActivity : Activity() {
         Trace.step("setContentView ok")
         host.viewTreeObserver.addOnPreDrawListener(fastFrame)
         applyRefreshMode()
+        // Партия по сети (п. 25.3) переживает пересоздание окна: запрет сна — сразу по состоянию.
+        ChessNet.onAwake = chessAwake
 
         if (startupError != null) {
             host.addView(CrashScreen(this, startupError))
@@ -604,6 +606,7 @@ class EinkActivity : Activity() {
      */
     private fun planSleep() {
         ui.removeCallbacks(sleepAt)
+        if (awake.isNotEmpty()) return
         val ms = sys.sleepTimeout()
         if (ms <= 0 || ms == Int.MAX_VALUE) return
         val lead = minOf(SLEEP_LEAD_MS, ms / 4)
@@ -626,6 +629,28 @@ class EinkActivity : Activity() {
             fullOnSwitch()
         }
         planSleep()
+    }
+
+    /** Кто сейчас не даёт книге заснуть (п. 25.3: «chess-net» — поиск и партия по сети). */
+    private val awake = HashSet<String>(2)
+
+    /** Запрет сна для [ChessNet]; одна ссылка — чтобы в onDestroy снять только своё. */
+    private val chessAwake: (Boolean) -> Unit = { on -> holdAwake("chess-net", on) }
+
+    /**
+     * Не засыпать, пока [on] хоть у одного [who]: флаг окна `FLAG_KEEP_SCREEN_ON` (система не
+     * гасит экран по `SCREEN_OFF_TIMEOUT`; ни права, ни `WakeLock`, снимается с окном) и без
+     * заставки B19 ([planSleep]). Кнопка «Сон» на B5 по-прежнему усыпляет — это решение человека.
+     */
+    fun holdAwake(who: String, on: Boolean) {
+        val was = awake.isNotEmpty()
+        if (on) awake.add(who) else awake.remove(who)
+        val now = awake.isNotEmpty()
+        if (was == now) return
+        Trace.step("sleep: holdAwake $who=$on")
+        if (now) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        if (!sleepShown()) planSleep()
     }
 
     /** Поле «Засыпать через» на B40 сменили — план пересчитать. */
@@ -1466,6 +1491,8 @@ class EinkActivity : Activity() {
     }
 
     override fun onDestroy() {
+        // Новое окно (пересоздание) могло уже поставить своё — снимаем только своё.
+        if (ChessNet.onAwake === chessAwake) ChessNet.onAwake = null
         ui.removeCallbacksAndMessages(null)
         batteryUnwatch()
         storageWaiters.clear()

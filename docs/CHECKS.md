@@ -163,11 +163,21 @@ adb shell 'run-as ru.ogrpfsense.dexpm8 sh -c \
 ```bash
 export JAVA_HOME=$HOME/.local/jdk PATH=$HOME/.local/jdk/bin:$PATH JAVA_OPTS=-Xmx1200m
 $HOME/.local/kotlinc/bin/kotlinc -d /tmp/chesstest/out \
-    app/src/main/java/ru/ogrpfsense/dexpm8/chess/*.kt tools/chess_test.kt
+    app/src/main/java/ru/ogrpfsense/dexpm8/chess/*.kt tools/chess_test.kt tools/chess_fics_test.kt
 java -Dfile.encoding=UTF-8 -cp "/tmp/chesstest/out:$HOME/.local/kotlinc/lib/kotlin-stdlib.jar" Chess_testKt
 ```
 
-Ожидается `=== ВСЁ ОК (203 проверки)` (25.2; 25.1в — 178), строка `perft: … узлов за … мс` — на хосте
+С 25.3 — `chess_fics_test.kt` (FICS без сети: строки, `<12>`, концы партии, команды, `NetGame`,
+часы; строки дословно с сервера). Живая проверка с сервером (нужна сеть, ~40 с; два гостя играют
+друг с другом через `match`, чужих не трогают) — ждём `=== ВСЁ ОК (23 проверок)`:
+
+```bash
+$HOME/.local/kotlinc/bin/kotlinc -d /tmp/ficslive/out \
+    app/src/main/java/ru/ogrpfsense/dexpm8/chess/*.kt tools/fics_live.kt
+java -Dfile.encoding=UTF-8 -cp "/tmp/ficslive/out:$HOME/.local/kotlinc/lib/kotlin-stdlib.jar" Fics_liveKt
+```
+
+Ожидается `=== ВСЁ ОК (265 проверок)` (25.3; 25.2 — 203), строка `perft: … узлов за … мс` — на хосте
 ~31,7 млн узлов за 3–4 с — и две строки `search: …` (начальная, глубина 5 — ~188 тыс. узлов
 за ~75 мс; Kiwipete, глубина 4 — ~55 тыс. за ~30 мс). Что проверяется: perft эталонных позиций chessprogramming.org
 («Perft Results», позиции 1–6) и набора Седлака (взятие на проходе со вскрытым шахом, рокировки
