@@ -156,3 +156,21 @@ adb shell 'run-as ru.ogrpfsense.dexpm8 sh -c \
 «db v7: открыта, версия 7» и «db v7: уборка после перешифрования готова». Вход в каталог после
 обновления должен работать без повторного ввода пароля — это и есть проверка, что ключ прочитан.
 
+## Шахматы на хосте
+
+Пакет `chess/` (п. 25) не зависит от Android — собирается вместе с тестом `tools/chess_test.kt`:
+
+```bash
+export JAVA_HOME=$HOME/.local/jdk PATH=$HOME/.local/jdk/bin:$PATH JAVA_OPTS=-Xmx1200m
+$HOME/.local/kotlinc/bin/kotlinc -d /tmp/chesstest/out \
+    app/src/main/java/ru/ogrpfsense/dexpm8/chess/*.kt tools/chess_test.kt
+java -Dfile.encoding=UTF-8 -cp "/tmp/chesstest/out:$HOME/.local/kotlinc/lib/kotlin-stdlib.jar" Chess_testKt
+```
+
+Ожидается `=== ВСЁ ОК (77 проверок)` (25.1а) и строка `perft: … узлов за … мс` — на хосте
+~31,7 млн узлов за 3–4 с. Что проверяется: perft эталонных позиций chessprogramming.org
+(«Perft Results», позиции 1–6) и набора Седлака (взятие на проходе со вскрытым шахом, рокировки
+под боем, превращения, пат и мат); FEN туда и обратно с нормализацией; отказ на битых FEN; ключ
+Zobrist после хода и отмены на дереве глубины 3. Расхождение perft искать через
+`Perft.divide(pos, depth)` — по первому ходу, сверяя с любым UCI-движком (`go perft N`).
+
