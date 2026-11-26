@@ -1,8 +1,8 @@
 {
-  "versionCode": 4,
-  "versionName": "1.0.0",
-  "url": "https://git.ogrpfsense.ru/api/v4/projects/denisle%2Fdexp-m8/packages/generic/dexp-m8/1.0.0/app-release.apk",
-  "sha256": "c9f31d181e217b405d5c149041496a93f4315192209980fee1a91cf894b5ff96",
+  "versionCode": 5,
+  "versionName": "1.4.1",
+  "url": "https://git.ogrpfsense.ru/api/v4/projects/denisle%2Fdexp-m8/packages/generic/dexp-m8/1.4.1/app-release.apk",
+  "sha256": "fca830a3c813b96c9070624f84ab373afde3d9720cfaa036560fbced2ee012d1",
   "size": 4478840,
-  "notes": "1.0.0: первый релиз. Ровные главы и списки, закладка-переключатель, единый текст обложек, вход «Загрузка по Wi-Fi» из «Файлов» и «Сетевых каталогов», оглавление и «Открыть папку с файлом» на карточке книги."
+  "notes": "1.4.1: аннотация книги (FB2 и EPUB) на карточке; ровные плашки сегментов в «Типографике», «Статистике» и настройках чтения; кнопки «−/+» по центру и «удалить» у своего шрифта; крупнее иконка поиска в «Аудиокнигах»; у кнопки «Полки» иконка с опорной чертой."
 }
