@@ -255,6 +255,16 @@ $ANDROID_HOME/platform-tools/adb install -r -d \
 
 `-r` — переустановка с сохранением данных, `-d` — разрешает откат на более старую версию.
 
+**Грабля (2026-11-26, релиз 1.4.1): откат `install -d` и обновление «вперёд» ломали базу.** Откат на
+старый APK (`-d`) оставляет в `library.db` новые колонки (`annotation` и др.), а `SQLiteOpenHelper`
+после пустого `onDowngrade` всё равно записывает в `user_version` старое число. Следующее обновление
+шло по миграциям заново и падало на `ALTER TABLE … ADD COLUMN annotation` («duplicate column name»):
+`LibraryDb` не открывался, на главном не работала ни одна кнопка с данными (Библиотека, Аудиокниги),
+в `logcat` — `DEXPM8_CRASH … onUpgrade`. Исправлено в 1.4.2: `LibraryDb.addColumn` проверяет
+`PRAGMA table_info` перед `ADD COLUMN`. **Новую миграцию с `ADD COLUMN` писать только через
+`addColumn`.** Если книга уже в таком состоянии — поставить 1.4.2 или новее поверх (`install -r`),
+данные целы.
+
 **SDK здесь — `~/.local/android-sdk`** (`local.properties`), в `PATH` `adb` нет: писать
 `~/.local/android-sdk/platform-tools/adb`. **Грабля (2026-11-18):** при подключённой книге
 `adb devices` отдаёт пустой список — помогает перезапуск сервера, после него устройство

@@ -272,10 +272,26 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
     // Версия 4: полки — таблицы `shelves` и `shelf_books` (B23, B24).
     // Версия 5: `pdf` и `cbz` читалка не открывает (решение 2026-11-11) — строки убираем сами:
     // файлы на диске остаются, сканер их больше не находит, значит удалить их из базы ему нечем.
+    /**
+     * `ALTER TABLE … ADD COLUMN`, который не падает, если колонка уже есть.
+     *
+     * Зачем (2026-11-26, релиз 1.4.1): `adb install -d` старого APK поверх новой базы оставляет
+     * колонки, а [onDowngrade] ничего не делает — но `SQLiteOpenHelper` после него всё равно
+     * записывает в `user_version` старое число. Новая сборка тогда заново шла по миграциям и на
+     * `ADD COLUMN annotation` падала с «duplicate column name»; из-за этого не открывалась
+     * база, и ни один экран с данными не работал. Колонка уже на месте — значит, делать нечего.
+     */
+    private fun addColumn(db: SQLiteDatabase, table: String, column: String, ddl: String) {
+        db.rawQuery("PRAGMA table_info($table)", null).use { c ->
+            while (c.moveToNext()) if (c.getString(1) == column) return
+        }
+        db.execSQL("ALTER TABLE $table ADD COLUMN $column $ddl")
+    }
+
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) db.execSQL("UPDATE books SET mtime = 0")
         if (oldVersion < 3) {
-            db.execSQL("ALTER TABLE books ADD COLUMN series_sort TEXT")
+            addColumn(db, "books", "series_sort", "TEXT")
             db.rawQuery("SELECT _id, series FROM books WHERE series IS NOT NULL", null).use { c ->
                 while (c.moveToNext()) {
                     val cv = ContentValues(1)
@@ -293,10 +309,10 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         if (oldVersion < 7) nSealed = sealCatalogPasswords(db)
         // Версия 8: место чтения (R1.4). Пустая колонка = «начинать с начала»;
         // прогресс у уже читанных книг остаётся, экран откроет первую страницу.
-        if (oldVersion < 8) db.execSQL("ALTER TABLE books ADD COLUMN pos TEXT")
+        if (oldVersion < 8) addColumn(db, "books", "pos", "TEXT")
         // Версия 9: настройки страницы DjVu — лист B31 «Масштаб и поля» (R2.5). Строка
         // формата `DjvuView.encode()`; пусто = умолчания (по странице, авто-обрезка, без контраста).
-        if (oldVersion < 9) db.execSQL("ALTER TABLE books ADD COLUMN view TEXT")
+        if (oldVersion < 9) addColumn(db, "books", "view", "TEXT")
         // Версия 10: закладки (R4.1, B27) — своя таблица, старые строки не трогаем.
         if (oldVersion < 10) createBookmarks(db)
         // Версия 11: цитаты и заметки (R4.3, B50–B52) — те же строки, три новых поля.
@@ -319,14 +335,14 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         // плюс `finished` у книги: когда её дочитали. Старые дни не восстанавливаются — до v13
         // время не писалось вовсе, поэтому таблица начинается пустой.
         if (oldVersion < 13) {
-            db.execSQL("ALTER TABLE books ADD COLUMN finished INTEGER NOT NULL DEFAULT 0")
+            addColumn(db, "books", "finished", "INTEGER NOT NULL DEFAULT 0")
             createReading(db)
         }
         // Версия 14 (п. 27, B12 «Аннотация»): текст аннотации FB2. Сканер пропускает файл с тем же
         // размером и mtime, поэтому у FB2 mtime сбрасывается (как в v2) — следующий проход
         // перечитает `<title-info>` и заполнит колонку; статус, прогресс и полки не трогаются.
         if (oldVersion < 14) {
-            db.execSQL("ALTER TABLE books ADD COLUMN annotation TEXT")
+            addColumn(db, "books", "annotation", "TEXT")
             db.execSQL("UPDATE books SET mtime = 0 WHERE format = 'fb2'")
         }
         // Версия 15 (п. 27): аннотация EPUB (`dc:description`, [EpubMeta]) — то же, что в v14 для FB2:
@@ -404,7 +420,11 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         Trace.step("db v7: уборка после перешифрования готова")
     }
 
-    /** `adb install -d` ставит старый APK поверх нового: схему не трогаем, а не падаем. */
+    /**
+     * `adb install -d` ставит старый APK поверх нового: схему не трогаем, а не падаем.
+     * Колонки при этом остаются, а `user_version` `SQLiteOpenHelper` всё равно понижает, поэтому
+     * миграции обязаны переживать повторный проход (см. [addColumn]).
+     */
     override fun onDowngrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
     }
 
