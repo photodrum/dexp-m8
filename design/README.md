@@ -13,6 +13,9 @@
 B29, B30, B32–B35, B47, B50–B52, B56, B60–B63, B70–B76). К Penpot за геометрией больше ходить не нужно;
 скрипт остаётся для обновления, если макет поменяется.
 
+Плюс **19 бордов шахмат** со страницы «chess» (2026-11-26, п. 25.0): B77, B77а, B78, B79, B79а, B79б,
+B80–B82, B83, B83а, B84, B85, B85а, B86, B86а, B87, B87а, B87б — см. «Шахматы» ниже.
+
 Состояния одного экрана — отдельные файлы с буквой в имени: `B31.json` — основной вид,
 `B31а.json` — выбранная ручка обрезки, `B31б.json` — желоб масштаба в режиме «− · 140 % · +».
 
@@ -111,6 +114,47 @@ class H(BaseHTTPRequestHandler):
         self.send_response(200); self._c()
         self.send_header("Content-Length", str(len(body))); self.end_headers()
         self.wfile.write(body)
+
+HTTPServer(("0.0.0.0", int(sys.argv[1])), H).serve_forever()
+```
+
+## Шахматы: страница chess (п. 25.0)
+
+Борды B77–B87 (с вариантами `а`, `б`), борд «Фигуры · на светлой и тёмной клетке» и 12 бордов
+`chessWk` … `chessBp` лежат на странице **chess** файла «UI». Рисует их Cline (исключение в
+`.clinerules`, решение 2026-11-26); B1–B76, «v5», «v5 дизайн-система» и «icons» не трогает — ни слоёв,
+ни имён. Снимок в `design/v5` — такой же, как у B1–B76.
+
+**Перерисовать** (борды собираются из деталей снимка — шапка и статус-бар B75, пагинация B11, иконки):
+
+1. `python3 tools/chess_boards.py [pieces B79 B79а …]` → `/tmp/chess_draw/<борд>.json` и `index.json`
+   (без списка — все; позиции на досках считаются из ходов UCI).
+2. CORS-сервер (текст ниже): `python3 /tmp/serve.py 8766 /tmp/chess_draw`.
+3. `tools/penpot_boards_draw.js` как `code` в `execute_code` (открыта страница «chess»), затем
+   `return await storage.drawBoards('http://<LAN-адрес>:8766/', ['B79', 'B79а'])` — борды с этими
+   номерами рисуются заново (старый с тем же номером удаляется). Адрес — LAN, как у приёмника.
+
+**Снять обратно:** в `tools/penpot_dump.js` `PAGE = 'chess'` и нужные борды в `BOARDS`, дальше —
+быстрый путь («Приёмник снимка», порт 8765); **сразу вернуть `PAGE = 'v5'`**. Фигуры и значки попадают
+в `v5/icons`. `tools/check_icons.py` до шага 25.2 пишет «иконок, которых нет в коде: 12 (chess*)» —
+так и должно быть (это не проблема).
+
+```python
+import sys
+from http.server import SimpleHTTPRequestHandler, HTTPServer
+
+ROOT = sys.argv[2]
+
+class H(SimpleHTTPRequestHandler):
+    def __init__(self, *a, **k):
+        super().__init__(*a, directory=ROOT, **k)
+    def end_headers(self):
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Headers", "*")
+        self.send_header("Cache-Control", "no-store")
+        super().end_headers()
+    def do_OPTIONS(self):
+        self.send_response(204); self.end_headers()
 
 HTTPServer(("0.0.0.0", int(sys.argv[1])), H).serve_forever()
 ```
