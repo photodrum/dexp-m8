@@ -180,3 +180,32 @@ Zobrist после хода и отмены на дереве глубины 3. 
 загруженном хосте могут промахнуться — перезапустить. Расхождение perft искать через
 `Perft.divide(pos, depth)` — по первому ходу, сверяя с любым UCI-движком (`go perft N`).
 
+## Шахматы на книге
+
+Замер скорости `chess/` на PX30 (25.1г) — без APK: `tools/chess_bench.kt` вместе с `chess/` в dex
+и запуск через `app_process` (ART тот же, JIT включён). Сборка (с тем же `export`, что выше):
+
+```bash
+mkdir -p /tmp/chessbench/out
+$HOME/.local/kotlinc/bin/kotlinc -d /tmp/chessbench/out \
+    app/src/main/java/ru/ogrpfsense/dexpm8/chess/*.kt tools/chess_bench.kt
+(cd /tmp/chessbench/out && jar cf ../classes.jar .)
+$HOME/.local/android-sdk/build-tools/34.0.0/d8 --release --min-api 27 --output /tmp/chessbench \
+    /tmp/chessbench/classes.jar $HOME/.local/kotlinc/lib/kotlin-stdlib.jar
+```
+
+Запуск (`ADB=~/.local/android-sdk/platform-tools/adb`; экран на время замера не гаснет — после
+вернуть прежнее `settings get global stay_on_while_plugged_in`, на книге было 0):
+
+```bash
+$ADB push /tmp/chessbench/classes.dex /data/local/tmp/chess_bench.dex
+$ADB shell input keyevent KEYCODE_WAKEUP; $ADB shell svc power stayon usb
+$ADB shell 'CLASSPATH=/data/local/tmp/chess_bench.dex app_process /data/local/tmp Chess_benchKt levels'
+$ADB shell settings put global stay_on_while_plugged_in 0; $ADB shell rm /data/local/tmp/chess_bench.dex
+```
+
+Без `levels` — ещё perft и поиск на глубину (~3 мин), с `levels` — только уровни 1–8 (~1,5 мин).
+Ожидается (2026-11-26): perft ~410 узлов/мс, поиск в миттельшпиле ~80 узлов/мс; уровни 1–6 —
+своя глубина за ≤ 2,5 с, 7 — глубина 5 за ~4,7 с, 8 — до 20 с. Тот же класс на хосте — для
+сравнения (`java … Chess_benchKt`, perft ~10 500 узлов/мс). Числа — `docs/archive/DEVLOG-2026-11-26-25.1g.md`.
+

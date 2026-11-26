@@ -186,6 +186,7 @@ class SetLicensesScreen(act: EinkActivity) : Screen(act) {
             Item("utf8proc", "MIT · нормализация Unicode"),
             Item("xxHash", "BSD-2 · быстрые хеши"),
             Item("zlib", "zlib · сжатие, из NDK"),
+            Item("Pulse Chess", "MIT · шахматный движок"),
             Item("Manrope", "SIL Open Font License 1.1 · шрифт интерфейса"),
             Item("Literata", "SIL Open Font License 1.1 · шрифт книги", true),
             Item("Викисловарь", "CC BY-SA 4.0 · словарь по сети"),

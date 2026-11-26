@@ -14,8 +14,8 @@ import kotlin.random.Random
 //   а сама партия не трогается;
 // - прерванная итерация не пропадает: лучший уже досчитанный в ней ход берётся;
 // - новая итерация не начинается, если прошла половина времени (следующая дольше всех прежних);
-// - «неточность» для слабых уровней ([Limits.noise]): корень считается полным окном, ход
-//   выбирается случайно среди тех, что хуже лучшего не больше чем на noise сотых пешки.
+// - «неточность» для слабых уровней ([Limits.noise]): ход выбирается случайно среди тех, что хуже
+//   лучшего не больше чем на noise сотых пешки; корень — окном от (лучший − noise), а не полным.
 
 /** Оценки (сотые пешки) и мат — как Value.java в Pulse. */
 object Value {
@@ -122,7 +122,11 @@ class Search(private val random: Random = Random.Default) {
             for (i in 0 until root.size) {
                 val m = root.moves[i]
                 pos.makeMove(m)
-                val v = -search(depth - 1, -Value.INFINITE, if (full) Value.INFINITE else -alpha, 1)
+                // С «неточностью» точная оценка нужна только ходам не хуже лучшего на noise: нижняя
+                // граница окна — alpha − noise − 1; ход хуже неё вернёт ≤ границы и в выбор не попадёт.
+                // Полное окно (−∞, +∞) на PX30 не досчитывало даже глубину 1 за секунду (25.1г).
+                val low = if (full) maxOf(alpha - limits.noise - 1, -Value.INFINITE) else alpha
+                val v = -search(depth - 1, -Value.INFINITE, -low, 1)
                 pos.undoMove(m)
                 if (abort) break
                 if (full) root.values[i] = v

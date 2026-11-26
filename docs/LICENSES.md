@@ -19,6 +19,7 @@
 | utf8proc | 2.10.0 | MIT | `third_party/utf8proc` |
 | xxHash | 0.8.3 | BSD-2-Clause (библиотека) | `third_party/xxhash` |
 | zlib | из NDK | zlib | системная, не копируется |
+| Pulse Chess (fluxroot/pulse) | перенос на Kotlin, 2026-11 | MIT (`chess/PULSE-LICENSE.txt`) | `app/src/main/java/ru/ogrpfsense/dexpm8/chess/` — шахматы, п. 25 |
 | Manrope, Literata | — | SIL OFL 1.1 (`tools/fonts/OFL-*.txt`) | `app/src/main/res/font/` |
 
 AndroidX, Material и Kotlin stdlib в APK не входят (`app/build.gradle.kts`, `dependencies` пусто).
@@ -55,6 +56,7 @@ APK раздаётся пользователю через B76 «Обновле�
 колонки «название · лицензия · назначение», три страницы по 7 с пагинацией B6. Темы макета
 `MuPDF`, `Hunspell`, `NanoHTTPD` не выводятся — в сборке их нет (см. выше); добавлены
 «Викисловарь» и «MyMemory». Версии на экран не попадают: их место — `git submodule status`.
+Строка «Pulse Chess · MIT» добавлена 2026-11-26 (25.1г): 17 строк, страниц по-прежнему три.
 Итог лицензии проекта — подзаголовок шапки «GPL-2.0 · открытые исходники».
 Полные тексты лицензий лежат в самих подмодулях (`COPYING`, `LICENSE*`), в APK их нет.
 
