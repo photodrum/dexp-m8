@@ -113,6 +113,13 @@ class EinkActivity : Activity() {
         const val SCR_CHESS = 44
         const val SCR_CHESS_MOVES = 45
 
+        /**
+         * Шахматы по сети (п. 25.3б): B85 поиск (с диалогами B85а, B87), B86 партия (с B87а,
+         * B87б). Дверь — строка «По сети» в B77.
+         */
+        const val SCR_CHESS_NET = 46
+        const val SCR_CHESS_ONLINE = 47
+
 
         private const val REQ_STORAGE = 1
         private const val REQ_WRITE_SETTINGS = 2
@@ -1471,6 +1478,8 @@ class EinkActivity : Activity() {
             SCR_CHESS_NEW -> ChessNewScreen(this)
             SCR_CHESS -> ChessScreen(this)
             SCR_CHESS_MOVES -> ChessMovesScreen(this)
+            SCR_CHESS_NET -> ChessNetScreen(this)
+            SCR_CHESS_ONLINE -> ChessOnlineScreen(this)
             SCR_FIRST_LANG -> FirstLangScreen(this)
             SCR_FIRST_WIFI -> FirstWifiScreen(this)
             SCR_FIRST_PERM -> FirstPermScreen(this)

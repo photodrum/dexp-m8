@@ -2,7 +2,9 @@ package ru.ogrpfsense.dexpm8.ui
 
 import android.graphics.Canvas
 import ru.ogrpfsense.dexpm8.chess.Color
+import ru.ogrpfsense.dexpm8.chess.FicsEnd
 import ru.ogrpfsense.dexpm8.chess.GameSave
+import ru.ogrpfsense.dexpm8.chess.NetGame
 import ru.ogrpfsense.dexpm8.chess.RuSan
 import ru.ogrpfsense.dexpm8.chess.Status
 
@@ -20,6 +22,10 @@ import ru.ogrpfsense.dexpm8.chess.Status
  *   пагинация  кнопки 121.6×127.1 на y 1708.3 и «N / M» — как B11, B25, B75
  *
  * 10 ходов на странице; экран открывается на последней — там виден последний ход.
+ *
+ * Из B86 (`ChessNet.movesOnline`) показывает партию по сети: подзаголовок «По сети · 15 + 10 · N
+ * ходов», итог — по `ChessNet.endResult`. Если партию пришлось собрать из FEN посреди игры
+ * (`NetGame.resyncs`), лист начинается с этого места.
  */
 class ChessMovesScreen(act: EinkActivity) : Screen(act) {
 
@@ -27,7 +33,17 @@ class ChessMovesScreen(act: EinkActivity) : Screen(act) {
     private val kit = SettingsKit(ink, icons)
     private var page = 0
 
-    private val game get() = ChessSession.game
+    /** Партия по сети, если B81 открыт из B86 (`ChessNet.movesOnline`); иначе null. */
+    private val net: NetGame? get() = if (ChessNet.movesOnline) ChessNet.net else null
+
+    private val game get() = net?.game ?: ChessSession.game
+
+    private fun subtitle(): String {
+        val n = net
+        val tail = "${moves()} ${word(moves())}"
+        return if (n != null) "По сети · ${n.minutes} + ${n.increment} · $tail"
+        else "С компьютером · уровень ${ChessSession.level} · $tail"
+    }
 
     /** Ходов в листе партии, считая неполный последний. */
     private fun moves() = (game.ply + 1) / 2
@@ -36,8 +52,7 @@ class ChessMovesScreen(act: EinkActivity) : Screen(act) {
 
     override fun render(c: Canvas) {
         ink.rect(c, 0f, 0f, W, H, T.BG)
-        kit.header(c, "Ходы партии",
-            "С компьютером · уровень ${ChessSession.level} · ${moves()} ${word(moves())}")
+        kit.header(c, "Ходы партии", subtitle())
         kit.panel(c, 246f, 1430f)
 
         ink.text(c, "ХОД", 88f, T.base(286f, T.TS_META, 1.25f), T.TS_META, 700, T.G5)
@@ -72,6 +87,7 @@ class ChessMovesScreen(act: EinkActivity) : Screen(act) {
 
     /** «1–0 · мат на 17-м ходу»; null — партия идёт. */
     private fun summary(): String? {
+        if (net != null) return netSummary()
         val n = moves()
         val win = if (game.position.side == Color.WHITE) "0–1" else "1–0"
         return when {
@@ -85,6 +101,27 @@ class ChessMovesScreen(act: EinkActivity) : Screen(act) {
             game.status == Status.MOVES_75 -> "½–½ · 75 ходов без взятий"
             else -> "½–½ · мало материала"
         }
+    }
+
+    /** Итог партии по сети: «1–0 · мат на 17-м ходу», «½–½ · ничья»; null — партия идёт. */
+    private fun netSummary(): String? {
+        if (ChessNet.state != ChessNet.ENDED) return null
+        val score = when (ChessNet.endResult) {
+            "1-0" -> "1–0"
+            "0-1" -> "0–1"
+            "1/2-1/2" -> "½–½"
+            else -> "*"
+        }
+        val why = when (ChessNet.endKind) {
+            FicsEnd.MATE -> "мат на ${moves()}-м ходу"
+            FicsEnd.RESIGN -> "сдача"
+            FicsEnd.FLAG -> "время вышло"
+            FicsEnd.DRAW -> "ничья"
+            FicsEnd.DISCONNECT -> "соперник отключился"
+            FicsEnd.ABORT -> "партия прервана"
+            else -> "партия окончена"
+        }
+        return "$score · $why"
     }
 
     private fun word(n: Int): String = when {
