@@ -204,6 +204,7 @@ class Scanner(private val ctx: Context, private val db: LibraryDb) {
             author = author, authorSort = authorSort(m) ?: parsed?.first?.let { sortFromName(it) },
             series = clean(m?.series), seriesNum = m?.seriesNum ?: 0,
             lang = clean(m?.lang), coverId = clean(m?.coverId),
+            annotation = clean(m?.annotation),
         )
     }
 

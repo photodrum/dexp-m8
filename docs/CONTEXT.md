@@ -11,15 +11,6 @@
 
 ## СЛЕДУЮЩИЙ ШАГ
 
-**B12 «Аннотация», п. 27 (`docs/ROADMAP.md`) — Sonnet.** Ядро: `NativeBook.Meta.annotation`.
-1. 27.3 `LibraryDb` v14: `ALTER TABLE books ADD COLUMN annotation TEXT`, `UPDATE books SET
-   mtime = 0 WHERE format = 'fb2'` (как v2); `Info`, `upsert`, `Scanner.info`. В `Entry` не
-   грузить (1 ГБ) — отдельный `annotation(id): String?`.
-2. 27.4 `BookScreen`: карточка по `design_flat.py B12`, только при непустой; ширина 1213.9,
-   ≤ 320 по высоте, хвост «…» по слову; «Читать полностью» → `openReader(entry!!)`.
-3. 27.5 книга: FB2 с короткой, длинной и без аннотации, DjVu; начатая и новая.
-4. 27.6 DEVLOG, ✅ в ROADMAP. Подробно — `docs/archive/DEVLOG-2026-11-26-b12ann.md`.
-
 **Иконки** (2026-11-23): 129 бордов на странице «icons»; по «заменяй» — `design/README.md`.
 
 **Шахматы**, п. 25 (`docs/archive/CHESS-2026-11-21-plan.md`): ждём, с какого шага начать (25.1 —

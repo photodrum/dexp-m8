@@ -10,11 +10,14 @@ import ru.ogrpfsense.dexpm8.core.LibraryDb
  * B12 · О книге. Числа — из design/v5/B12.json.
  *
  * Данные — строка `LibraryDb` (`act.bookId`): название, автор, формат, размер, дата добавления,
- * прогресс. Нет данных до читалки — не рисуются: «Страниц» (на его месте «Добавлена»), строка
- * «Глава N из M · до конца» (вместо неё — статус: «Не начата» / «Читается» / «Прочитана»)
- * и карточка «Аннотация». Нажимаются «Назад», «Продолжить чтение» и «Оглавление» (обе — в читалку,
- * вторая сразу с панелью B10), «На полку» открывает [ShelfPicker], «Удалить» даёт диалог B53,
- * «…» в шапке — нижний лист [Sheet] с пунктом «Открыть папку с файлом» (B25 на каталог книги).
+ * прогресс. Нет данных до читалки — не рисуются: «Страниц» (на его месте «Добавлена») и строка
+ * «Глава N из M · до конца» (вместо неё — статус: «Не начата» / «Читается» / «Прочитана»).
+ * Карточка «Аннотация» (п. 27) — только у книги с аннотацией (FB2, `LibraryDb.annotation`, её
+ * читает сканер): столько текста, сколько влезает в блок макета (5 строк), хвост — «…» по слову;
+ * «Читать полностью» открывает книгу, как «Продолжить чтение». Нажимаются «Назад», «Продолжить
+ * чтение» и «Оглавление» (обе — в читалку, вторая сразу с панелью B10), «На полку» открывает
+ * [ShelfPicker], «Удалить» даёт диалог B53, «…» в шапке — нижний лист [Sheet] с пунктом
+ * «Открыть папку с файлом» (B25 на каталог книги).
  *
  * Лист «…»: в макете его нет. Собран из нижних листов проекта (`ShelfPicker`): затемнение экрана,
  * панель на всю ширину с радиусом 66, захват 117×11, заголовок 60/700, строка 132 высотой,
@@ -27,14 +30,21 @@ import ru.ogrpfsense.dexpm8.core.LibraryDb
  *   свойства     подпись 30/600 G5, значение 40/700 G1; колонки 519.2 / 939.7, строки 428.9 / 548.9
  *   прогресс     шкала 519.2,671.1 694.7×25.6; «NN%» 38/800 по правому краю 1360.1; строка статуса 711.9
  *   основная     41.1,904 1320.8×141.7; три кнопки y 1079.5, 421.4×112.4, x 41.1 / 490.9 / 940.6
+ *   аннотация    карточка 41.1,1233.1 1320.8×558.5 (r 51.19); «АННОТАЦИЯ» 95.1,1275 Manrope 32/800 G5;
+ *                текст 95.1,1331 шириной 1213.9, Literata 40/400 G1, шаг 64 (lh 1.6), 5 строк в 320;
+ *                «Читать полностью» 95,1689 Manrope 38/800 G2 + `arrowR@40.2x42` 465,1691 (вариант
+ *                для светлой поверхности, как у «Пропустить» на B8)
  */
 class BookScreen(act: EinkActivity) : Screen(act) {
 
     private val status = StatusBar(act, this, ink, icons)
     private val lit500: Typeface = T.literata(ink.res, 500)
     private val lit600: Typeface = T.literata(ink.res, 600)
+    private val lit400: Typeface = T.literata(ink.res, 400)
 
     private var entry: LibraryDb.Entry? = null
+    /** Строки аннотации, уже разбитые по ширине блока; пусто — у книги нет аннотации, карточки нет. */
+    private var annLines: List<String> = emptyList()
     /** Название и автор — [CoverText]: название сверху, автор снизу. Обложка 270.6…830, поле 25. */
     private val coverText = CoverText(ink)
     private val picker = ShelfPicker(ink, icons)
@@ -49,6 +59,12 @@ class BookScreen(act: EinkActivity) : Screen(act) {
     private companion object {
         const val R_BTN = 51.1875f
         const val R_MAIN = 65.8125f
+
+        /** Блок текста аннотации в макете: ширина 1213.9, высота 320 = 5 строк по 64 (40 × 1.6). */
+        const val ANN_W = 1213.9f
+        const val ANN_SIZE = 40f
+        const val ANN_STEP = 64f
+        const val ANN_LINES = 5
 
         val MONTHS = arrayOf(
             "января", "февраля", "марта", "апреля", "мая", "июня",
@@ -65,6 +81,7 @@ class BookScreen(act: EinkActivity) : Screen(act) {
             cover(c, e)
             info(c, e)
             buttons(c)
+            if (annLines.isNotEmpty()) annotationCard(c)
         }
         if (dim >= 0) dimEnd(c, dim)
         status.draw(c)
@@ -138,6 +155,60 @@ class BookScreen(act: EinkActivity) : Screen(act) {
         button(c, 41.1f, "Оглавление", "chapters", 146.3f, 1112.3f, 83.2f, 1111.5f)
         button(c, 490.9f, "На полку", "bookmark", 596f, 1112.3f, 532.9f, 1111.5f)
         button(c, 940.6f, "Удалить", "trash", 1045.7f, 1110.2f, 982.6f, 1109.3f)
+    }
+
+    /** Карточка «Аннотация»: заголовок, строки [annLines] с шагом 64, «Читать полностью →». */
+    private fun annotationCard(c: Canvas) {
+        ink.convex(c, 41.1f, 1233.1f, 1320.8f, 558.5f, R_BTN)
+        ink.text(c, "АННОТАЦИЯ", 95.1f, T.base(1275f, T.TS_BODY_S, 1.3f), T.TS_BODY_S, 800, T.G5)
+        for ((i, line) in annLines.withIndex()) {
+            ink.text(c, line, 95.1f, T.base(1331f + i * ANN_STEP, ANN_SIZE, 1.6f, true),
+                ANN_SIZE, 400, T.G1, lit400)
+        }
+        ink.text(c, "Читать полностью", 95f, T.base(1689f, 38f, 1.2f), 38f, 800, T.G2)
+        icons.draw(c, "arrowR@40.2x42", 465f, 1691f, 40.2f, 42f)
+    }
+
+    /**
+     * Аннотацию (абзацы через `\n`) — в строки блока: перенос по словам, каждый абзац с новой
+     * строки, не больше [ANN_LINES]. Не влезло — последняя строка укорачивается по слову и
+     * получает «…». Слово шире блока (адрес без пробелов) режется по символам, как [Ink.ellipsize].
+     */
+    private fun wrapAnnotation(text: String): List<String> {
+        val all = ArrayList<String>(ANN_LINES + 1)
+        val paras = text.split('\n').map { it.trim() }.filter { it.isNotEmpty() }
+        for (p in paras) {
+            var line = ""
+            for (w in p.split(' ')) {
+                if (w.isEmpty()) continue
+                val cand = if (line.isEmpty()) w else "$line $w"
+                if (line.isEmpty() || ink.measure(cand, ANN_SIZE, 400, lit400) <= ANN_W) {
+                    line = cand
+                } else {
+                    all.add(line)
+                    line = w
+                    if (all.size > ANN_LINES) break
+                }
+            }
+            if (line.isNotEmpty() && all.size <= ANN_LINES) all.add(line)
+            if (all.size > ANN_LINES) break
+        }
+        if (all.size <= ANN_LINES) return all
+        val out = ArrayList(all.subList(0, ANN_LINES))
+        out[ANN_LINES - 1] = withEllipsis(out[ANN_LINES - 1])
+        return out
+    }
+
+    /** Строка + «…» в ширину блока: слова с конца отбрасываются, запятая перед «…» не остаётся. */
+    private fun withEllipsis(line: String): String {
+        var t = line
+        while (true) {
+            val cand = t.trimEnd(' ', ',', ';', ':', '-', '–', '—') + "…"
+            if (ink.measure(cand, ANN_SIZE, 400, lit400) <= ANN_W) return cand
+            val sp = t.lastIndexOf(' ')
+            if (sp <= 0) return ink.ellipsize(t, ANN_W, ANN_SIZE, 400, lit400)
+            t = t.substring(0, sp)
+        }
     }
 
     private fun button(c: Canvas, x: Float, label: String, icon: String,
@@ -328,6 +399,12 @@ class BookScreen(act: EinkActivity) : Screen(act) {
             setDelete(true)
             return
         }
+        // «Читать полностью» в карточке аннотации: кнопка 95,1689 410×46, зона шире — до края карточки.
+        if (annLines.isNotEmpty() && entry != null && x >= 41.1f && x <= 700f &&
+            y >= 1660f && y <= 1780f) {
+            openReader(entry!!)
+            return
+        }
         if (x >= 1255f && x <= 1361.9f && y >= 112.3f && y <= 224.7f) {
             setSheet(true)
             return
@@ -423,6 +500,15 @@ class BookScreen(act: EinkActivity) : Screen(act) {
             Trace.step("book get FAIL: ${t.javaClass.simpleName}: ${t.message}")
             null
         }
+        annLines = try {
+            val e = entry
+            val text = if (e != null) act.db.annotation(e.id) else null
+            if (text != null) wrapAnnotation(text) else emptyList()
+        } catch (t: Throwable) {
+            Trace.step("book annotation FAIL: ${t.javaClass.simpleName}: ${t.message}")
+            emptyList()
+        }
+        Trace.step("book: аннотация ${annLines.size} строк, последняя «${annLines.lastOrNull() ?: ""}»")
     }
 
     override fun onDetachedFromWindow() {

@@ -37,6 +37,8 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         val seriesNum: Int,
         val lang: String?,
         val coverId: String?,
+        /** Аннотация FB2 (абзацы через `\n`, ≤ 4 КБ), версия 14, B12; null — нет. */
+        val annotation: String? = null,
     )
 
     /**
@@ -95,7 +97,8 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
                 "opened INTEGER NOT NULL DEFAULT 0," +
                 "pos TEXT," +
                 "view TEXT," +
-                "finished INTEGER NOT NULL DEFAULT 0)"
+                "finished INTEGER NOT NULL DEFAULT 0," +
+                "annotation TEXT)"
         )
         db.execSQL("CREATE INDEX books_title ON books (title_sort)")
         db.execSQL("CREATE INDEX books_author ON books (author_sort, title_sort)")
@@ -319,6 +322,13 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
             db.execSQL("ALTER TABLE books ADD COLUMN finished INTEGER NOT NULL DEFAULT 0")
             createReading(db)
         }
+        // Версия 14 (п. 27, B12 «Аннотация»): текст аннотации FB2. Сканер пропускает файл с тем же
+        // размером и mtime, поэтому у FB2 mtime сбрасывается (как в v2) — следующий проход
+        // перечитает `<title-info>` и заполнит колонку; статус, прогресс и полки не трогаются.
+        if (oldVersion < 14) {
+            db.execSQL("ALTER TABLE books ADD COLUMN annotation TEXT")
+            db.execSQL("UPDATE books SET mtime = 0 WHERE format = 'fb2'")
+        }
     }
 
     /**
@@ -523,7 +533,7 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
 
     /** Новая книга: статус «новая», добавлена сейчас. Известная — только метаданные и stamp. */
     fun upsert(i: Info) {
-        val cv = ContentValues(12)
+        val cv = ContentValues(13)
         cv.put("size", i.size)
         cv.put("mtime", i.mtime)
         cv.put("format", i.format)
@@ -536,6 +546,7 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         cv.put("series_num", i.seriesNum)
         cv.put("lang", i.lang)
         cv.put("cover_id", i.coverId)
+        cv.put("annotation", i.annotation)
         inTransaction {
             val db = writableDatabase
             if (db.update("books", cv, "path = ?", arrayOf(i.path)) == 0) {
@@ -819,6 +830,15 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
     fun get(id: Long): Entry? =
         readableDatabase.rawQuery("SELECT $COLUMNS FROM books WHERE _id = ?", arrayOf(id.toString())).use { c ->
             if (c.moveToFirst()) entry(c) else null
+        }
+
+    /**
+     * Аннотация книги для B12 (версия 14); null — нет. Не в [Entry] и не в [COLUMNS]: до 4 КБ
+     * на книгу в списках библиотеки на 1 ГБ ОЗУ не нужны — читается одним запросом при показе B12.
+     */
+    fun annotation(id: Long): String? =
+        readableDatabase.rawQuery("SELECT annotation FROM books WHERE _id = ?", arrayOf(id.toString())).use { c ->
+            if (c.moveToFirst()) c.getString(0)?.takeIf { it.isNotBlank() } else null
         }
 
     /** Последняя открытая книга (для выбранной строки B2/B11); null — ни одну не открывали. */
@@ -1488,6 +1508,7 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         /**
          * Версия 13 (п. 22, B32 «Статистика чтения»): таблица `reading` (минуты чтения по дням
          * и книгам) и колонка `books.finished`.
+         * Версия 14 (п. 27, B12): колонка `books.annotation` (аннотация FB2); у FB2 сброшен `mtime`.
          * Версия 12 (п. 12): аудиокниги — таблицы `audio`, `audio_files`, `audio_chapters`.
          * Версия 11 (R4.3): цитаты и заметки — колонки `kind`, `pos_end`, `note` в `bookmarks`.
          * Версия 9 (R2.5): настройки страницы DjVu — колонка `view` (строка `DjvuView.encode()`).
@@ -1495,7 +1516,7 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
          * Версия 7: пароль каталога в базе шифруется ключом из `AndroidKeyStore`
          * ([Pass], п. 10.12). Старые открытые пароли перешифровываются при обновлении.
          */
-        const val VERSION = 13
+        const val VERSION = 14
 
         /** Вид записи в таблице `bookmarks` (версия 11, R4.3): закладка, цитата, заметка. */
         const val MARK_BOOKMARK = 0
