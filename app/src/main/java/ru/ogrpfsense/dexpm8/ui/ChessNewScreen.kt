@@ -38,7 +38,7 @@ class ChessNewScreen(act: EinkActivity) : Screen(act) {
         ink.inset(c, 196f, 300f, 240f, 116f, 40f)
         ink.textCenter(c, level.toString(), 199f, 236f, T.base(328.3f, 48f, 1.2f), 48f, 700, T.G1)
         ink.convex(c, 470f, 300f, 115f, 120f, 55f)
-        icons.drawRound(c, "next@53x53", 470f, 300f, 115f, 120f, 53f, 53f)
+        icons.drawRound(c, "next@54.8x57.1", 470f, 300f, 115f, 120f, 53f, 55.2f)
         ink.text(c, "Уровень $level из ${Level.COUNT}", 625f, T.base(306f, T.TS_ACTION, 1.25f),
             T.TS_ACTION, 700, T.G1)
         ink.text(c, ink.ellipsize(DESC[level - 1], 735f, T.TS_BODY_S, 600), 625f,

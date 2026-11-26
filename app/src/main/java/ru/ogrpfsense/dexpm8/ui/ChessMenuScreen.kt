@@ -79,7 +79,7 @@ class ChessMenuScreen(act: EinkActivity) : Screen(act) {
         ink.text(c, ink.ellipsize(desc, 987.2f, T.TS_BODY_S, 600), 226.7f,
             T.base(y + 61.7f, T.TS_BODY_S, 1.25f), T.TS_BODY_S, 600, T.G4)
         if (divider) ink.rect(c, 226.7f, y + 153.8f, 1096.9f, 1.8f, T.G11)
-        icons.draw(c, "next@53x53", 1295.2f, y + 35.6f, 43.9f, 45.7f)
+        icons.draw(c, "next@43.9x45.7", 1295.2f, y + 35.6f, 43.9f, 45.7f)
     }
 
     /** «С компьютером, уровень 4 · ход 13 · сегодня, 14:20». */
