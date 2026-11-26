@@ -1,13 +1,18 @@
 // Хост-проверка шахматного ядра chess/ (п. 25.1а): perft на эталонных позициях
 // (chessprogramming.org, «Perft Results», и набор Мартина Седлака), FEN туда и обратно,
 // отказ на битых FEN, ключ Zobrist после хода и отмены.
+// П. 25.1б: SAN (запись, разбор, туда-обратно) и окончание партии по правилам FIDE.
 // Запуск и сборка — docs/CHECKS.md, «Шахматы на хосте».
 import kotlin.system.exitProcess
 import ru.ogrpfsense.dexpm8.chess.Fen
+import ru.ogrpfsense.dexpm8.chess.Game
 import ru.ogrpfsense.dexpm8.chess.Move
 import ru.ogrpfsense.dexpm8.chess.MoveGen
 import ru.ogrpfsense.dexpm8.chess.Perft
 import ru.ogrpfsense.dexpm8.chess.Position
+import ru.ogrpfsense.dexpm8.chess.San
+import ru.ogrpfsense.dexpm8.chess.Square
+import ru.ogrpfsense.dexpm8.chess.Status
 
 private var fails = 0
 private var oks = 0
@@ -71,6 +76,141 @@ private fun keyWalk(pos: Position, depth: Int, gens: Array<MoveGen>, ply: Int = 
 }
 
 private fun rejects(fen: String): Boolean = try { Fen.parse(fen); false } catch (e: IllegalArgumentException) { true }
+
+/** SAN хода, записанного как «e2e4», в позиции [fen]. */
+private fun sanOf(fen: String, uci: String): String {
+    val p = Fen.parse(fen)
+    return San.write(p, San.fromUci(p, uci))
+}
+
+/** Разбор SAN → UCI; ошибка разбора — «отказ». */
+private fun parsed(fen: String, san: String): String =
+    try { Move.uci(San.parse(Fen.parse(fen), san)) } catch (e: IllegalArgumentException) { "отказ" }
+
+/** Обход дерева: SAN каждого хода разбирается в тот же ход, UCI — тоже, SAN в позиции не повторяются. */
+private fun sanWalk(pos: Position, depth: Int, gens: Array<MoveGen>, ply: Int = 0): Int {
+    if (depth == 0) return 0
+    var bad = 0
+    val l = gens[ply].legal(pos)
+    val moves = l.moves.copyOf(l.size)
+    val seen = HashSet<String>()
+    for (m in moves) {
+        val s = San.write(pos, m)
+        if (!seen.add(s) || San.parse(pos, s) != m || San.fromUci(pos, Move.uci(m)) != m) {
+            if (bad++ == 0) println("  SAN «$s» (${Move.uci(m)}) не сошёлся: ${Fen.write(pos)}")
+        }
+        pos.makeMove(m)
+        bad += sanWalk(pos, depth - 1, gens, ply + 1)
+        pos.undoMove(m)
+    }
+    return bad
+}
+
+/** Партия по ходам SAN. */
+private fun game(fen: String, vararg sans: String): Game {
+    val g = Game(fen)
+    for (s in sans) g.playSan(s)
+    return g
+}
+
+private const val QUEENS = "1k6/8/8/8/4Q2Q/8/8/K6Q w - - 0 1"
+private const val PROMO = "2K2r2/4P3/8/8/8/8/8/3k4 w - - 0 1"
+private const val CASTLE = "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1"
+private const val PINNED = "4k3/8/8/b7/8/2N3N1/8/4K3 w - - 0 1"
+private const val EP = "rnbqkbnr/ppp1p1pp/8/3pPp2/8/8/PPPP1PPP/RNBQKBNR w KQkq f6 0 3"
+private const val TWO_N = "4k3/8/8/8/8/5N2/8/1N2K3 w - - 0 1"
+
+/** 25.1б: запись и разбор SAN. */
+private fun sanChecks() {
+    for ((fen, uci, want) in listOf(
+        Triple(Fen.START, "e2e4", "e4"), Triple(Fen.START, "g1f3", "Nf3"),
+        Triple(TWO_N, "b1d2", "Nbd2"), Triple(TWO_N, "f3d2", "Nfd2"),
+        Triple("4k3/8/8/R7/8/8/8/R3K3 w - - 0 1", "a1a3", "R1a3"),
+        Triple("4k3/8/8/R7/8/8/8/R3K3 w - - 0 1", "a5a3", "R5a3"),
+        Triple(QUEENS, "h4e1", "Qh4e1"), Triple(QUEENS, "e4e1", "Qee1"), Triple(QUEENS, "h1e1", "Q1e1"),
+        Triple(PINNED, "g3e2", "Ne2"), Triple(EP, "e5f6", "exf6"),
+        Triple(PROMO, "e7e8q", "e8=Q"), Triple(PROMO, "e7f8n", "exf8=N"),
+        Triple(CASTLE, "e1g1", "O-O"), Triple(CASTLE, "e1c1", "O-O-O"),
+        Triple("5k2/8/8/8/8/8/8/4K2R w K - 0 1", "e1g1", "O-O+"),
+        Triple("4k3/8/8/8/8/8/8/R3K3 w Q - 0 1", "a1a8", "Ra8+"),
+        Triple("7k/8/6K1/8/8/8/8/R7 w - - 0 1", "a1a8", "Ra8#"),
+    )) check("SAN $uci → $want: $fen", sanOf(fen, uci), want)
+
+    for ((name, fen) in listOf(
+        "начальная" to Fen.START, "Kiwipete" to KIWIPETE,
+        "позиция 4" to "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1",
+        "позиция 5" to "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8",
+        "три ферзя" to QUEENS, "превращение" to PROMO,
+    )) check("SAN туда-обратно: $name, глубина 2", sanWalk(Fen.parse(fen), 2, Array(2) { MoveGen() }), 0)
+
+    for ((fen, san, want) in listOf(
+        Triple(Fen.START, "Nf3+", "g1f3"), Triple(Fen.START, "Ng1-f3", "g1f3"), Triple(Fen.START, "Ng1f3", "g1f3"),
+        Triple(Fen.START, "e2-e4", "e2e4"), Triple(Fen.START, "Pe4", "e2e4"), Triple(TWO_N, "Nbd2!?", "b1d2"),
+        Triple(CASTLE, "0-0", "e1g1"), Triple(CASTLE, "O-O-O", "e1c1"),
+        Triple(PROMO, "e8Q", "e7e8q"), Triple(PROMO, "e8q", "e7e8q"), Triple(PROMO, "exf8N+", "e7f8n"),
+        Triple(EP, "exf6 e.p.", "e5f6"), Triple(PINNED, "Ne2", "g3e2"),
+        Triple(QUEENS, "Qe1", "отказ"), Triple(Fen.START, "Nd4", "отказ"), Triple(PROMO, "e8", "отказ"),
+        Triple(CASTLE, "Kg1", "отказ"), Triple(Fen.START, "O-O", "отказ"), Triple(Fen.START, "z9", "отказ"),
+        Triple(Fen.START, "", "отказ"), Triple(Fen.START, "exd3", "отказ"),
+    )) check("разбор «$san»", parsed(fen, san), want)
+}
+
+/** 25.1б: окончание партии по правилам FIDE. */
+private fun ruleChecks() {
+    // Мат, итог, лист партии, отмена; пат.
+    val fool = game(Fen.START, "f3", "e5", "g4", "Qh4#")
+    check("детский мат: статус, итог, лист", listOf(fool.status, fool.result(), fool.san.joinToString(" ")),
+        listOf(Status.CHECKMATE, "0-1", "f3 e5 g4 Qh4#"))
+    check("после мата ходов нет, ход отвергнут",
+        fool.legalMoves().isEmpty() && runCatching { fool.playUci("a2a3") }.isFailure, true)
+    check("отмена мата", fool.undo() && fool.status == Status.PLAYING && fool.ply == 3 && fool.result() == "*", true)
+    val scholar = game(Fen.START, "e4", "e5", "Bc4", "Nc6", "Qh5", "Nf6", "Qxf7#")
+    check("мат Qxf7#: итог", scholar.san.last() to scholar.result(), "Qxf7#" to "1-0")
+    check("пат", Game("7k/5Q2/6K1/8/8/8/8/8 b - - 0 1").let { it.status to it.result() }, Status.STALEMATE to "1/2-1/2")
+
+    // 50 и 75 ходов; мат последним ходом важнее 75 ходов.
+    val g50 = game("4k3/8/8/8/8/8/8/R3K3 w - - 98 80", "Ra2")
+    check("99 полуходов — требовать ничью нельзя", g50.canClaimDraw(), false)
+    g50.playSan("Kd7")
+    check("100 полуходов — можно, партия идёт", g50.canClaimDraw() to g50.status, true to Status.PLAYING)
+    check("150 полуходов — ничья сама", game("4k3/8/8/8/8/8/8/R3K3 w - - 148 80", "Ra2", "Kd7").status, Status.MOVES_75)
+    check("мат 150-м полуходом — мат", game("7k/8/6K1/8/8/8/8/R7 w - - 149 100", "Ra8#").status, Status.CHECKMATE)
+
+    // Повторения: 3 — право требовать, 5 — ничья сама.
+    val rep = Game()
+    val cycle = listOf("Nf3", "Nf6", "Ng1", "Ng8")
+    for (s in cycle) rep.playSan(s)
+    check("повтор 2: требовать нельзя", rep.repetitions() to rep.canClaimDraw(), 2 to false)
+    for (s in cycle) rep.playSan(s)
+    check("повтор 3: требовать можно", rep.repetitions() to rep.canClaimDraw(), 3 to true)
+    for (s in cycle + cycle) rep.playSan(s)
+    check("повтор 5: ничья сама", rep.repetitions() to rep.status, 5 to Status.FIVEFOLD)
+    check("отмена пятого повтора", rep.undo() && rep.status == Status.PLAYING, true)
+
+    // Взятие на проходе есть в ключе, но связано — для повторения не считается (FIDE 9.2.3).
+    val epg = game("4k3/3p4/8/K3P2r/8/8/8/8 b - - 0 1", "d5")
+    val keyEp = epg.position.key
+    val hasEp = epg.position.epSquare != Square.NONE
+    for (s in listOf("Ka4", "Kf7", "Ka5", "Ke8")) epg.playSan(s)
+    check("связанное взятие на проходе: ключи разные, повтор 2",
+        listOf(hasEp, epg.position.key != keyEp, epg.repetitions()), listOf(true, true, 2))
+
+    // Мёртвый материал.
+    for ((fen, want) in listOf(
+        "4k3/8/8/8/8/8/8/4K3 w - - 0 1" to true,
+        "4k3/8/8/8/8/8/8/2B1K3 w - - 0 1" to true,
+        "4k3/8/8/8/8/8/8/1N2K3 w - - 0 1" to true,
+        "4kb2/8/8/8/8/8/8/2B1K3 w - - 0 1" to true,
+        "4k3/8/8/8/8/4B3/8/2B1K3 w - - 0 1" to true,
+        "2b1k3/8/8/8/8/8/8/2B1K3 w - - 0 1" to false,
+        "1n2k3/8/8/8/8/8/8/1N2K3 w - - 0 1" to false,
+        "4k3/8/8/8/8/8/8/1N2KN2 w - - 0 1" to false,
+        "1n2k3/8/8/8/8/8/8/2B1K3 w - - 0 1" to false,
+        "4k3/8/8/8/8/8/4P3/4K3 w - - 0 1" to false,
+        "4k3/8/8/8/8/8/8/2BBK3 w - - 0 1" to false,
+    )) check("мёртвый материал $want: $fen", Game.isDeadMaterial(Fen.parse(fen)), want)
+    check("Kxe2 → ничья по материалу", game("4k3/8/8/8/8/8/4r3/4K3 w - - 0 1", "Kxe2").status, Status.DEAD)
+}
 
 /** Сделать ходы, записанные как «e2e4». */
 private fun play(p: Position, vararg ucis: String): Position {
@@ -147,6 +287,9 @@ fun main() {
     val back = play(Fen.parse(Fen.START), "g1f3", "g8f6", "f3g1", "f6g8")
     check("Кf3 Кf6 Кg1 Кg8: ключ как у начальной и повтор найден",
         back.key == Fen.parse(Fen.START).key && back.isRepetition(), true)
+
+    sanChecks()
+    ruleChecks()
 
     println(if (fails == 0) "=== ВСЁ ОК ($oks проверок)" else "=== ПРОВАЛОВ: $fails из ${oks + fails}")
     if (fails != 0) exitProcess(1)
