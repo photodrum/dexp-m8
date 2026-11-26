@@ -2,17 +2,24 @@
 // (chessprogramming.org, «Perft Results», и набор Мартина Седлака), FEN туда и обратно,
 // отказ на битых FEN, ключ Zobrist после хода и отмены.
 // П. 25.1б: SAN (запись, разбор, туда-обратно) и окончание партии по правилам FIDE.
+// П. 25.1в: оценка, поиск (мат, пределы, stop), уровни и «неточность».
 // Запуск и сборка — docs/CHECKS.md, «Шахматы на хосте».
+import kotlin.random.Random
 import kotlin.system.exitProcess
+import ru.ogrpfsense.dexpm8.chess.Eval
 import ru.ogrpfsense.dexpm8.chess.Fen
 import ru.ogrpfsense.dexpm8.chess.Game
+import ru.ogrpfsense.dexpm8.chess.Level
+import ru.ogrpfsense.dexpm8.chess.Limits
 import ru.ogrpfsense.dexpm8.chess.Move
 import ru.ogrpfsense.dexpm8.chess.MoveGen
 import ru.ogrpfsense.dexpm8.chess.Perft
 import ru.ogrpfsense.dexpm8.chess.Position
 import ru.ogrpfsense.dexpm8.chess.San
+import ru.ogrpfsense.dexpm8.chess.Search
 import ru.ogrpfsense.dexpm8.chess.Square
 import ru.ogrpfsense.dexpm8.chess.Status
+import ru.ogrpfsense.dexpm8.chess.Value
 
 private var fails = 0
 private var oks = 0
@@ -212,6 +219,102 @@ private fun ruleChecks() {
     check("Kxe2 → ничья по материалу", game("4k3/8/8/8/8/8/4r3/4K3 w - - 0 1", "Kxe2").status, Status.DEAD)
 }
 
+/** Законен ли ход [m] в позиции [fen]. */
+private fun legalIn(fen: String, m: Int): Boolean {
+    val l = MoveGen().legal(Fen.parse(fen))
+    return (0 until l.size).any { l.moves[it] == m }
+}
+
+/** Сыграть главную линию в партии: статус в конце или −1, если ход незаконен. */
+private fun pvPlays(fen: String, pv: IntArray): Int {
+    val g = Game(fen)
+    for (m in pv) { if (!g.isLegal(m)) return -1; g.play(m) }
+    return g.status
+}
+
+private fun uciOf(m: Int) = if (m == Move.NONE) "нет хода" else Move.uci(m)
+
+private const val HANGING_Q = "4k3/8/8/3q4/8/8/8/3RK3 w - - 0 1"
+private const val MATE_ONLY_KG8 = "7k/8/6K1/8/8/8/8/R7 b - - 0 1"
+
+/** 25.1в: оценка и поиск. */
+private fun searchChecks() {
+    check("оценка: начальная позиция = темп", Eval.evaluate(Fen.parse(Fen.START)), Eval.TEMPO)
+    check("оценка: позиция 4 и её зеркало равны",
+        Eval.evaluate(Fen.parse("r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1")),
+        Eval.evaluate(Fen.parse("r2q1rk1/pP1p2pp/Q4n2/bbp1p3/Np6/1B3NBn/pPPP1PPP/R3K2R b KQ - 0 1")))
+    check("оценка: лишний ферзь у того, чей ход, > 900 / у соперника < −900",
+        Eval.evaluate(Fen.parse("4k3/8/8/8/8/8/8/3QK3 w - - 0 1")) > 900 &&
+            Eval.evaluate(Fen.parse("4k3/8/8/8/8/8/8/3QK3 b - - 0 1")) < -900, true)
+
+    val s = Search(Random(1))
+    // Мат: ход (если он один), «мат в N», линия ведёт к мату и длиной 2N − 1.
+    for ((fen, n, want) in listOf(
+        Triple("6k1/5ppp/8/8/8/8/8/3R2K1 w - - 0 1", 1, "d1d8"),
+        Triple("7k/8/6K1/8/8/8/8/R7 w - - 0 1", 1, "a1a8"),
+        Triple("7k/8/8/8/8/8/R7/1R4K1 w - - 0 1", 2, ""),
+    )) {
+        val r = s.think(Fen.parse(fen), Limits(depth = 6))
+        check("мат в $n: $fen",
+            listOf(want.isEmpty() || uciOf(r.move) == want, Value.mateIn(r.value), r.pv.size, pvPlays(fen, r.pv)),
+            listOf(true, n, 2 * n - 1, Status.CHECKMATE))
+    }
+    val only = s.think(Fen.parse(MATE_ONLY_KG8), Limits(depth = 6))
+    check("единственный ход — сразу, без углубления", uciOf(only.move) to only.depth, "h8g8" to 1)
+    check("мат нам через ход: «мат в −1»", Value.mateIn(-(Value.CHECKMATE - 2)) to Value.mateIn(150), -1 to 0)
+    check("висящий ферзь взят", uciOf(s.think(Fen.parse(HANGING_Q), Limits(depth = 3)).move), "d1d5")
+    val mated = s.think(Fen.parse("7k/7Q/6K1/8/8/8/8/8 b - - 0 1"))
+    val stale = s.think(Fen.parse("7k/5Q2/6K1/8/8/8/8/8 b - - 0 1"))
+    check("мат и пат: хода нет, оценки −мат и 0", listOf(uciOf(mated.move), mated.value, uciOf(stale.move), stale.value),
+        listOf("нет хода", -Value.CHECKMATE, "нет хода", Value.DRAW))
+
+    // Пределы: глубина, узлы, время, stop() из другого потока; позиция не портится.
+    val kiwi = Fen.parse(KIWIPETE)
+    val rd = s.think(Fen.parse(Fen.START), Limits(depth = 4))
+    check("предел глубины 4", rd.depth to legalIn(Fen.START, rd.move), 4 to true)
+    val rn = s.think(kiwi, Limits(nodes = 5000))
+    check("предел 5000 узлов", rn.nodes <= 5000 && legalIn(KIWIPETE, rn.move), true)
+    val rt = s.think(kiwi, Limits(timeMs = 300))
+    check("предел 300 мс (вышло ${rt.ms} мс, глубина ${rt.depth})", rt.ms <= 450 && rt.depth >= 1 && legalIn(KIWIPETE, rt.move), true)
+    Thread { Thread.sleep(200); s.stop() }.start()
+    val rs = s.think(kiwi)
+    check("stop() через 200 мс (вышло ${rs.ms} мс)", rs.ms < 1000 && legalIn(KIWIPETE, rs.move), true)
+    check("позиция после поиска не тронута", Fen.write(kiwi) to kiwi.key, KIWIPETE to Fen.parse(KIWIPETE).key)
+
+    // Копия видит повторения партии; ход на копии не трогает партию.
+    val g = game(Fen.START, "Nf3", "Nf6", "Ng1", "Ng8")
+    val before = Fen.write(g.position)
+    val c = g.position.copy()
+    check("копия: повтор виден, ключ и FEN те же", listOf(c.isRepetition(), c.key == g.position.key, Fen.write(c)),
+        listOf(true, true, before))
+    c.makeMove(San.parse(c, "e4"))
+    check("копия: ход на копии партию не трогает", Fen.write(g.position) to g.position.isRepetition(), before to true)
+
+    // Уровни и «неточность».
+    for (n in 1..Level.COUNT) {
+        val lim = Level.of(n).let { it.copy(timeMs = minOf(it.timeMs, 400)) }
+        check("уровень $n: законный ход", legalIn(KIWIPETE, Search(Random(n)).think(kiwi, lim).move), true)
+    }
+    val weak = Search(Random(7))
+    val seen = HashSet<Int>()
+    for (i in 1..30) {
+        val m = weak.think(Fen.parse(Fen.START), Limits(depth = 1, noise = 400)).move
+        if (legalIn(Fen.START, m)) seen.add(m) else seen.add(-1)
+    }
+    check("неточность 400: ходы законны и разные (${seen.size})", !seen.contains(-1) && seen.size >= 3, true)
+    check("неточность 60: ферзя всё равно берёт (10 раз)",
+        (1..10).all { uciOf(weak.think(Fen.parse(HANGING_Q), Limits(depth = 2, noise = 60)).move) == "d1d5" }, true)
+    check("уровень 1: мат в 1 ставит", uciOf(weak.think(Fen.parse("6k1/5ppp/8/8/8/8/8/3R2K1 w - - 0 1"), Level.of(1)).move),
+        "d1d8")
+
+    // Скорость (на книге сравнить в 25.1г).
+    for ((name, fen, d) in listOf(Triple("начальная", Fen.START, 5), Triple("Kiwipete", KIWIPETE, 4))) {
+        val r = Search().think(Fen.parse(fen), Limits(depth = d))
+        println("search: $name, глубина ${r.depth} — ${r.nodes} узлов за ${r.ms} мс, ход ${uciOf(r.move)}, оценка ${r.value}")
+        check("search: $name, глубина $d досчитана", r.depth, d)
+    }
+}
+
 /** Сделать ходы, записанные как «e2e4». */
 private fun play(p: Position, vararg ucis: String): Position {
     for (u in ucis) {
@@ -290,6 +393,7 @@ fun main() {
 
     sanChecks()
     ruleChecks()
+    searchChecks()
 
     println(if (fails == 0) "=== ВСЁ ОК ($oks проверок)" else "=== ПРОВАЛОВ: $fails из ${oks + fails}")
     if (fails != 0) exitProcess(1)

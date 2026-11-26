@@ -76,6 +76,30 @@ class Position {
     private var stClock = IntArray(64)
     private var stSize = 0
 
+    /**
+     * Полная копия вместе со стеком отмены: поиск (25.1в) считает на ней и видит повторения
+     * из уже сыгранной партии. Снимать в потоке, которому принадлежит позиция.
+     */
+    fun copy(): Position {
+        val p = Position()
+        board.copyInto(p.board)
+        pieces.copyInto(p.pieces)
+        material.copyInto(p.material)
+        p.castling = castling
+        p.epSquare = epSquare
+        p.side = side
+        p.halfmoveClock = halfmoveClock
+        p.key = key
+        p.halfmoveNumber = halfmoveNumber
+        val n = maxOf(64, stKey.size)
+        p.stKey = stKey.copyOf(n)
+        p.stCastling = stCastling.copyOf(n)
+        p.stEp = stEp.copyOf(n)
+        p.stClock = stClock.copyOf(n)
+        p.stSize = stSize
+        return p
+    }
+
     // --- Расстановка (FEN) ---
 
     internal fun changeSide(c: Int) {
