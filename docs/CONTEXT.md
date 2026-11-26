@@ -16,8 +16,8 @@
 **Шахматы**, п. 25 (`docs/archive/CHESS-2026-11-21-plan.md`): ждём, с какого шага начать (25.1 —
 **Opus**). **Релиз с шахматами запрещён**: версию, `update.json`, `gl_publish_apk.py` не трогать.
 
-**Релиз 1.0.0** (код 4): после push проверить
-`curl -s https://git.ogrpfsense.ru/denisle/dexp-m8/-/raw/main/update.json` и GitHub-зеркало.
+<!-- **Релиз 1.0.0** (код 4): после push проверить
+`curl -s https://git.ogrpfsense.ru/denisle/dexp-m8/-/raw/main/update.json` и GitHub-зеркало. -->
 
 ## Долги до релиза
 
