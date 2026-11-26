@@ -174,6 +174,76 @@ static void test_meta_edge(void) {
     check(1, "meta: fuzz survived");
 }
 
+/* ---------------------------------------------- аннотация <title-info> */
+static void test_meta_annotation(void) {
+    book_meta m;
+    int rc;
+
+    /* 9. Абзацы, теги внутри, сущности, пробелы; аннотация из <section> тела не берётся. */
+    rc = meta_of(&m,
+        "<FictionBook><description><title-info><book-title>Т</book-title>"
+        "<annotation>\n  <p>Роман о <emphasis>дьяволе</emphasis>,\n посетившем  Москву.</p>\n"
+        "  <empty-line/>\n  <p> Сатира &amp; мистика </p><p></p>"
+        "<subtitle>Подзаголовок</subtitle><poem><stanza><v>Строка</v></stanza></poem>"
+        "</annotation><lang>ru</lang></title-info></description>"
+        "<body><section><annotation><p>Не та</p></annotation></section></body></FictionBook>");
+    check(rc == 0 && m.complete && eq(m.lang, "ru"), "ann: rc, fields after annotation");
+    check(eq(m.annotation,
+             "Роман о дьяволе, посетившем Москву.\nСатира & мистика\nПодзаголовок\nСтрока"),
+          "ann: paragraphs joined by \\n");
+    book_meta_free(&m);
+
+    /* 10. Нет аннотации, пустая, самозакрытая — NULL. */
+    rc = meta_of(&m, "<FictionBook><description><title-info><book-title>Т</book-title>"
+                     "</title-info></description></FictionBook>");
+    check(rc == 0 && !m.annotation, "ann: none -> NULL");
+    book_meta_free(&m);
+    rc = meta_of(&m, "<FictionBook><description><title-info><annotation> <p> </p>\n"
+                     "</annotation><annotation/></title-info></description></FictionBook>");
+    check(rc == 0 && !m.annotation, "ann: empty -> NULL");
+    book_meta_free(&m);
+
+    /* 11. Префикс пространства имён и windows-1251. */
+    rc = meta_of(&m,
+        "<?xml version=\"1.0\" encoding=\"windows-1251\"?><fb:FictionBook><fb:description>"
+        "<fb:title-info><fb:annotation><fb:p>\xD0\xEE\xEC\xE0\xED</fb:p>"
+        "<fb:p>\xAB\xB8\xBB</fb:p></fb:annotation></fb:title-info></fb:description></fb:FictionBook>");
+    check(rc == 0 && eq(m.annotation, "Роман\n«ё»"), "ann: fb: prefix, cp1251");
+    book_meta_free(&m);
+
+    /* 12. Огромная: срез на выходе по границе символа, без '\n' в хвосте. */
+    size_t big = 40000;
+    char *x = (char *) malloc(big * 2 + 300);   /* «</p><p>» — 7 байт вместо 2 */
+    strcpy(x, "<FictionBook><description><title-info><annotation><p>");
+    char *w = x + strlen(x);
+    for (size_t i = 0; i < big / 2; i++) {
+        if (i % 100 == 99) { memcpy(w, "</p><p>", 7); w += 7; }
+        else { *w++ = '\xD0'; *w++ = '\xAF'; }
+    }
+    strcpy(w, "</p></annotation></title-info></description></FictionBook>");
+    rc = meta_of(&m, x);
+    size_t al = m.annotation ? strlen(m.annotation) : 0;
+    /* хвост — целая «Я» (D0 AF): не '\n' и не оторванный первый байт */
+    check(rc == 0 && al > 3000 && al <= 4096 && (unsigned char) m.annotation[al - 1] == 0xAF &&
+          strchr(m.annotation, '\n') != NULL, "ann: long capped on char boundary");
+    book_meta_free(&m);
+
+    /* 13. Обрезанное начало файла посреди аннотации — её начало, complete=0;
+     *     все префиксы — без падений (ASan). */
+    size_t n = (size_t) (strstr(x, "</p><p>") - x) + 40;
+    rc = meta_exact(&m, x, n);
+    check(rc == 0 && !m.complete && m.annotation && strlen(m.annotation) > 100 &&
+          (unsigned char) m.annotation[strlen(m.annotation) - 1] == 0xAF,
+          "ann: unclosed in head -> beginning, no torn char");
+    book_meta_free(&m);
+    for (size_t k = 0; k <= 400; k++) {
+        meta_exact(&m, x, k);
+        book_meta_free(&m);
+    }
+    check(1, "ann: prefixes survived");
+    free(x);
+}
+
 
 
 
@@ -235,6 +305,7 @@ int main(int argc, char **argv) {
 
     test_meta_main(path);
     test_meta_edge();
+    test_meta_annotation();
 
     printf(failures ? "\n%d FAILURES\n" : "\nall good\n", failures);
     return failures ? 1 : 0;

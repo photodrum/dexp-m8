@@ -67,6 +67,8 @@ object NativeBook {
      * [authors] — все авторы через ", "; [firstName]…[nickname] — первый автор.
      * [complete] = false — `</title-info>` не попал в прочитанное начало файла
      * (огромная аннотация): поля могут быть неполными, можно перечитать больше.
+     * [annotation] — `<annotation>` из `<title-info>`: абзацы через `\n`, без тегов,
+     * не длиннее 4 КБ (UTF-8); не закрыта в прочитанном начале — её начало; null — нет.
      */
     class Meta(
         val title: String?,
@@ -80,6 +82,7 @@ object NativeBook {
         val lang: String?,
         val coverId: String?,
         val complete: Boolean,
+        val annotation: String?,
     )
 
     /** Сколько байт с начала файла читать для [metaFb2] (как BOOK_META_HEAD в book.h). */
@@ -101,6 +104,7 @@ object NativeBook {
             firstName = f[2], middleName = f[3], lastName = f[4], nickname = f[5],
             series = f[6], seriesNum = f[7]?.toIntOrNull() ?: 0,
             lang = f[8], coverId = f[9], complete = f[10] == "1",
+            annotation = f.getOrNull(11),
         )
     }
 

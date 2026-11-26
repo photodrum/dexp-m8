@@ -119,12 +119,12 @@ static jstring utf8_to_jstring(JNIEnv *env, const char *s) {
 }
 
 /* Порядок полей — как индексы META_* в NativeBook.kt. */
-#define META_FIELDS 11
+#define META_FIELDS 12
 
 /*
- * Метаданные FB2 (только <title-info>) по началу файла. Наружу — String[11]:
+ * Метаданные FB2 (только <title-info>) по началу файла. Наружу — String[12]:
  * title, authors, first, middle, last, nickname, series, seriesNum, lang,
- * coverId, complete ("1"/"0"); null — ошибка разбора.
+ * coverId, complete ("1"/"0"), annotation (абзацы через '\n'); null — ошибка разбора.
  */
 JNIEXPORT jobjectArray JNICALL
 JNI_FN(metaFb2Native)(JNIEnv *env, jclass cls, jbyteArray data, jint len) {
@@ -157,7 +157,8 @@ JNI_FN(metaFb2Native)(JNIEnv *env, jclass cls, jbyteArray data, jint len) {
     }
     const char *f[META_FIELDS] = {
         m.title, m.authors, m.first_name, m.middle_name, m.last_name, m.nickname,
-        m.series, num[0] ? num : NULL, m.lang, m.cover_id, m.complete ? "1" : "0"
+        m.series, num[0] ? num : NULL, m.lang, m.cover_id, m.complete ? "1" : "0",
+        m.annotation
     };
     for (int i = 0; i < META_FIELDS; i++) {
         if (!f[i]) continue;

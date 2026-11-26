@@ -11,21 +11,22 @@
 
 ## СЛЕДУЮЩИЙ ШАГ
 
-**Иконки** (2026-11-23): все 129 нарисованы бордами на странице «icons» (Penpot, «UI»), источник —
-`design/icons.txt`. Человек правит их там. По «заменяй»: снять борды (`tools/penpot_icons_dump.js`),
-обновить `design/icons.txt`, `python3 tools/icon_specs.py`, проверки, книга — `design/README.md`,
-«Иконки: страница icons».
+**B12 «Аннотация», п. 27 (`docs/ROADMAP.md`) — Sonnet.** Ядро: `NativeBook.Meta.annotation`.
+1. 27.3 `LibraryDb` v14: `ALTER TABLE books ADD COLUMN annotation TEXT`, `UPDATE books SET
+   mtime = 0 WHERE format = 'fb2'` (как v2); `Info`, `upsert`, `Scanner.info`. В `Entry` не
+   грузить (1 ГБ) — отдельный `annotation(id): String?`.
+2. 27.4 `BookScreen`: карточка по `design_flat.py B12`, только при непустой; ширина 1213.9,
+   ≤ 320 по высоте, хвост «…» по слову; «Читать полностью» → `openReader(entry!!)`.
+3. 27.5 книга: FB2 с короткой, длинной и без аннотации, DjVu; начатая и новая.
+4. 27.6 DEVLOG, ✅ в ROADMAP. Подробно — `docs/archive/DEVLOG-2026-11-26-b12ann.md`.
 
-B74 «Забыть устройство», проверки «не проверено» и хвосты отменены: релиз они не блокируют.
+**Иконки** (2026-11-23): 129 бордов на странице «icons»; по «заменяй» — `design/README.md`.
 
-1. Шахматы, п. 25 (`docs/ROADMAP.md`, план — `docs/archive/CHESS-2026-11-21-plan.md`): ждём решение человека — с какого шага начать. Ядро `chess/` (25.1, перенос Pulse на Kotlin, **Opus**) можно без макетов; экраны ждут бордов (вопрос в `DESIGN_QUESTIONS.md`).
-**Релиз с шахматами — запрещён** (решение 2026-11-21), пока они не сделаны целиком и не проверены на книге: версию не поднимать, `update.json` и `gl_publish_apk.py` не трогать.
+**Шахматы**, п. 25 (`docs/archive/CHESS-2026-11-21-plan.md`): ждём, с какого шага начать (25.1 —
+**Opus**). **Релиз с шахматами запрещён**: версию, `update.json`, `gl_publish_apk.py` не трогать.
 
-**Релиз 1.0.0** (код 4, `c9f31d18…`) — APK в GitLab Packages, `update.json` обновлён (DEVLOG).
-Пока коммит с `update.json` не в `main`, пользователи его не видят. Проверить после push:
+**Релиз 1.0.0** (код 4): после push проверить
 `curl -s https://git.ogrpfsense.ru/denisle/dexp-m8/-/raw/main/update.json` и GitHub-зеркало.
-
-Закрыто: релизный билд, правка, снимки макета — `docs/archive/CONTEXT-2026-11-21-snimki-i-relizbuild.md`.
 
 ## Долги до релиза
 

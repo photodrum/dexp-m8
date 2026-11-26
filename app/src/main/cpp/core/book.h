@@ -72,6 +72,7 @@ typedef struct {
     int series_num;     /* <sequence number>, 0 — нет */
     char *lang;
     char *cover_id;     /* id <binary> обложки, без '#' */
+    char *annotation;   /* <annotation>: абзацы через '\n', до 4 КБ; не закрыта — начало */
     int complete;       /* 1 — дошли до </title-info>; 0 — начало файла обрезано раньше */
     int error;          /* 0 = ok, иначе код (book_error_text) */
 } book_meta;

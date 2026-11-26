@@ -492,6 +492,16 @@ enum { ENC_UTF8 = 0, ENC_CP1251, ENC_LATIN1 };
 #define META_FIELD_IN  4096   /* больше сырых байт на поле не читаем */
 #define META_FIELD_OUT 1024   /* больше байт в поле не отдаём */
 
+/*
+ * Аннотация: на B12 влезает ~5 строк (~400 знаков), поэтому 4 КБ на выходе —
+ * с запасом; 16 КБ на входе — разметка (<p>, <emphasis>) занимает место.
+ */
+#define META_ANN_IN  (16 * 1024)
+#define META_ANN_OUT 4096
+
+/* Временная метка границы абзаца до схлопывания пробелов; наружу — '\n'. */
+#define PARA_MARK '\x01'
+
 /* windows-1251, байты 0x80..0xFF -> Unicode (0x98 в кодировке не занят). */
 static const unsigned short CP1251[128] = {
     0x0402, 0x0403, 0x201A, 0x0453, 0x201E, 0x2026, 0x2020, 0x2021,
@@ -576,21 +586,74 @@ static int put_bmp(buf *o, unsigned cp) {
 
 
 
+/* Тег абзаца в аннотации: <p>, <v>, <subtitle>, <empty-line> (открывающий или закрывающий). */
+static int para_tag(const char *t, const char *e) {
+    if (t < e && *t == '/') t++;
+    const char *n = t;
+    while (t < e && *t != '>' && *t != '/' && (unsigned char) *t > ' ') t++;
+    for (const char *c = t; c > n; c--)
+        if (c[-1] == ':') { n = c; break; }                       /* префикс fb: */
+    size_t l = (size_t) (t - n);
+    return (l == 1 && (tolower((unsigned char) n[0]) == 'p' || tolower((unsigned char) n[0]) == 'v')) ||
+           (l == 8 && !strncasecmp(n, "subtitle", 8)) ||
+           (l == 10 && !strncasecmp(n, "empty-line", 10));
+}
+
+/* Срезанный на входе хвост UTF-8 (начало символа без продолжения) — убрать. */
+static void utf8_trim_tail(buf *o) {
+    size_t i = o->len, k = 0;
+    while (i && k < 4 && ((unsigned char) o->p[i - 1] & 0xC0) == 0x80) { i--; k++; }
+    if (!i) return;
+    unsigned char lead = (unsigned char) o->p[i - 1];
+    size_t need = lead >= 0xF0 ? 3 : lead >= 0xE0 ? 2 : lead >= 0xC0 ? 1 : 0;
+    if (lead >= 0x80 && k < need) o->len = i - 1;
+}
+
+/* Метки абзацев -> '\n': без пробелов вокруг, подряд — одна, по краям — нет. */
+static void paras_finish(buf *o) {
+    size_t w = 0;
+    int pend = 0;
+    for (size_t r = 0; r < o->len; r++) {
+        char ch = o->p[r];
+        if (ch == PARA_MARK) {
+            while (w && o->p[w - 1] == ' ') w--;
+            pend = 1;
+            continue;
+        }
+        if (pend) {
+            if (ch == ' ') continue;
+            if (w) o->p[w++] = '\n';
+            pend = 0;
+        }
+        o->p[w++] = ch;
+    }
+    o->len = w;
+}
+
 /*
  * Сырые байты поля -> malloc-строка UTF-8: вложенные теги выброшены, кодировка
- * перекодирована, сущности раскрыты, пробелы схлопнуты, длина ограничена.
+ * перекодирована, сущности раскрыты, пробелы схлопнуты, длина ограничена
+ * (in_cap сырых байт, out_cap на выходе). paras = 1 — границы <p>/<v>/<subtitle>/
+ * <empty-line> становятся '\n' (аннотация), иначе всё в одну строку.
  * *oom = 1 при нехватке памяти; NULL без oom — поле пустое.
  */
-static char *meta_field(const char *s, size_t n, int enc, int *oom) {
+static char *meta_text(const char *s, size_t n, int enc, int *oom,
+                       size_t in_cap, size_t out_cap, int paras) {
     buf o;
     memset(&o, 0, sizeof(o));
-    if (n > META_FIELD_IN) n = META_FIELD_IN;
+    if (n > in_cap) n = in_cap;
     for (size_t i = 0; i < n; i++) {
         unsigned char c = (unsigned char) s[i];
         if (c == '<') {                       /* <emphasis> и т. п.: тег выбросить, текст склеить */
+            size_t t = i + 1;
             while (i < n && s[i] != '>') i++;
+            if (paras && para_tag(s + t, s + i)) {
+                if (!buf_reserve(&o, 1)) { *oom = 1; free(o.p); return NULL; }
+                o.p[o.len++] = PARA_MARK;
+            }
             continue;
         }
+        if (c == (unsigned char) PARA_MARK) continue;   /* управляющий байт в тексте — не наш */
         if (c < 0x80 || enc == ENC_UTF8) {
             if (!buf_reserve(&o, 1)) { *oom = 1; free(o.p); return NULL; }
             o.p[o.len++] = (char) c;
@@ -599,11 +662,14 @@ static char *meta_field(const char *s, size_t n, int enc, int *oom) {
             if (!put_bmp(&o, cp)) { *oom = 1; free(o.p); return NULL; }
         }
     }
+    utf8_trim_tail(&o);
     buf_normalize(&o);
-    if (o.len > META_FIELD_OUT) {
-        size_t k = META_FIELD_OUT;
+    if (paras) paras_finish(&o);
+    if (o.len > out_cap) {
+        size_t k = out_cap;
         while (k && ((unsigned char) o.p[k] & 0xC0) == 0x80) k--;   /* не рвать символ */
         o.len = k;
+        if (paras) while (o.len && (o.p[o.len - 1] == '\n' || o.p[o.len - 1] == ' ')) o.len--;
     }
     char *r = NULL;
     if (o.len) {
@@ -615,16 +681,39 @@ static char *meta_field(const char *s, size_t n, int enc, int *oom) {
     return r;
 }
 
-/* Текст элемента от конца открывающего тега до </qname>; NULL, если не закрыт. */
-static char *meta_elem(const char *body, const char *end, const char *qname,
-                       int enc, int *oom) {
+/* Короткое поле (название, имя, серия): одна строка, META_FIELD_IN / META_FIELD_OUT. */
+static char *meta_field(const char *s, size_t n, int enc, int *oom) {
+    return meta_text(s, n, enc, oom, META_FIELD_IN, META_FIELD_OUT, 0);
+}
+
+/* Указатель на </qname> после body; NULL, если не закрыт в [body, end). */
+static const char *meta_close(const char *body, const char *end, const char *qname) {
     size_t ql = strlen(qname);
     for (const char *z = body; z + 2 + ql < end; z++) {
         if (z[0] == '<' && z[1] == '/' && !strncasecmp(z + 2, qname, ql) &&
             (z[2 + ql] == '>' || (unsigned char) z[2 + ql] <= ' '))
-            return meta_field(body, (size_t) (z - body), enc, oom);
+            return z;
     }
     return NULL;
+}
+
+/* Текст элемента от конца открывающего тега до </qname>; NULL, если не закрыт. */
+static char *meta_elem(const char *body, const char *end, const char *qname,
+                       int enc, int *oom) {
+    const char *z = meta_close(body, end, qname);
+    return z ? meta_field(body, (size_t) (z - body), enc, oom) : NULL;
+}
+
+/*
+ * <annotation> из <title-info>: абзацы через '\n'. Не закрыта в прочитанном
+ * начале файла (огромная аннотация) — берётся то, что успели: на экран всё
+ * равно попадает только начало.
+ */
+static char *meta_annotation(const char *body, const char *end, const char *qname,
+                             int enc, int *oom) {
+    const char *z = meta_close(body, end, qname);
+    if (!z) z = end;
+    return meta_text(body, (size_t) (z - body), enc, oom, META_ANN_IN, META_ANN_OUT, 1);
 }
 
 static char *meta_attr(const char *s, const char *e, const char *local, int enc, int *oom) {
@@ -686,6 +775,7 @@ void book_meta_free(book_meta *m) {
     free(m->series);
     free(m->lang);
     free(m->cover_id);
+    free(m->annotation);
     memset(m, 0, sizeof(*m));
 }
 
@@ -796,6 +886,9 @@ int book_meta_fb2(book_meta *m, const char *xml, size_t len) {
             m->title = meta_elem(body, end, qname, enc, &oom);
         } else if (!strcmp(name, "lang") && !self_close && !m->lang) {
             m->lang = meta_elem(body, end, qname, enc, &oom);
+        } else if (!strcmp(name, "annotation") && !self_close && !m->annotation &&
+                   !in_author) {
+            m->annotation = meta_annotation(body, end, qname, enc, &oom);
         } else if (!strcmp(name, "sequence") && !m->series) {
             m->series = meta_attr(q, gt, "name", enc, &oom);
             const char *v;
