@@ -177,6 +177,21 @@ python3 tools/gl_publish_apk.py app/build/outputs/apk/release/app-release.apk 1.
 `~/.config/dexp-m8/git-push-token`. Прямая ссылка на файл открывается **без токена**
 (проект публичный) — именно поэтому B76 может качать APK.
 
+**Релиз на GitHub** (зеркало `photodrum/dexp-m8`; само зеркало релизы и теги не создаёт) —
+последним шагом, после `git push` релизного коммита:
+
+```bash
+python3 tools/gh_publish_release.py app/build/outputs/apk/release/app-release.apk 1.4.3 --dry-run  # проверка, токен не нужен
+python3 tools/gh_publish_release.py app/build/outputs/apk/release/app-release.apk 1.4.3
+```
+
+Скрипт ждёт (до 20 мин, `--wait=N`), пока коммит доедет до GitHub, создаёт релиз `v<версия>` с
+текстом из `update.json` и файлом `dexp-m8-<версия>.apk`, скачивает его обратно и сверяет
+`sha256`. Повторный запуск обновляет релиз и заменяет файл. **Нужен токен GitHub:** fine-grained
+PAT аккаунта `photodrum`, репозиторий `dexp-m8`, право `Contents: Read and write`, файл
+`~/.config/dexp-m8/github-token` (права 600) или `GITHUB_TOKEN`. `url` в `update.json` остаётся на
+GitLab Packages — книга качает оттуда.
+
 `versionCode` обязан расти монотонно — сравнение идёт по нему, а не по `versionName`.
 Ответ 404 на обоих хостах B43 показывает как «версия ещё не опубликована», код 5xx и обрыв — «сервер не ответил».
 Проверить манифест без книги: `curl -s https://git.ogrpfsense.ru/denisle/dexp-m8/-/raw/main/update.json`.
