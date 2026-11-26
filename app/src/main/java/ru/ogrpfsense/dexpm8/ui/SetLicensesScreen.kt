@@ -11,15 +11,16 @@ import android.graphics.Canvas
  *   панель       41,298 1321×1072 (r R_TILE)
  *   строка       название 88,y 42/700 G1; описание 88,y+53.5 32/600 G4;
  *                разделитель 88,y+124 1228×2; шаг строк 152, первая на 327
- *   пагинация    желоб 614.3,1766 175.5×29.2, сегмент G3 (деталь B6)
+ *   пагинация    кнопки «назад» / «вперёд» 121.6×127.1 на y 1708.3 и «N / M» (как B11, B25)
  *
  * Данные — `docs/LICENSES.md`: один компонент на строку, колонки «название · лицензия ·
  * назначение». Версии не выводятся: на E-Ink они не нужны, а сверить их можно по
  * `git submodule status`.
  *
  * **Отступления от макета (решение 2026-11-19, вариант «а»):**
- * 1. Строк 16, а в макете 7 мест — список листается страницами по 7, пагинация взята
- *    с B6 (на B75 её нет, но и места под неё макет не занимает). Одна строка = один
+ * 1. Строк 16, а в макете 7 мест — список листается страницами по 7, пагинация —
+ *    кнопки с B11/B25 (на B75 её нет, но и места под неё макет не занимает; полоска-желоб
+ *    B6 заменена кнопками по замечанию 2026-11-26). Одна строка = один
  *    компонент: в сгруппированной строке читатель сам разбирался бы, какая лицензия
  *    к чему, а экран для того и нужен, чтобы это было видно без разбирательства.
  * 2. Из тем макета убраны `MuPDF` (AGPL-3.0, удалён в 7.3б — PDF нет), `Hunspell`
@@ -84,16 +85,22 @@ class SetLicensesScreen(act: EinkActivity) : Screen(act) {
     }
 
     /**
-     * Пагинация B6: желоб 175.5×29.2 с углублением и сегментом G3 по числу страниц.
-     * Пока страница одна, не рисуется.
+     * Пагинация кнопками, как на B11 и B25: выпуклая «назад» слева, тёмная «вперёд» справа,
+     * между ними «N / M». Пока страница одна, не рисуется.
      */
     private fun pager(c: Canvas) {
         val n = pages()
         if (n < 2) return
-        ink.inset(c, SEG_X, SEG_Y, SEG_W, SEG_H, T.R_TRACK)
-        val w = SEG_TOTAL / n
-        ink.roundRect(c, SEG_FILL_X + page * w, SEG_FILL_Y, w, SEG_FILL_H, 8.2265625f, T.G3)
+        ink.convex(c, PAGER_L_X, PAGER_Y, PAGER_W, PAGER_H, R_PAGE)
+        ink.convexDark(c, PAGER_R_X, PAGER_Y, PAGER_W, PAGER_H, R_PAGE)
+        icons.drawRound(c, "back@54.8x57.1", PAGER_L_X, PAGER_Y, PAGER_W, PAGER_H, 54.8f, 57.1f)
+        icons.drawRound(c, "next@53x53", PAGER_R_X, PAGER_Y, PAGER_W, PAGER_H, 53f, 53f)
+        ink.textCenter(c, "${page + 1} / $n", 0f, W,
+            T.base(1738.3f, T.TS_PAGE, 1.25f), T.TS_PAGE, 600, T.G1)
     }
+
+    private fun inRect(x: Float, y: Float, rx: Float, ry: Float, rw: Float, rh: Float) =
+        x >= rx && x <= rx + rw && y >= ry && y <= ry + rh
 
     private fun pages() = Math.max(1, (ITEMS.size + PER_PAGE - 1) / PER_PAGE)
 
@@ -109,9 +116,12 @@ class SetLicensesScreen(act: EinkActivity) : Screen(act) {
             act.pop()
             return
         }
-        // Пагинация: полоса под списком, левая половина — назад, правая — вперёд (как B6).
-        if (y >= 1730f && y <= 1840f) {
-            goPage(if (x < W / 2f) page - 1 else page + 1)
+        // Пагинация: касаются самих кнопок «назад» / «вперёд».
+        if (pages() < 2) return
+        if (inRect(x, y, PAGER_L_X, PAGER_Y, PAGER_W, PAGER_H)) {
+            goPage(page - 1)
+        } else if (inRect(x, y, PAGER_R_X, PAGER_Y, PAGER_W, PAGER_H)) {
+            goPage(page + 1)
         }
     }
 
@@ -150,16 +160,14 @@ class SetLicensesScreen(act: EinkActivity) : Screen(act) {
         private const val SOURCES = "Исходники — git.ogrpfsense.ru/denisle/dexp-m8"
         private const val SOURCE_Y = 1420f
 
-        // Пагинация — деталь B6: желоб 614.3,1766 175.5×29.2, дно 617,1771.5 170×21,
-        // сегмент 619.7,1771.5 высотой 16.5; сумма сегментов — желоб минус зазоры.
-        private const val SEG_X = 614.3f
-        private const val SEG_Y = 1766f
-        private const val SEG_W = 175.5f
-        private const val SEG_H = 29.2f
-        private const val SEG_FILL_X = 619.7f
-        private const val SEG_FILL_Y = 1771.5f
-        private const val SEG_FILL_H = 16.5f
-        private const val SEG_TOTAL = 164.6f
+        // Пагинация — кнопки B11/B25 (замечание 2026-11-26): «назад» 41.1,1708.3 и «вперёд»
+        // 1240.4,1708.3, обе 121.6×127.1, радиус 58.5.
+        private const val PAGER_Y = 1708.3f
+        private const val PAGER_L_X = 41.1f
+        private const val PAGER_R_X = 1240.4f
+        private const val PAGER_W = 121.6f
+        private const val PAGER_H = 127.1f
+        private const val R_PAGE = 58.5f
 
         /**
          * Список по `docs/LICENSES.md`: движки, библиотеки, шрифты, данные по сети.

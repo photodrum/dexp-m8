@@ -28,7 +28,8 @@ class AppEntry(val label: String, val pkg: String, val cls: String, val icon: St
  *   «…» в макете нет; по решению пользователя (2026-11-11) — в правом верхнем углу плитки,
  *       точки вертикальные: горизонтальная `more` повёрнута на 90°; зона нажатия 100×100
  *   нажата     вдавленная форма (дно G11) и «Открывается…»
- *   пагинация  желоб 614.3,1766 175.5×29.2; сегмент 619.7,1771.5 54.8×16.5 G3 r 8.2
+ *   пагинация  кнопки «назад» / «вперёд» 121.6×127.1 на y 1708.3 и «N / M» (как B11, B25;
+ *       вместо макетной полоски — замечание 2026-11-26)
  *   лист B36   выпуклый лист с y=670 (захват, гнездо значка 59,730, название 60/700, подробности,
  *       пять строк через 150 px от y=942, кнопка «Удалить приложение» 59,1723); выбранная
  *       плитка нарисована вдавленной
@@ -127,10 +128,19 @@ class AppsScreen(act: EinkActivity) : Screen(act) {
         c.restoreToCount(saved)
     }
 
+    /**
+     * Пагинация кнопками, как на B11 и B25 (замечание 2026-11-26): выпуклая «назад», тёмная
+     * «вперёд» и «N / M» между ними. Пока страница одна, не рисуется.
+     */
     private fun pager(c: Canvas) {
-        ink.inset(c, 614.3f, 1766f, 175.5f, 29.2f, T.R_TRACK)
-        val w = SEG_TOTAL / pages()
- ink.roundRect(c, 619.7f + page * w, 1771.5f, w, 16.5f, 8.2265625f, T.G3)
+        val n = pages()
+        if (n < 2) return
+        ink.convex(c, PAGER_L_X, PAGER_Y, PAGER_W, PAGER_H, R_PAGE)
+        ink.convexDark(c, PAGER_R_X, PAGER_Y, PAGER_W, PAGER_H, R_PAGE)
+        icons.drawRound(c, "back@54.8x57.1", PAGER_L_X, PAGER_Y, PAGER_W, PAGER_H, 54.8f, 57.1f)
+        icons.drawRound(c, "next@53x53", PAGER_R_X, PAGER_Y, PAGER_W, PAGER_H, 53f, 53f)
+        ink.textCenter(c, "${page + 1} / $n", 0f, W,
+            T.base(1738.3f, T.TS_PAGE, 1.25f), T.TS_PAGE, 600, T.G1)
     }
 
     // --------------------------------------------------------------- B36 · лист
@@ -328,10 +338,16 @@ class AppsScreen(act: EinkActivity) : Screen(act) {
             redraw()
             return
         }
-        // Пагинация: нижняя полоса — левая половина назад, правая вперёд.
-        if (y >= 1730f && y <= 1840f) {
-     goPage(if (x < W / 2f) page - 1 else page + 1)
-     return
+        // Пагинация: касаются самих кнопок «назад» / «вперёд» (их нет, пока страница одна).
+        if (pages() > 1 && y >= PAGER_Y && y <= PAGER_Y + PAGER_H) {
+            if (x >= PAGER_L_X && x <= PAGER_L_X + PAGER_W) {
+                goPage(page - 1)
+                return
+            }
+            if (x >= PAGER_R_X && x <= PAGER_R_X + PAGER_W) {
+                goPage(page + 1)
+                return
+            }
         }
  val first = page * PER_PAGE
         for (k in 0 until Math.min(PER_PAGE, apps.size - first)) {
@@ -469,7 +485,13 @@ class AppsScreen(act: EinkActivity) : Screen(act) {
         private const val TILE_W = 409.5f
         private const val TILE_H = 336.4f
         private const val LABEL_PAD = 20f
- private const val SEG_TOTAL = 164.6f    // желоб 170 минус зазоры
+        // Кнопки пагинации B11/B25: «назад» 41.1,1708.3 и «вперёд» 1240.4,1708.3, 121.6×127.1.
+        private const val PAGER_Y = 1708.3f
+        private const val PAGER_L_X = 41.1f
+        private const val PAGER_R_X = 1240.4f
+        private const val PAGER_W = 121.6f
+        private const val PAGER_H = 127.1f
+        private const val R_PAGE = 58.5f
         private const val OPEN_DELAY_MS = 150L
         private const val DOTS_HIT = 100f
         private const val GENERIC = "apps"
