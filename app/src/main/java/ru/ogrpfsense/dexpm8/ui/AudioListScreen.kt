@@ -63,9 +63,10 @@ class AudioListScreen(act: EinkActivity) : Screen(act) {
 
     private fun header(c: Canvas) {
         kit.header(c, "Аудиокниги", subtitle())
-        // Поиск: клавиша 107×112 в 1255,113.5, иконка `search` 34.1×36.2.
+        // Поиск: клавиша 107×112 в 1255,113.5. Иконка `search` в макете 34.1×36.2 — на экране
+        // выходила мелкой, поэтому 45.7×47.6, как у остальных клавиш шапки (B7 «Главы», B6).
         ink.convex(c, 1255f, 113.5f, 107f, 112f, 51.2f)
-        icons.drawRoundRing(c, "search", 1255f, 113.5f, 107f, 112f, 34.1f, 36.2f)
+        icons.drawRoundRing(c, "search", 1255f, 113.5f, 107f, 112f, 45.7f, 47.6f)
     }
 
     private fun subtitle(): String {
