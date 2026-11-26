@@ -1,5 +1,10 @@
 # DEXP M8 Prudentia — кастомная оболочка
 
+[![Скачать APK](https://img.shields.io/badge/%D0%A1%D0%BA%D0%B0%D1%87%D0%B0%D1%82%D1%8C_APK-DEXP_M8-2ea44f?style=for-the-badge&logo=android&logoColor=white)](https://git.ogrpfsense.ru/denisle/dexp-m8/-/releases/permalink/latest/downloads/app-release.apk)
+
+Последняя версия — [страница релиза](https://git.ogrpfsense.ru/denisle/dexp-m8/-/releases/permalink/latest);
+прямая ссылка на APK всегда ведёт на свежий релиз. Ставится поверх прежней версии без потери данных.
+
 Полная замена родного софта книги DEXP M8 Prudentia: лаунчер, библиотека,
 читалка, плеер. Дизайн — страница **v5** файла «UI» в Penpot (76 бордов) и спецификация
 на странице «v5 дизайн-система». Код — Kotlin без AndroidX и Compose, разбор метаданных

@@ -79,8 +79,8 @@ def main() -> None:
 
     upload(path, version, name)
     print()
-    print("=== ссылка для скачивания (открыть в браузере, будучи залогиненным) ===")
-    print(f"https://git.ogrpfsense.ru/denisle/dexp-m8/-/packages/{version}")
+    print("=== где лежит в GitLab ===")
+    print("«Развёртывание → Реестр пакетов»; релиз со ссылкой — `tools/gl_release.py`")
     print()
     print("=== прямая ссылка на файл (сюда смотрит `url` в update.json) ===")
     print(f"https://git.ogrpfsense.ru/api/v4/projects/{PROJECT}/packages/generic/dexp-m8/{version}/{name}")

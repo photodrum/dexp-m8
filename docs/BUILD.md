@@ -177,6 +177,18 @@ python3 tools/gl_publish_apk.py app/build/outputs/apk/release/app-release.apk 1.
 `~/.config/dexp-m8/git-push-token`. Прямая ссылка на файл открывается **без токена**
 (проект публичный) — именно поэтому B76 может качать APK.
 
+**Релиз в GitLab и кнопка «Скачать APK» в README.** После `gl_publish_apk.py` и `git push`:
+
+```bash
+python3 tools/gl_release.py 1.4.3 --ref=<коммит сборки>   # тег v1.4.3 + релиз + ссылка на APK
+```
+
+Релиз виден в «Развёртывание → Релизы»; у файла постоянный адрес
+`https://git.ogrpfsense.ru/denisle/dexp-m8/-/releases/permalink/latest/downloads/app-release.apk`
+— на него ведёт кнопка в начале `README.md`, поэтому README при выпуске версии править **не
+нужно**. Без `--ref` тег ставится на `HEAD`. Повторный запуск обновляет только текст релиза.
+Токен — тот же `git-push-token` со scope `api`.
+
 **Релиз на GitHub** (зеркало `photodrum/dexp-m8`; само зеркало релизы и теги не создаёт) —
 последним шагом, после `git push` релизного коммита:
 
