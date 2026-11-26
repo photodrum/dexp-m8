@@ -35,6 +35,23 @@ g++ -std=c++17 -O1 -Wall -Wextra -Iapp/src/main/cpp/engines \
 `app/src/main/cpp/README.md`, раздел «Раскладка DjVu». В APK он не входит.
 
 
+## Аннотация EPUB на хосте
+
+`core/EpubMeta.kt` (`dc:description` из OPF) не зависит от Android — собирается вместе с тестом
+`tools/epub_meta_test.kt`, который строит EPUB в памяти (zip в `/tmp`, без файлов в репозитории):
+
+```bash
+export JAVA_HOME=$HOME/.local/jdk PATH=$HOME/.local/jdk/bin:$PATH JAVA_OPTS=-Xmx1200m
+$HOME/.local/kotlinc/bin/kotlinc -d /tmp/epubtest/out \
+    app/src/main/java/ru/ogrpfsense/dexpm8/core/EpubMeta.kt tools/epub_meta_test.kt
+java -Dfile.encoding=UTF-8 -cp "/tmp/epubtest/out:$HOME/.local/kotlinc/lib/kotlin-stdlib.jar" Epub_meta_testKt
+```
+
+Ожидается 22 строки `OK` и `=== ВСЁ ОК`: Calibre (HTML, экранированный как XML), обычный текст
+с жёсткими переносами, CDATA, вложенные теги, пустое/самозакрытое/второе описание, описание из
+одной точки или «…» (null), путь с `%20`,
+windows-1251 и BOM, предел 2000 знаков без разрыва символа, не-zip и битые пути (null).
+
 ## Проверка разбора OPDS на хосте
 
 Ядро сетевых каталогов (`core/Opds.kt`) разбирается на JVM без устройства и без Gradle:

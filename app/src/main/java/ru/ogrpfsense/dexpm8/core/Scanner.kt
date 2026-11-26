@@ -17,7 +17,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  *
  * Файл с тем же размером и mtime, что в базе, не разбирается. Метаданные читает только
  * FB2 ([NativeBook.metaFb2], один буфер на весь проход); у остальных форматов и у `.fb2.zip`
- * название — имя файла без расширения, автора нет.
+ * название — имя файла без расширения, автора нет. Аннотация (B12) — у FB2 из `<title-info>`,
+ * у EPUB из `dc:description` ([EpubMeta]); название и автора EPUB это не меняет.
  *
  * Без разрешения `READ_EXTERNAL_STORAGE` или без смонтированного хранилища проход
  * пропускается и ничего не удаляет: иначе пустой обход стёр бы всю библиотеку.
@@ -204,7 +205,7 @@ class Scanner(private val ctx: Context, private val db: LibraryDb) {
             author = author, authorSort = authorSort(m) ?: parsed?.first?.let { sortFromName(it) },
             series = clean(m?.series), seriesNum = m?.seriesNum ?: 0,
             lang = clean(m?.lang), coverId = clean(m?.coverId),
-            annotation = clean(m?.annotation),
+            annotation = clean(if (format == "epub") EpubMeta.annotation(f) else m?.annotation),
         )
     }
 

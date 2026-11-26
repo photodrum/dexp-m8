@@ -37,7 +37,7 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         val seriesNum: Int,
         val lang: String?,
         val coverId: String?,
-        /** Аннотация FB2 (абзацы через `\n`, ≤ 4 КБ), версия 14, B12; null — нет. */
+        /** Аннотация FB2 или EPUB (абзацы через `\n`, ≤ 4 КБ), версия 14/15, B12; null — нет. */
         val annotation: String? = null,
     )
 
@@ -329,6 +329,9 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
             db.execSQL("ALTER TABLE books ADD COLUMN annotation TEXT")
             db.execSQL("UPDATE books SET mtime = 0 WHERE format = 'fb2'")
         }
+        // Версия 15 (п. 27): аннотация EPUB (`dc:description`, [EpubMeta]) — то же, что в v14 для FB2:
+        // колонка уже есть, у EPUB сбрасывается `mtime`, чтобы следующий проход прочитал OPF.
+        if (oldVersion < 15) db.execSQL("UPDATE books SET mtime = 0 WHERE format = 'epub'")
     }
 
     /**
@@ -1508,6 +1511,7 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         /**
          * Версия 13 (п. 22, B32 «Статистика чтения»): таблица `reading` (минуты чтения по дням
          * и книгам) и колонка `books.finished`.
+         * Версия 15 (п. 27): аннотация EPUB — у EPUB сброшен `mtime`, колонка та же.
          * Версия 14 (п. 27, B12): колонка `books.annotation` (аннотация FB2); у FB2 сброшен `mtime`.
          * Версия 12 (п. 12): аудиокниги — таблицы `audio`, `audio_files`, `audio_chapters`.
          * Версия 11 (R4.3): цитаты и заметки — колонки `kind`, `pos_end`, `note` в `bookmarks`.
@@ -1516,7 +1520,7 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
          * Версия 7: пароль каталога в базе шифруется ключом из `AndroidKeyStore`
          * ([Pass], п. 10.12). Старые открытые пароли перешифровываются при обновлении.
          */
-        const val VERSION = 14
+        const val VERSION = 15
 
         /** Вид записи в таблице `bookmarks` (версия 11, R4.3): закладка, цитата, заметка. */
         const val MARK_BOOKMARK = 0
