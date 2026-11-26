@@ -278,21 +278,17 @@ class AppsScreen(act: EinkActivity) : Screen(act) {
     private fun installed(): Int = apps.count { it.pkg.isNotEmpty() }
 
     /**
-     * Добавляет синтетическую плитку «Файлы» (B25) по алфавиту. Своего файлового менеджера в
-     * системе может не быть — тогда без неё в «Файлы» не попасть (решение 9.6).
+     * Добавляет синтетические плитки «Файлы» (B25) и «Шахматы» (B77) по алфавиту. Своего файлового
+     * менеджера в системе может не быть — тогда без плитки в «Файлы» не попасть (решение 9.6);
+     * шахматы встроены в оболочку и приложением системы не являются (п. 25.2, B6 макета).
      */
     private fun withFiles(list: List<AppEntry>): List<AppEntry> {
-        val out = ArrayList<AppEntry>(list.size + 1)
+        val out = ArrayList<AppEntry>(list.size + 2)
+        out.addAll(list)
+        out.add(FILES_ENTRY)
+        out.add(CHESS_ENTRY)
         val col = Collator.getInstance(Locale("ru"))
-        var placed = false
-        for (a in list) {
-            if (!placed && col.compare(FILES_LABEL, a.label) < 0) {
-                out.add(FILES_ENTRY)
-                placed = true
-            }
-            out.add(a)
-        }
-        if (!placed) out.add(FILES_ENTRY)
+        out.sortWith { a, b -> col.compare(a.label, b.label) }
         return out
     }
 
@@ -361,8 +357,8 @@ class AppsScreen(act: EinkActivity) : Screen(act) {
       reload()
       redraw()
   } else if (apps[first + k].pkg.isEmpty()) {
-      // Синтетическая плитка «Файлы» (решение 9.6): открывает B25, листа B36 у неё нет.
-      act.go(EinkActivity.SCR_FILES)
+      // Синтетические плитки без листа B36: «Файлы» (решение 9.6) — B25, «Шахматы» — B77.
+      act.go(if (apps[first + k].cls == CHESS_CLS) EinkActivity.SCR_CHESS_MENU else EinkActivity.SCR_FILES)
   } else if (x >= tx + TILE_W - DOTS_HIT && y <= ty + DOTS_HIT) {
       openSheet(apps[first + k])
          } else {
@@ -500,6 +496,10 @@ class AppsScreen(act: EinkActivity) : Screen(act) {
         /** Синтетическая плитка «Файлы» (B25): пакета нет, листа B36 у неё нет. */
         private const val FILES_LABEL = "Файлы"
         private val FILES_ENTRY = AppEntry(FILES_LABEL, "", "", "files@98.7x102.8")
+
+        /** Синтетическая плитка «Шахматы» (B77): пакета нет, отличается от «Файлов» полем `cls`. */
+        private const val CHESS_CLS = "chess"
+        private val CHESS_ENTRY = AppEntry("Шахматы", "", CHESS_CLS, "chess")
 
         // B36: верх листа и верхи пяти строк (шаг 150)
  private const val SHEET_TOP = 670f

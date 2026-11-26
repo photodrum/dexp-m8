@@ -104,6 +104,15 @@ class EinkActivity : Activity() {
         /** B32 «Статистика чтения» (п. 22): двери — строка «Сегодня» на B1 и «Ещё» в меню B9. */
         const val SCR_STATS = 41
 
+        /**
+         * Шахматы (п. 25.2): B77 меню (дверь — плитка «Шахматы» в B6), B78 новая партия,
+         * B79 партия (с листами B80, B82 и диалогами B83, B84), B81 ходы партии.
+         */
+        const val SCR_CHESS_MENU = 42
+        const val SCR_CHESS_NEW = 43
+        const val SCR_CHESS = 44
+        const val SCR_CHESS_MOVES = 45
+
 
         private const val REQ_STORAGE = 1
         private const val REQ_WRITE_SETTINGS = 2
@@ -1433,6 +1442,10 @@ class EinkActivity : Activity() {
             SCR_AUDIO -> AudioScreen(this)
             SCR_AUDIO_CHAPTERS -> AudioChaptersScreen(this)
             SCR_STATS -> StatScreen(this)
+            SCR_CHESS_MENU -> ChessMenuScreen(this)
+            SCR_CHESS_NEW -> ChessNewScreen(this)
+            SCR_CHESS -> ChessScreen(this)
+            SCR_CHESS_MOVES -> ChessMovesScreen(this)
             SCR_FIRST_LANG -> FirstLangScreen(this)
             SCR_FIRST_WIFI -> FirstWifiScreen(this)
             SCR_FIRST_PERM -> FirstPermScreen(this)

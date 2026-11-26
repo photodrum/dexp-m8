@@ -6,9 +6,13 @@
 // Запуск и сборка — docs/CHECKS.md, «Шахматы на хосте».
 import kotlin.random.Random
 import kotlin.system.exitProcess
+import ru.ogrpfsense.dexpm8.chess.Color
 import ru.ogrpfsense.dexpm8.chess.Eval
 import ru.ogrpfsense.dexpm8.chess.Fen
 import ru.ogrpfsense.dexpm8.chess.Game
+import ru.ogrpfsense.dexpm8.chess.GameSave
+import ru.ogrpfsense.dexpm8.chess.RuSan
+import ru.ogrpfsense.dexpm8.chess.SavedGame
 import ru.ogrpfsense.dexpm8.chess.Level
 import ru.ogrpfsense.dexpm8.chess.Limits
 import ru.ogrpfsense.dexpm8.chess.Move
@@ -394,7 +398,36 @@ fun main() {
     sanChecks()
     ruleChecks()
     searchChecks()
+    screenChecks()
 
     println(if (fails == 0) "=== ВСЁ ОК ($oks проверок)" else "=== ПРОВАЛОВ: $fails из ${oks + fails}")
     if (fails != 0) exitProcess(1)
+}
+
+/** П. 25.2: русская запись ходов и сохранение партии для экранов. */
+private fun screenChecks() {
+    for ((san, want) in listOf(
+        "e4" to "e4", "Nf3" to "Кf3", "Bb5+" to "Сb5+", "Rfe1" to "Лfe1", "Qxd7" to "Фxd7",
+        "Kxe2" to "Крxe2", "O-O" to "O-O", "O-O-O+" to "O-O-O+", "e8=Q+" to "e8=Ф+",
+        "exd8=N#" to "exd8=К#", "bxa1=R" to "bxa1=Л", "a8=B" to "a8=С",
+    )) check("RuSan: $san → $want", RuSan.of(san), want)
+
+    val saved = SavedGame(5, Color.BLACK, GameSave.END_NONE, 1700000000000L, listOf("e2e4", "e7e5", "g1f3"))
+    val text = GameSave.encode(saved)
+    check("сохранение: строка", text, "1|5|1|0|1700000000000|e2e4 e7e5 g1f3")
+    val back = GameSave.decode(text)
+    check("сохранение: туда-обратно",
+        back != null && back.level == 5 && back.color == Color.BLACK && back.end == 0 &&
+            back.time == 1700000000000L && back.moves == listOf("e2e4", "e7e5", "g1f3"), true)
+    val g = back?.let { GameSave.replay(it) }
+    check("сохранение: проигрывание, 3 полухода и SAN", g?.ply to g?.san?.toList(), 3 to listOf("e4", "e5", "Nf3"))
+    val empty = GameSave.decode(GameSave.encode(SavedGame(1, Color.WHITE, GameSave.END_RESIGN, 5L, emptyList())))
+    check("сохранение: без ходов, сдача", empty != null && empty.moves.isEmpty() && empty.end == GameSave.END_RESIGN, true)
+    for ((why, bad) in listOf(
+        "пусто" to "", "версия 2" to "2|4|0|0|1|e2e4", "уровень 9" to "1|9|0|0|1|e2e4",
+        "цвет 2" to "1|4|2|0|1|e2e4", "конец 7" to "1|4|0|7|1|e2e4", "время" to "1|4|0|0|x|e2e4",
+        "мало полей" to "1|4|0|0|1", "мусор" to "abc",
+    )) check("сохранение отвергнуто: $why", GameSave.decode(bad), null)
+    check("сохранение: невозможный ход не проигрывается",
+        GameSave.replay(SavedGame(4, Color.WHITE, 0, 1L, listOf("e2e4", "e2e4"))), null)
 }

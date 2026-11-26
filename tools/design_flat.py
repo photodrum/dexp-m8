@@ -78,7 +78,8 @@ def main():
             band = (float(lo), float(hi))
         if v == '--grep':
             grep = argv[i + 1]
-    name = argv[0].upper()
+    # Суффикс варианта («а», «б») остаётся строчным: файл называется B79а.json, а не B79А.json.
+    name = argv[0][0].upper() + argv[0][1:]
     f = ROOT / (name[0] + name[1:].zfill(2) + '.json')
     d = json.loads(f.read_text(encoding='utf-8'))
     out = [f"{d['board']} {d['w']}x{d['h']} " + '+'.join(x['c'] for x in d.get('f', []))]

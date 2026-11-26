@@ -265,6 +265,19 @@ class Prefs(ctx: Context) {
         set(v) = sp.edit().putLong("update_skip_code", v).apply()
 
 
+    // Шахматы (п. 25.2)
+    /** Партия с компьютером, `GameSave.encode`; пусто — партии нет (B77а). */
+    var chessSave: String
+        get() = sp.getString("chess_save", "") ?: ""
+        set(v) = sp.edit().putString("chess_save", v).apply()
+    /** Уровень компьютера на B78, 1…8. */
+    var chessLevel: Int
+        get() = sp.getInt("chess_level", 4).coerceIn(1, 8)
+        set(v) = sp.edit().putInt("chess_level", v.coerceIn(1, 8)).apply()
+    /** Цвет игрока на B78: 0 «Белые», 1 «Чёрные», 2 «Случайно». */
+    var chessColor: Int
+        get() = sp.getInt("chess_color", 0).coerceIn(0, 2)
+        set(v) = sp.edit().putInt("chess_color", v.coerceIn(0, 2)).apply()
 
     /** Сброс к значениям макета (B43 «Сбросить настройки оболочки» — после диалога подтверждения). */
     fun reset() = sp.edit().clear().apply()
