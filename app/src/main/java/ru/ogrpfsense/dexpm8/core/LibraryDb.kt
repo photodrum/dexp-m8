@@ -348,6 +348,9 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         // Версия 15 (п. 27): аннотация EPUB (`dc:description`, [EpubMeta]) — то же, что в v14 для FB2:
         // колонка уже есть, у EPUB сбрасывается `mtime`, чтобы следующий проход прочитал OPF.
         if (oldVersion < 15) db.execSQL("UPDATE books SET mtime = 0 WHERE format = 'epub'")
+        // Версия 16 (п. 18, перевод слова): язык EPUB (`dc:language`, [EpubMeta]) — колонка `lang`
+        // уже есть, у EPUB снова сбрасывается `mtime`, чтобы следующий проход прочитал OPF.
+        if (oldVersion < 16) db.execSQL("UPDATE books SET mtime = 0 WHERE format = 'epub'")
     }
 
     /**
@@ -1531,6 +1534,7 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
         /**
          * Версия 13 (п. 22, B32 «Статистика чтения»): таблица `reading` (минуты чтения по дням
          * и книгам) и колонка `books.finished`.
+         * Версия 16 (п. 18): язык EPUB — у EPUB сброшен `mtime`, колонка `lang` та же.
          * Версия 15 (п. 27): аннотация EPUB — у EPUB сброшен `mtime`, колонка та же.
          * Версия 14 (п. 27, B12): колонка `books.annotation` (аннотация FB2); у FB2 сброшен `mtime`.
          * Версия 12 (п. 12): аудиокниги — таблицы `audio`, `audio_files`, `audio_chapters`.
@@ -1540,7 +1544,7 @@ class LibraryDb(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, NAME, n
          * Версия 7: пароль каталога в базе шифруется ключом из `AndroidKeyStore`
          * ([Pass], п. 10.12). Старые открытые пароли перешифровываются при обновлении.
          */
-        const val VERSION = 15
+        const val VERSION = 16
 
         /** Вид записи в таблице `bookmarks` (версия 11, R4.3): закладка, цитата, заметка. */
         const val MARK_BOOKMARK = 0

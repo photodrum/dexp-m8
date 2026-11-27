@@ -8,7 +8,8 @@ import java.util.Locale
 import java.util.zip.ZipFile
 
 /**
- * Аннотация EPUB для карточки B12 (п. 27): `dc:description` из OPF-файла книги.
+ * Аннотация EPUB для карточки B12 (п. 27): `dc:description` из OPF-файла книги. Там же
+ * `dc:language` — язык книги для перевода слова ([TrDir], база v16, 2026-11-27).
  *
  * EPUB — zip: `META-INF/container.xml` называет OPF (`rootfile full-path`), в OPF —
  * `<dc:description>`. Читаются только эти два файла (`ZipFile` берёт запись по оглавлению
@@ -37,6 +38,11 @@ object EpubMeta {
     private val DESCRIPTION = Regex(
         """<(?:[\w.-]+:)?description\b[^>]*?(?<!/)>(.*?)</(?:[\w.-]+:)?description\s*>""",
         setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+    private val LANGUAGE = Regex(
+        """<(?:[\w.-]+:)?language\b[^>]*?(?<!/)>(.*?)</(?:[\w.-]+:)?language\s*>""",
+        setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+    /** BCP 47 в разумных пределах: `ru`, `rus`, `en-US`, `zh_Hans_CN`. */
+    private val LANG_CODE = Regex("""[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{1,8}){0,3}""")
     private val XML_ENCODING = Regex("""^\s*<\?xml[^>]*?encoding\s*=\s*["']([\w.-]+)["']""",
         RegexOption.IGNORE_CASE)
     private val COMMENT = Regex("<!--.*?-->", RegexOption.DOT_MATCHES_ALL)
@@ -57,16 +63,42 @@ object EpubMeta {
         "copy" to "©",
     )
 
-    /** Аннотация книги [f]; null — нет `dc:description`, файл не EPUB или не открылся. */
-    fun annotation(f: File): String? = try {
+    /** Метаданные EPUB из OPF: аннотация и язык книги; null — нет в OPF. */
+    class Meta(val annotation: String?, val language: String?)
+
+    private val NONE = Meta(null, null)
+
+    /**
+     * Аннотация и язык книги [f] за один проход по архиву (сканер, [Scanner]). Файл не EPUB
+     * или не открылся — `Meta(null, null)`, исключения наружу не выходят.
+     */
+    fun read(f: File): Meta = try {
         ZipFile(f).use { z ->
-            val container = read(z, "META-INF/container.xml", MAX_CONTAINER) ?: return@use null
-            val opfPath = ROOTFILE.find(text(container))?.groupValues?.get(1) ?: return@use null
-            val opf = read(z, opfPath, MAX_OPF) ?: return@use null
-            fromOpf(text(opf))
+            val container = read(z, "META-INF/container.xml", MAX_CONTAINER) ?: return@use NONE
+            val opfPath = ROOTFILE.find(text(container))?.groupValues?.get(1) ?: return@use NONE
+            val opf = read(z, opfPath, MAX_OPF)?.let { text(it) } ?: return@use NONE
+            Meta(fromOpf(opf), languageFromOpf(opf))
         }
     } catch (e: Exception) {
-        null
+        NONE
+    }
+
+    /** Аннотация книги [f]; null — нет `dc:description`, файл не EPUB или не открылся. */
+    fun annotation(f: File): String? = read(f).annotation
+
+    /**
+     * Язык книги [f] из `dc:language` («ru», «en-US», «eng»); null — нет, не похоже на код
+     * языка или файл не EPUB. Нужен переводу слова ([TrDir]): направление берётся из языка книги.
+     */
+    fun language(f: File): String? = read(f).language
+
+    /** Язык из текста OPF: первый `dc:language`, похожий на код языка. */
+    fun languageFromOpf(opf: String): String? {
+        for (m in LANGUAGE.findAll(opf)) {
+            val v = decode(m.groupValues[1].replace("<![CDATA[", "").replace("]]>", "")).trim()
+            if (LANG_CODE.matches(v)) return v
+        }
+        return null
     }
 
     /** Аннотация из текста OPF: первый непустой `description`. */

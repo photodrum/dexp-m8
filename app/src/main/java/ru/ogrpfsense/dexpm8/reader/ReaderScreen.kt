@@ -875,7 +875,8 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
                 selEnd = b
                 selHref = href
                 selRects = rects
-                Trace.step("b50: выделено '${text.take(40)}' отрезков=${rects.size / 4}")
+                Trace.step("b50: выделено '${text.take(40)}' отрезков=${rects.size / 4} " +
+                    "первый=${rects[0]},${rects[1]},${rects[2]},${rects[3]}")
                 redraw()
             }
         }
@@ -1269,7 +1270,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
                 null
             }
             val why = if (t == null) dictOnline.why else null
-            Trace.step("b30: перевод '$w' -> ${t?.text ?: "нет"} ${why ?: ""}")
+            Trace.step("b30: перевод '$w' [$guess, язык книги ${lang ?: "—"}] -> ${t?.text ?: "нет"} ${why ?: ""}")
             post {
                 if (!attached || my != dictGen || !dictOpen) return@post
                 val dir = if (t != null) "${t.from} → ${t.to}" else guess

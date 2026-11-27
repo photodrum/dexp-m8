@@ -108,6 +108,31 @@ fun main() {
     check("odd entities", ann("<dc:description>a &bogus; b &#99999999; c &#0; d\u0001e</dc:description>"),
         "a &bogus; b &#99999999; c &#0; d e")
 
+    // 12. Язык книги (dc:language, база v16, перевод слова): коды, префиксы, мусор.
+    fun lang(desc: String) = EpubMeta.language(book(desc))
+    check("lang ru", lang("<dc:language>ru</dc:language>"), "ru")
+    check("lang ru-RU", lang("<dc:language>ru-RU</dc:language>"), "ru-RU")
+    check("lang eng", lang("<dc:language>eng</dc:language>"), "eng")
+    check("lang attrs + spaces", lang("""<dc:language xsi:type="dcterms:RFC4646">  en-US </dc:language>"""), "en-US")
+    check("lang cdata", lang("<dc:language><![CDATA[de]]></dc:language>"), "de")
+    check("lang no prefix, upper", lang("<LANGUAGE>FR</LANGUAGE>"), "FR")
+    check("lang first valid", lang("<dc:language></dc:language><dc:language>Russian</dc:language>" +
+        "<dc:language>uk</dc:language>"), "uk")
+    check("lang none", lang(""), null)
+    check("lang self-closing", lang("<dc:language/>"), null)
+    check("lang word instead of code", lang("<dc:language>Russian</dc:language>"), null)
+    check("lang not a zip", EpubMeta.language(junk), null)
+    check("lang no file", EpubMeta.language(File("/nonexistent/x.epub")), null)
+    // read(): язык и аннотация за один проход; одно без другого не мешает.
+    val both = EpubMeta.read(book("<dc:language>ru</dc:language><dc:description>Текст</dc:description>"))
+    check("read both", "${both.language}|${both.annotation}", "ru|Текст")
+    val onlyLang = EpubMeta.read(book("<dc:language>en</dc:language>"))
+    check("read only lang", "${onlyLang.language}|${onlyLang.annotation}", "en|null")
+    val onlyAnn = EpubMeta.read(book("<dc:description>Текст</dc:description>"))
+    check("read only annotation", "${onlyAnn.language}|${onlyAnn.annotation}", "null|Текст")
+    check("read cp1251 lang", EpubMeta.read(book("", "OEBPS/content.opf", "windows-1251",
+        opf("<dc:language>ru</dc:language>", "windows-1251").toByteArray(charset("windows-1251")))).language, "ru")
+
     println(if (fails == 0) "=== ВСЁ ОК" else "=== ПАДЕНИЙ: $fails")
     if (fails != 0) System.exit(1)
 }

@@ -47,7 +47,7 @@ $HOME/.local/kotlinc/bin/kotlinc -d /tmp/epubtest/out \
 java -Dfile.encoding=UTF-8 -cp "/tmp/epubtest/out:$HOME/.local/kotlinc/lib/kotlin-stdlib.jar" Epub_meta_testKt
 ```
 
-Ожидается 22 строки `OK` и `=== ВСЁ ОК`: Calibre (HTML, экранированный как XML), обычный текст
+Ожидается 38 строк `OK` и `=== ВСЁ ОК` (22 — аннотация, 16 — `dc:language` и `read()`, база v16): Calibre (HTML, экранированный как XML), обычный текст
 с жёсткими переносами, CDATA, вложенные теги, пустое/самозакрытое/второе описание, описание из
 одной точки или «…» (null), путь с `%20`,
 windows-1251 и BOM, предел 2000 знаков без разрыва символа, не-zip и битые пути (null).
@@ -64,11 +64,15 @@ $HOME/.local/kotlinc/bin/kotlinc -d /tmp/trtest/out \
 java -Dfile.encoding=UTF-8 -cp "/tmp/trtest/out:$HOME/.local/kotlinc/lib/kotlin-stdlib.jar" Tr_dir_testKt
 ```
 
-Ожидается 25 строк `OK` и `=== ВСЁ ОК`.
+Ожидается 32 строки `OK` и `=== ВСЁ ОК`. Язык EPUB (`dc:language`) проверяет `epub_meta_test`
+(«Аннотация EPUB на хосте»): язык у EPUB пишет сканер в `books.lang` (база v16).
 
 **На книге** (после `assembleDebug`, слово → «Словарь» → вкладка «Перевод»): русская книга, русское
 слово — «ru → en»; английская книга — «en → ru»; латинское слово в русской книге — «авто → ru»
-и перевод на русский.
+и перевод на русский. Без рук: `python3 tools/tr_book_check.py` (debug-APK на книге по adb) — кладёт
+в `/sdcard/Books` два EPUB (`en` и `rus`), открывает библиотеку, книгу, удерживает слово, жмёт
+«Словарь» и «Перевод»; направление и перевод — из трассы `b30: перевод '…' [en → ru, язык книги
+en] -> …`; в конце сам убирает файлы, записи MediaStore и базы. Ждём `=== ИТОГ OK`.
 
 ## Проверка разбора OPDS на хосте
 

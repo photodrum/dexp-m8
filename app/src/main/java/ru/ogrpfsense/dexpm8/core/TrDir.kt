@@ -39,12 +39,26 @@ object TrDir {
         "af", "sq", "eu", "gl", "is", "ga", "cy", "mt",
     )
 
-    /** `ru-RU`, `RU`, `en_US`, ` de ` → `ru`, `ru`, `en`, `de`; пусто и мусор → null. */
+    /** Трёхбуквенные коды ISO 639-2 (в EPUB бывает `rus`, `eng`) → двухбуквенные. */
+    private val ISO3 = mapOf(
+        "rus" to "ru", "eng" to "en", "deu" to "de", "ger" to "de", "fra" to "fr", "fre" to "fr",
+        "spa" to "es", "ita" to "it", "por" to "pt", "nld" to "nl", "dut" to "nl", "swe" to "sv",
+        "dan" to "da", "nor" to "no", "fin" to "fi", "pol" to "pl", "ces" to "cs", "cze" to "cs",
+        "slk" to "sk", "slo" to "sk", "slv" to "sl", "hrv" to "hr", "hun" to "hu", "ron" to "ro",
+        "rum" to "ro", "tur" to "tr", "lit" to "lt", "lav" to "lv", "est" to "et", "lat" to "la",
+        "epo" to "eo", "cat" to "ca", "ukr" to "uk", "bel" to "be", "bul" to "bg", "srp" to "sr",
+        "mkd" to "mk", "mac" to "mk", "kaz" to "kk",
+    )
+
+    /**
+     * `ru-RU`, `RU`, `en_US`, ` de `, `rus` → `ru`, `ru`, `en`, `de`, `ru`; пусто и мусор → null.
+     * Неизвестный трёхбуквенный код остаётся как есть (ни в одном из списков его нет).
+     */
     fun lang(raw: String?): String? {
         val s = raw?.trim()?.lowercase() ?: return null
         val code = s.takeWhile { it != '-' && it != '_' && it != ' ' }
         if (code.length !in 2..3 || !code.all { it in 'a'..'z' }) return null
-        return code
+        return ISO3[code] ?: code
     }
 
     /** Кириллица (русская, украинская, …) — блок U+0400…U+04FF. */

@@ -37,13 +37,22 @@ fun main() {
     check("лат в украинской книге", "weekend", "uk", "Autodetect|ru", "авто → ru")
     check("лат в японской книге", "house", "ja", "Autodetect|ru", "авто → ru")
     check("лат, мусор вместо языка", "house", "??", "Autodetect|ru", "авто → ru")
+    // 4а. Трёхбуквенные коды EPUB (`dc:language`: rus, eng, deu).
+    check("англ книга, eng", "house", "eng", "en|ru", "en → ru")
+    check("нем книга, deu", "Haus", "deu", "de|ru", "de → ru")
+    check("рус книга, rus, лат слово", "weekend", "rus", "Autodetect|ru", "авто → ru")
+    check("укр книга, ukr", "дім", "ukr", "uk|ru", "uk → ru")
+
     // 5. Слово со смесью алфавитов: кириллица побеждает.
     check("смесь, книга en", "дом2x", "en", "ru|en", "ru → en")
     // 6. Разбор кода языка.
     lang("lang ru-RU", "ru-RU", "ru")
     lang("lang en_US", " en_US ", "en")
     lang("lang RU", "RU", "ru")
-    lang("lang eng (3 буквы)", "eng", "eng")
+    lang("lang eng → en", "eng", "en")
+    lang("lang RUS → ru", "RUS", "ru")
+    lang("lang deu/ger → de", "ger", "de")
+    lang("lang неизвестный xyz", "xyz", "xyz")
     lang("lang пусто", "", null)
     lang("lang null", null, null)
     lang("lang цифры", "x1", null)

@@ -193,6 +193,7 @@ class Scanner(private val ctx: Context, private val db: LibraryDb) {
 
     private fun info(f: File, format: String, size: Long, mtime: Long, buf: ByteArray): LibraryDb.Info {
         val m = if (format == "fb2") NativeBook.metaFb2(f, buf) else null
+        val epub = if (format == "epub") EpubMeta.read(f) else null
         val name = f.name
         val base = name.substring(0, name.length - format.length - 1).trim()
         // Нет метаданных (EPUB, PDF… до движков читалки) — «Автор. Название» из имени файла.
@@ -204,8 +205,8 @@ class Scanner(private val ctx: Context, private val db: LibraryDb) {
             path = f.path, size = size, mtime = mtime, format = format, title = title,
             author = author, authorSort = authorSort(m) ?: parsed?.first?.let { sortFromName(it) },
             series = clean(m?.series), seriesNum = m?.seriesNum ?: 0,
-            lang = clean(m?.lang), coverId = clean(m?.coverId),
-            annotation = clean(if (format == "epub") EpubMeta.annotation(f) else m?.annotation),
+            lang = clean(epub?.language ?: m?.lang), coverId = clean(m?.coverId),
+            annotation = clean(if (epub != null) epub.annotation else m?.annotation),
         )
     }
 
