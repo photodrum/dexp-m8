@@ -43,7 +43,7 @@ export PATH=$JAVA_HOME/bin:$PATH
 | Что | Команда | Результат |
 |---|---|---|
 | Debug APK | `~/.local/gradle-8.7/bin/gradle -p ~/projects/dexp-m8 assembleDebug` | `app/build/outputs/apk/debug/app-debug.apk` (5,8 МиБ, 5 815 104 б; внутри `libdexp_core.so`, `libdexp_cre.so`, `libdexp_djvu.so`; +73 КБ шрифтов PT Serif) |
-| Release APK | `... assembleRelease` | `app/build/outputs/apk/release/app-release.apk` (4,3 МиБ, 4 478 840 б на 2026-11-21, подписан ключом `dexp-m8`; внутри те же три `.so`). `lintVitalRelease` печатает `ExpiredTargetSdkVersion` (targetSdk 27) — это не ошибка сборки (`BUILD SUCCESSFUL`), игнорировать |
+| Release APK | `... assembleRelease` | `app/build/outputs/apk/release/app-release.apk` (4,3 МиБ, 4 511 608 б на 2026-11-27, 1.5.0, подписан ключом `dexp-m8`; внутри те же три `.so`). `lintVitalRelease` печатает `ExpiredTargetSdkVersion` (targetSdk 27) — это не ошибка сборки (`BUILD SUCCESSFUL`), игнорировать |
 | Быстро, без Gradle | `~/projects/dexp-m8/tools/build.sh` | `build/app-debug.apk` (~0,9 МБ) — **без `.so`**; Kotlin stdlib в dex, подпись как у Gradle (ставится поверх без удаления) |
 | Только типы Kotlin | `~/projects/dexp-m8/tools/typecheck.sh` | ~10 сек |
 | Тесты C-ядра | см. ниже | 34 проверки |
