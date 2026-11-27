@@ -27,7 +27,7 @@ import ru.ogrpfsense.dexpm8.ui.Trace
  *
  * **Перевод — MyMemory.** Публичный `libretranslate.com` требует ключ, а зеркала
  * `translate.disroot.org`, `translate.terraprint.co`, `libretranslate.de` API не отдают
- * (проверено 2026-11-17); свой LibreTranslate подключим на B73.
+ * (проверено 2026-11-17); свой LibreTranslate подключим на B73. Направление — [TrDir].
  *
  * Сеть — `HttpURLConnection` с таймаутами и распаковкой gzip, как в [Opds]; `org.json`
  * в системе есть. Вызывать только из фонового потока, иначе `NetworkOnMainThreadException`.
@@ -264,19 +264,20 @@ class DictOnline(private val ctx: Context) {
     // ------------------------------------------------------------------ перевод
 
     /**
-     * Перевод [text] через MyMemory. Направление по алфавиту текста: кириллица → `en`,
-     * иначе → `ru` (выбор второго языка будет на B73).
-     * `null` — перевода нет, нет сети или кончился дневной предел; причина в [why].
+     * Перевод [text] через MyMemory. Направление — [TrDir.pair] (решение 2026-11-27): русское
+     * слово → `en`, любое другое → `ru`; язык «откуда» — язык книги [bookLang], без него —
+     * автоопределение сервиса. `null` — перевода нет, нет сети или кончился дневной предел;
+     * причина в [why].
      */
-    fun translate(text: String): Tr? {
+    fun translate(text: String, bookLang: String? = null): Tr? {
         why = null
         if (!online()) return noTr("Нет сети")
         val s = clean(text)
         if (s.isEmpty()) return noTr("Пустой текст")
-        val ru = s.any { it in '\u0400'..'\u04FF' }
-        val from = if (ru) "ru" else "en"
-        val to = if (ru) "en" else "ru"
-        val url = MYMEMORY + "?q=" + enc(s) + "&langpair=" + enc("$from|$to")
+        val dir = TrDir.pair(s, bookLang)
+        val from = dir.fromLabel()
+        val to = dir.to
+        val url = MYMEMORY + "?q=" + enc(s) + "&langpair=" + enc(dir.api())
         val json = get(url) ?: return null
         val o = try {
             JSONObject(json)

@@ -1251,16 +1251,20 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
         }
     }
 
-    /** Вкладка «Перевод»: слово уходит в MyMemory, направление считает [DictOnline]. */
+    /**
+     * Вкладка «Перевод»: слово уходит в MyMemory. Направление — [ru.ogrpfsense.dexpm8.core.TrDir]:
+     * русское слово → en, любое другое → ru; язык «откуда» — язык книги (`entry.lang`) или авто.
+     */
     private fun askTranslate() {
         val w = dictView.word()
         if (w.isEmpty()) return
-        val ru = w.any { it in '\u0400'..'\u04FF' }
-        dictView.waitTranslate(if (ru) "ru → en" else "en → ru")
+        val lang = entry?.lang
+        val guess = ru.ogrpfsense.dexpm8.core.TrDir.pair(w, lang).label()
+        dictView.waitTranslate(guess)
         redraw()
         val my = ++dictGen
         Engine.worker.execute {
-            val t = try { dictOnline.translate(w) } catch (e: Throwable) {
+            val t = try { dictOnline.translate(w, lang) } catch (e: Throwable) {
                 Trace.step("b30: translate FAIL ${e.javaClass.simpleName}: ${e.message}")
                 null
             }
@@ -1268,8 +1272,7 @@ class ReaderScreen(act: EinkActivity) : Screen(act) {
             Trace.step("b30: перевод '$w' -> ${t?.text ?: "нет"} ${why ?: ""}")
             post {
                 if (!attached || my != dictGen || !dictOpen) return@post
-                val dir = if (t != null) "${t.from} → ${t.to}"
-                          else if (ru) "ru → en" else "en → ru"
+                val dir = if (t != null) "${t.from} → ${t.to}" else guess
                 dictView.showTranslate(dir, t?.text, why)
                 redraw()
             }

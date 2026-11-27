@@ -52,6 +52,24 @@ java -Dfile.encoding=UTF-8 -cp "/tmp/epubtest/out:$HOME/.local/kotlinc/lib/kotli
 одной точки или «…» (null), путь с `%20`,
 windows-1251 и BOM, предел 2000 знаков без разрыва символа, не-zip и битые пути (null).
 
+## Направление перевода на хосте
+
+`core/TrDir.kt` (русское слово → en, любое другое → ru; язык книги или автоопределение MyMemory) —
+чистый Kotlin, собирается вместе с `tools/tr_dir_test.kt`:
+
+```bash
+export JAVA_HOME=$HOME/.local/jdk PATH=$HOME/.local/jdk/bin:$PATH JAVA_OPTS=-Xmx1200m
+$HOME/.local/kotlinc/bin/kotlinc -d /tmp/trtest/out \
+    app/src/main/java/ru/ogrpfsense/dexpm8/core/TrDir.kt tools/tr_dir_test.kt
+java -Dfile.encoding=UTF-8 -cp "/tmp/trtest/out:$HOME/.local/kotlinc/lib/kotlin-stdlib.jar" Tr_dir_testKt
+```
+
+Ожидается 25 строк `OK` и `=== ВСЁ ОК`.
+
+**На книге** (после `assembleDebug`, слово → «Словарь» → вкладка «Перевод»): русская книга, русское
+слово — «ru → en»; английская книга — «en → ru»; латинское слово в русской книге — «авто → ru»
+и перевод на русский.
+
 ## Проверка разбора OPDS на хосте
 
 Ядро сетевых каталогов (`core/Opds.kt`) разбирается на JVM без устройства и без Gradle:
