@@ -204,6 +204,8 @@ PAT аккаунта `photodrum`, репозиторий `dexp-m8`, право `
 `~/.config/dexp-m8/github-token` (права 600) или `GITHUB_TOKEN`. `url` в `update.json` остаётся на
 GitLab Packages — книга качает оттуда.
 
+**Решение 2026-11-27:** релизы на GitHub не делаем — зеркала с `update.json` достаточно, токен не нужен.
+
 `versionCode` обязан расти монотонно — сравнение идёт по нему, а не по `versionName`.
 Ответ 404 на обоих хостах B43 показывает как «версия ещё не опубликована», код 5xx и обрыв — «сервер не ответил».
 Проверить манифест без книги: `curl -s https://git.ogrpfsense.ru/denisle/dexp-m8/-/raw/main/update.json`.
