@@ -3,10 +3,10 @@
 > Старые записи — `docs/archive/DEVLOG-*.md`, список — `ls docs/archive`.
 > Формат: заголовок `## <дата> — <что> (<модель>)`, в записи ≤ 6 строк-маркеров, подробности —
 > сразу в `docs/archive/DEVLOG-<дата>-<пункт>.md`. Не больше ~5 записей: пункт закрылся — в архив.
-## 2026-11-27 — сборка release 1.5.1 (код 9), без публикации (Sonnet)
+## 2026-11-27 — release 1.5.1 (код 9): собран и опубликован (Sonnet)
 - Версия 1.5.0 (8) → **1.5.1 (9)** в `app/build.gradle.kts` и `tools/build.sh`: перевод по языку книги (`TrDir`, п. 18) и язык EPUB (база v16).
 - `assembleRelease`: `app-release.apk` 4 527 992 Б, SHA-256 `db4b64cf…0448c6`; `apksigner`: ключ `dexp-m8` (`9edff2d1…77317fc`, как у 1.5.0), три `.so`; lint `ExpiredTargetSdkVersion` — как раньше.
-- В GitLab Packages и `update.json` не выложено (ждёт слова человека): на книге остаётся 1.5.0 как последняя опубликованная.
+- `gl_publish_apk.py 1.5.1`: статус 201, скачано обратно без токена — 4 527 992 Б, сумма совпала; `update.json` → 1.5.1 (9). GitHub-релиз не делаем (решение 2026-11-27).
 
 ## 2026-11-27 — язык EPUB для перевода, база v16 (Sonnet)
 - `EpubMeta.read(f)` — аннотация и `dc:language` за один проход по OPF; `Scanner` пишет язык EPUB в `books.lang`; `LibraryDb` 16 (у EPUB сброшен `mtime`, колонка та же). `TrDir.lang` понимает `rus/eng/deu…` → `ru/en/de…`.
